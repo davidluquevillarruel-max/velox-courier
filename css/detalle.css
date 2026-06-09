@@ -1,0 +1,179 @@
+/* ============================================================
+   detalle.css — Vista de detalle por motorizado
+   CourierAdmin · Sistema de gestión interna
+   ============================================================ */
+
+/* ── Encabezado del motorizado ── */
+.detalle-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.detalle-header-left {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.detalle-avatar {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.detalle-nombre {
+  font-size: 18px;
+  font-weight: 500;
+  margin-bottom: 2px;
+}
+
+.detalle-meta {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.detalle-meta span {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* ── Botón volver ── */
+.btn-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border-radius: var(--radius-md);
+  border: 0.5px solid var(--color-border-secondary);
+  background: transparent;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--color-text-primary);
+  transition: background 0.15s;
+}
+
+.btn-back:hover {
+  background: var(--color-bg-secondary);
+}
+
+/* ── Tabs de días ── */
+.dias-tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.dia-tab {
+  padding: 6px 14px;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  border: 0.5px solid var(--color-border-tertiary);
+  background: var(--color-bg-primary);
+  transition: all 0.15s;
+  user-select: none;
+}
+
+.dia-tab:hover {
+  background: var(--color-bg-secondary);
+  color: var(--color-text-primary);
+}
+
+.dia-tab.active {
+  background: var(--color-blue);
+  color: #fff;
+  border-color: var(--color-blue);
+  font-weight: 500;
+}
+
+/* ── Resumen del día ── */
+.resumen-dia {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.resumen-item {
+  background: var(--color-bg-secondary);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+}
+
+.resumen-label {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  margin-bottom: 4px;
+}
+
+.resumen-val {
+  font-size: 18px;
+  font-weight: 500;
+}
+
+/* ── Tabla de órdenes del día ── */
+.tabla-dia {
+  display: none;
+}
+
+.tabla-dia.active {
+  display: block;
+}
+
+/* ── Badge reprogramado ── */
+.badge.reprogramado {
+  background: #F0EEFF;
+  color: #5240C7;
+}
+
+/* ── Columna de devolución ── */
+.devolucion-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--color-amber-text);
+  background: var(--color-amber-bg);
+  padding: 2px 8px;
+  border-radius: 12px;
+  white-space: nowrap;
+}
+
+.devolucion-none {
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+}
+
+/* ── Costo motorizado ── */
+.costo-moto {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+
+/* ── Footer descarga ── */
+.detalle-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+/* ── Estado reprogramado en tabla resumen ── */
+.resumen-val.purple { color: #5240C7; }

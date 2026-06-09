@@ -1,0 +1,294 @@
+<!-- ============================================================
+     pages/pedidos.html — Todos los pedidos
+     La lógica vive en js/pedidos.js
+     ============================================================ -->
+
+<div class="page-title">Todos los pedidos</div>
+<div class="page-sub">Órdenes del día · Filtra por fecha o agrega una nueva orden</div>
+
+<!-- ── Barra filtro + acción ── -->
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;flex-wrap:wrap;gap:10px">
+
+  <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+
+    <!-- Filtro de fecha estilizado -->
+    <div class="date-filter-wrap">
+      <i class="ti ti-calendar"></i>
+      <input type="date" id="filtro-fecha-pedidos"
+             style="font-size:13px"
+             onchange="aplicarFiltroPedidos()" />
+    </div>
+
+    <!-- Ver todos -->
+    <button class="btn btn-sm" onclick="limpiarFiltroPedidos()">
+      <i class="ti ti-adjustments-horizontal"></i> Ver todos
+    </button>
+
+    <span style="font-size:12px;color:var(--color-text-tertiary)" id="lbl-fecha-activa"></span>
+  </div>
+
+  <!-- Agregar orden -->
+  <button class="btn btn-primary" onclick="abrirModalOrden()">
+    <i class="ti ti-plus"></i> Agregar orden
+  </button>
+
+</div>
+
+<!-- ── KPI Cards ── -->
+<div class="metrics" style="margin-bottom:20px">
+
+  <div class="metric blue">
+    <div class="metric-body">
+      <div class="metric-label">Total</div>
+      <div class="metric-val blue" id="kpi-total">0</div>
+    </div>
+    <div class="metric-icon blue">
+      <i class="ti ti-package"></i>
+    </div>
+  </div>
+
+  <div class="metric green">
+    <div class="metric-body">
+      <div class="metric-label">Entregados</div>
+      <div class="metric-val green" id="kpi-entregados">0</div>
+    </div>
+    <div class="metric-icon green">
+      <i class="ti ti-circle-check"></i>
+    </div>
+  </div>
+
+  <div class="metric amber">
+    <div class="metric-body">
+      <div class="metric-label">En ruta</div>
+      <div class="metric-val amber" id="kpi-enruta">0</div>
+    </div>
+    <div class="metric-icon amber">
+      <i class="ti ti-truck-delivery"></i>
+    </div>
+  </div>
+
+  <div class="metric red">
+    <div class="metric-body">
+      <div class="metric-label">Sin entregar</div>
+      <div class="metric-val red" id="kpi-sin">0</div>
+    </div>
+    <div class="metric-icon red">
+      <i class="ti ti-circle-x"></i>
+    </div>
+  </div>
+
+</div>
+
+<!-- ── Tabla ── -->
+<div class="card">
+  <div class="card-head">
+    <span class="card-title">Listado de pedidos</span>
+    <div class="filters">
+
+      <!-- Buscador con ícono lupa -->
+      <div class="search-wrap">
+        <i class="ti ti-search search-icon"></i>
+        <input class="search-box" placeholder="Buscar pedido, cliente..."
+               oninput="filterTable(this,'tabla-pedidos-main')" />
+      </div>
+
+      <!-- Filtro de estado -->
+      <select class="filter-select" onchange="filterByStatus(this,'tabla-pedidos-main')"
+              style="min-width:160px">
+        <option value="">Todos los estados</option>
+        <option value="Entregado">Entregado</option>
+        <option value="En proceso">En proceso</option>
+        <option value="No entregado">No entregado</option>
+        <option value="Ausente">Ausente</option>
+        <option value="Reprogramado">Reprogramado</option>
+        <option value="Cambio">Cambio</option>
+        <option value="Devolución">Devolución</option>
+        <option value="Cancelado">Cancelado</option>
+        <option value="Recojo">Recojo</option>
+      </select>
+
+    </div>
+  </div>
+  <div class="table-wrap">
+    <table id="tabla-pedidos-main">
+      <thead>
+        <tr>
+          <th>Código</th>
+          <th>Tienda cliente</th>
+          <th>Destinatario</th>
+          <th>Distrito</th>
+          <th>Motorizado</th>
+          <th>Estado</th>
+          <th>Hora asig.</th>
+          <th>Delivery</th>
+          <th>Fecha</th>
+        </tr>
+      </thead>
+      <tbody id="tbody-pedidos"></tbody>
+    </table>
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════
+     MODAL — Agregar orden
+════════════════════════════════════════════ -->
+<div id="orden-modal-overlay"
+     style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.40);z-index:1000;align-items:flex-start;justify-content:center;overflow-y:auto;padding:40px 0">
+
+  <div style="background:var(--color-bg-primary);border-radius:var(--radius-lg);padding:28px;width:540px;max-width:95vw;box-shadow:var(--shadow-lg);margin:auto">
+
+    <!-- Cabecera -->
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:22px">
+      <span style="font-size:16px;font-weight:600">Nueva orden</span>
+      <button onclick="cerrarModalOrden()"
+              style="background:none;border:none;cursor:pointer;font-size:20px;color:var(--color-text-secondary);line-height:1">
+        <i class="ti ti-x"></i>
+      </button>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:14px">
+
+      <!-- Fecha + Hora -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div>
+          <label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px;font-weight:500">Fecha *</label>
+          <input id="f-orden-fecha" type="date" class="search-box" style="width:100%;border-radius:var(--radius-md);padding:8px 12px" />
+        </div>
+        <div>
+          <label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px;font-weight:500">Hora de asignación</label>
+          <input id="f-orden-hora" type="time" class="search-box" style="width:100%;border-radius:var(--radius-md);padding:8px 12px" />
+        </div>
+      </div>
+
+      <!-- Tienda -->
+      <div>
+        <label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px;font-weight:500">
+          Tienda cliente * <span style="color:var(--color-text-tertiary);font-weight:400">(lista de clientes registrados)</span>
+        </label>
+        <select id="f-orden-tienda" class="filter-select" style="width:100%;border-radius:var(--radius-md);padding:8px 32px 8px 12px"></select>
+      </div>
+
+      <!-- Destinatario + Teléfono -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div>
+          <label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px;font-weight:500">Nombre destinatario *</label>
+          <input id="f-orden-dest" class="search-box" style="width:100%;border-radius:var(--radius-md);padding:8px 12px" placeholder="Ej: Ana Quispe" />
+        </div>
+        <div>
+          <label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px;font-weight:500">Teléfono</label>
+          <input id="f-orden-telef" class="search-box" style="width:100%;border-radius:var(--radius-md);padding:8px 12px" placeholder="Ej: 956-111-001" />
+        </div>
+      </div>
+
+      <!-- Dirección -->
+      <div>
+        <label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px;font-weight:500">Dirección de entrega *</label>
+        <input id="f-orden-direccion" class="search-box" style="width:100%;border-radius:var(--radius-md);padding:8px 12px" placeholder="Ej: Av. Larco 450, Miraflores" />
+      </div>
+
+      <!-- Distrito + Delivery -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div>
+          <label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px;font-weight:500">
+            Distrito * <span style="color:var(--color-text-tertiary);font-weight:400">(lista de distritos)</span>
+          </label>
+          <select id="f-orden-distrito" class="filter-select" style="width:100%;border-radius:var(--radius-md);padding:8px 32px 8px 12px"
+                  onchange="onDistritoChange()"></select>
+        </div>
+        <div>
+          <label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px;font-weight:500">Costo delivery (S/)</label>
+          <input id="f-orden-delivery" type="number" min="0" step="0.50"
+                 class="search-box" style="width:100%;border-radius:var(--radius-md);padding:8px 12px" placeholder="Autocompletado al elegir distrito" />
+          <span id="delivery-hint" style="font-size:11px;color:var(--color-text-tertiary)"></span>
+        </div>
+      </div>
+
+      <!-- Motorizado -->
+      <div>
+        <label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px;font-weight:500">
+          Motorizado asignado * <span style="color:var(--color-text-tertiary);font-weight:400">(motorizados activos)</span>
+        </label>
+        <select id="f-orden-motorizado" class="filter-select" style="width:100%;border-radius:var(--radius-md);padding:8px 32px 8px 12px"></select>
+      </div>
+
+      <!-- Estado -->
+      <div>
+        <label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px;font-weight:500">Estado inicial</label>
+        <select id="f-orden-estado" class="filter-select" style="width:100%;border-radius:var(--radius-md);padding:8px 32px 8px 12px">
+          <option value="en-proceso">En proceso</option>
+          <option value="entregado">Entregado</option>
+          <option value="no-entregado">No entregado</option>
+          <option value="ausente">Ausente</option>
+          <option value="reprogramado">Reprogramado</option>
+          <option value="cambio">Cambio</option>
+          <option value="devolucion">Devolución</option>
+          <option value="cancelado">Cancelado</option>
+          <option value="recojo">Recojo</option>
+        </select>
+      </div>
+
+      <!-- Método de pago -->
+      <div>
+        <label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px;font-weight:500">Método de pago</label>
+        <select id="f-orden-metodo" class="filter-select" style="width:100%;border-radius:var(--radius-md);padding:8px 32px 8px 12px">
+          <option value="">Sin cobro / Por definir</option>
+          <option value="efectivo">Efectivo</option>
+          <option value="yape">Yape motorizado</option>
+          <option value="plin">Plin</option>
+          <option value="pos">POS</option>
+          <option value="pago-tienda">Pago tienda</option>
+          <option value="sin-cobro">Sin cobro</option>
+        </select>
+      </div>
+
+      <!-- Observaciones -->
+      <div>
+        <label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px;font-weight:500">Observaciones</label>
+        <input id="f-orden-obs" class="search-box" style="width:100%;border-radius:var(--radius-md);padding:8px 12px"
+               placeholder="Ej: Dejar con el portero, llamar antes..." />
+      </div>
+
+      <div id="orden-modal-error"
+           style="display:none;color:var(--color-red-text);font-size:12px;padding:10px 14px;background:var(--color-red-bg);border-radius:var(--radius-md)">
+      </div>
+
+    </div>
+
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:24px">
+      <button class="btn btn-sm" onclick="cerrarModalOrden()">Cancelar</button>
+      <button class="btn btn-primary btn-sm" onclick="guardarOrden()">
+        <i class="ti ti-check"></i> Registrar orden
+      </button>
+    </div>
+
+  </div>
+</div>
+
+<!-- Script para empty state dinámico — se inyecta tras renderPedidos -->
+<script>
+(function patchRenderPedidos() {
+  var _origRender = window.renderPedidos;
+  if (!_origRender) return;
+
+  window.renderPedidos = function() {
+    _origRender();
+    var tbody = document.getElementById('tbody-pedidos');
+    if (!tbody) return;
+    /* Si la única fila es el mensaje original de "Sin órdenes", reemplazar con empty state */
+    if (tbody.children.length === 1 && tbody.querySelector('td[colspan]')) {
+      tbody.innerHTML =
+        '<tr><td colspan="9" style="padding:0;border:none">' +
+          '<div class="empty-state">' +
+            '<div class="empty-state-icon"><i class="ti ti-clipboard-list"></i></div>' +
+            '<div class="empty-state-title">Sin órdenes para esta fecha</div>' +
+            '<div class="empty-state-sub">No se encontraron órdenes con los filtros seleccionados.</div>' +
+          '</div>' +
+        '</td></tr>';
+    }
+  };
+
+  /* Ejecutar inmediatamente en caso de que ya se haya llamado antes */
+  window.renderPedidos();
+})();
+</script>

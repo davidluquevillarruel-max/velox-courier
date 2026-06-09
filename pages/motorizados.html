@@ -1,0 +1,147 @@
+<!-- ============================================================
+     pages/motorizados.html — Gestión de repartidores
+     La lógica vive en js/motorizados.js
+     ============================================================ -->
+
+<div class="page-title">Motorizados</div>
+<div class="page-sub">Gestión individual de repartidores y estado de sus entregas</div>
+
+<!-- Barra de acciones -->
+<div style="display:flex;justify-content:flex-end;margin-bottom:16px">
+  <button class="btn btn-primary btn-sm" onclick="abrirModalMoto()">
+    <i class="ti ti-plus"></i> Agregar motorizado
+  </button>
+</div>
+
+<!-- Grid de tarjetas — se llena desde motorizados.js -->
+<div class="moto-grid" id="moto-grid-content"></div>
+
+<!-- Tabla resumen -->
+<div class="card">
+  <div class="card-head"><span class="card-title">Detalle de gestión por motorizado</span></div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Motorizado</th><th>Total</th><th>Entregados</th>
+          <th>No entregados</th><th>Ausentes</th><th>Reprogramados</th>
+          <th>Tasa entrega</th><th>Pago motorizado</th><th>Total cobrado</th>
+          <th>Total moto</th><th></th>
+        </tr>
+      </thead>
+      <tbody id="tbody-motos-resumen"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════
+     MODAL — Agregar / Editar motorizado
+════════════════════════════════════════════ -->
+<div id="moto-modal-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.35);z-index:1000;align-items:center;justify-content:center">
+  <div style="background:var(--color-bg-primary);border-radius:var(--radius-lg);padding:24px;width:480px;max-width:95vw;max-height:90vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,0.18)">
+
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+      <span style="font-size:15px;font-weight:500" id="moto-modal-titulo">Agregar motorizado</span>
+      <button onclick="cerrarModalMoto()" style="background:none;border:none;cursor:pointer;font-size:18px;color:var(--color-text-secondary)">
+        <i class="ti ti-x"></i>
+      </button>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:14px">
+
+      <!-- Nombre -->
+      <div>
+        <label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px">Nombre completo *</label>
+        <input id="f-moto-nombre" class="search-box" style="width:100%" placeholder="Ej: Carlos Ramírez" />
+      </div>
+
+      <!-- Teléfono + DNI -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div>
+          <label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px">Teléfono *</label>
+          <input id="f-moto-telefono" class="search-box" style="width:100%" placeholder="Ej: 987-654-321" />
+        </div>
+        <div>
+          <label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px">DNI</label>
+          <input id="f-moto-dni" class="search-box" style="width:100%" placeholder="Ej: 12345678" maxlength="8" />
+        </div>
+      </div>
+
+      <!-- Zona + Placa -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div>
+          <label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px">Zona de cobertura *</label>
+          <select id="f-moto-zona" class="filter-select" style="width:100%">
+            <option value="">Seleccionar zona...</option>
+            <option value="Norte">Norte</option>
+            <option value="Sur">Sur</option>
+            <option value="Centro">Centro</option>
+            <option value="Este">Este</option>
+            <option value="Callao">Callao</option>
+          </select>
+        </div>
+        <div>
+          <label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px">Placa vehículo</label>
+          <input id="f-moto-placa" class="search-box" style="width:100%" placeholder="Ej: ABC-123" />
+        </div>
+      </div>
+
+      <!-- Color avatar + Estado -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div>
+          <label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px">Color avatar</label>
+          <select id="f-moto-color" class="filter-select" style="width:100%">
+            <option value="av-blue">Azul</option>
+            <option value="av-teal">Verde</option>
+            <option value="av-purple">Morado</option>
+            <option value="av-amber">Naranja</option>
+          </select>
+        </div>
+        <div>
+          <label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px">Estado</label>
+          <select id="f-moto-activo" class="filter-select" style="width:100%">
+            <option value="true">Activo</option>
+            <option value="false">Inactivo</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Referencia / Dirección -->
+      <div>
+        <label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px">Dirección / Referencia</label>
+        <input id="f-moto-referencia" class="search-box" style="width:100%" placeholder="Ej: Av. Los Olivos 234, SMP" />
+      </div>
+
+      <div id="moto-modal-error" style="display:none;color:#A32D2D;font-size:12px;padding:8px 12px;background:#FCEBEB;border-radius:var(--radius-md)"></div>
+    </div>
+
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:20px">
+      <button class="btn btn-sm" onclick="cerrarModalMoto()">Cancelar</button>
+      <button class="btn btn-primary btn-sm" onclick="guardarMoto()" id="btn-guardar-moto">
+        <i class="ti ti-plus"></i> Agregar
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════
+     MODAL — Confirmar eliminación
+════════════════════════════════════════════ -->
+<div id="moto-confirm-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.35);z-index:1000;align-items:center;justify-content:center">
+  <div style="background:var(--color-bg-primary);border-radius:var(--radius-lg);padding:24px;width:380px;max-width:95vw;box-shadow:0 8px 32px rgba(0,0,0,0.18)">
+    <div style="font-size:15px;font-weight:500;margin-bottom:8px">Eliminar motorizado</div>
+    <div style="font-size:13px;color:var(--color-text-secondary);margin-bottom:6px">
+      ¿Seguro que deseas eliminar a <strong id="confirm-moto-nombre"></strong>?
+    </div>
+    <div style="font-size:12px;color:#BA7517;background:#FAEEDA;padding:8px 12px;border-radius:var(--radius-md);margin-bottom:16px">
+      <i class="ti ti-alert-triangle"></i>
+      Sus órdenes históricas se conservarán en la base de datos. Solo se desactiva su acceso al sistema.
+    </div>
+    <div style="display:flex;justify-content:flex-end;gap:8px">
+      <button class="btn btn-sm" onclick="cerrarConfirmMoto()">Cancelar</button>
+      <button class="btn btn-danger btn-sm" onclick="ejecutarEliminarMoto()">
+        <i class="ti ti-trash"></i> Eliminar
+      </button>
+    </div>
+  </div>
+</div>

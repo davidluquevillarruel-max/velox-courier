@@ -1,0 +1,211 @@
+<!-- ============================================================
+     pages/caja.html — Control de Caja
+     La lógica vive en js/caja.js
+     ============================================================ -->
+
+<div style="display:flex;gap:0;margin-bottom:24px;border-bottom:1.5px solid var(--color-border-tertiary)">
+  <button class="caja-tab active" onclick="cambiarTab('tiendas',this)">
+    <i class="ti ti-building-store"></i> Tiendas
+  </button>
+  <button class="caja-tab" onclick="cambiarTab('liquidez',this)">
+    <i class="ti ti-chart-line"></i> Liquidez diaria
+  </button>
+  <button class="caja-tab" onclick="cambiarTab('motorizados',this)">
+    <i class="ti ti-motorbike"></i> Motorizados
+  </button>
+</div>
+
+<!-- ══════════════════════════════════════════
+     TAB: TIENDAS
+════════════════════════════════════════════ -->
+<div id="tab-tiendas">
+
+  <div class="page-title" style="margin-bottom:4px">Saldos con tiendas</div>
+  <div class="page-sub">Cobros y devoluciones filtrados por rango de fechas</div>
+
+  <!-- Filtro de fechas -->
+  <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap;padding:12px 16px;background:var(--color-bg-primary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--radius-md)">
+    <span style="font-size:13px;font-weight:500;color:var(--color-text-secondary)">
+      <i class="ti ti-calendar"></i> Filtrar por período:
+    </span>
+    <div style="display:flex;align-items:center;gap:6px">
+      <label style="font-size:12px;color:var(--color-text-secondary)">Desde</label>
+      <input type="date" id="filtro-desde" class="filter-select" style="font-size:13px" />
+    </div>
+    <div style="display:flex;align-items:center;gap:6px">
+      <label style="font-size:12px;color:var(--color-text-secondary)">Hasta</label>
+      <input type="date" id="filtro-hasta" class="filter-select" style="font-size:13px" />
+    </div>
+    <button class="btn btn-primary btn-sm" onclick="aplicarFiltroTiendas()">
+      <i class="ti ti-filter"></i> Aplicar
+    </button>
+    <button class="btn btn-sm" onclick="limpiarFiltroTiendas()">
+      <i class="ti ti-x"></i> Limpiar
+    </button>
+    <span style="font-size:12px;color:var(--color-text-tertiary);margin-left:4px">
+      Sin filtro = todos los registros
+    </span>
+  </div>
+
+  <!-- KPIs dinámicos -->
+  <div class="metrics" style="grid-template-columns:repeat(4,1fr);margin-bottom:16px">
+    <div class="metric"><div class="metric-label">Total por cobrar</div><div class="metric-val red" id="kpi-cobrar">—</div></div>
+    <div class="metric"><div class="metric-label">Total por devolver</div><div class="metric-val amber" id="kpi-devolver">—</div></div>
+    <div class="metric"><div class="metric-label">Tiendas al día</div><div class="metric-val green" id="kpi-aldia">—</div></div>
+    <div class="metric"><div class="metric-label">Tiendas con saldo</div><div class="metric-val red" id="kpi-consaldo">—</div></div>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <span class="card-title">Registros por tienda</span>
+      <span style="font-size:12px;color:var(--color-text-secondary)">
+        Cada fila = un día de cobro · "Marcar pagado" actúa sobre ese día específico
+      </span>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Tienda / Ciclo</th>
+            <th>Fecha registro</th>
+            <th>Saldo del día</th>
+            <th>¿Pagado?</th>
+            <th>Acción</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="tbody-tiendas-caja"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Detalle de órdenes -->
+  <div id="detalle-tienda-caja" style="display:none;margin-top:16px">
+    <div class="card">
+      <div class="card-head">
+        <span class="card-title" id="titulo-detalle-tienda">Detalle</span>
+        <button class="btn btn-sm" onclick="cerrarDetalleTienda()"><i class="ti ti-x"></i> Cerrar</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Código</th><th>Destinatario</th><th>Distrito</th><th>Estado</th>
+              <th>Costo delivery</th><th>Pagado</th><th>Saldo</th><th>Fecha</th>
+            </tr>
+          </thead>
+          <tbody id="tbody-detalle-tienda-caja"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ══════════════════════════════════════════
+     TAB: LIQUIDEZ
+════════════════════════════════════════════ -->
+<div id="tab-liquidez" style="display:none">
+
+  <div class="page-title" style="margin-bottom:4px">Liquidez diaria</div>
+  <div class="page-sub">Bruto recaudado, pagos a motorizados, devoluciones y líquido neto</div>
+
+  <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+    <span style="font-size:13px;color:var(--color-text-secondary)">Filtrar por período:</span>
+    <div class="date-filter-wrap">
+      <i class="ti ti-calendar"></i>
+      <input type="date" id="filtro-liquidez-desde" onchange="renderLiquidez()" />
+    </div>
+    <span style="font-size:13px;color:var(--color-text-secondary)">hasta</span>
+    <div class="date-filter-wrap">
+      <i class="ti ti-calendar"></i>
+      <input type="date" id="filtro-liquidez-hasta" onchange="renderLiquidez()" />
+    </div>
+    <button class="btn btn-sm" onclick="limpiarFiltroLiquidez()">
+      <i class="ti ti-adjustments-horizontal"></i> Ver todos
+    </button>
+    <span style="font-size:12px;color:var(--color-text-tertiary)">Sin filtro = todos los registros</span>
+  </div>
+
+  <div class="metrics" style="grid-template-columns:repeat(4,1fr);margin-bottom:16px">
+    <div class="metric"><div class="metric-label">Bruto total</div><div class="metric-val blue" id="kpi-bruto">—</div></div>
+    <div class="metric"><div class="metric-label">Pagado motorizados</div><div class="metric-val amber" id="kpi-motos">—</div></div>
+    <div class="metric"><div class="metric-label">Devoluciones</div><div class="metric-val red" id="kpi-devol">—</div></div>
+    <div class="metric"><div class="metric-label">Líquido neto</div><div class="metric-val green" id="kpi-neto">—</div></div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><span class="card-title">Detalle por día</span></div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Fecha</th><th>Pedidos</th><th>Bruto recaudado</th>
+            <th>Pago motorizados</th><th>Devoluciones</th><th>Líquido neto</th>
+          </tr>
+        </thead>
+        <tbody id="tbody-liquidez"></tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+<!-- ══════════════════════════════════════════
+     TAB: MOTORIZADOS
+════════════════════════════════════════════ -->
+<div id="tab-motorizados" style="display:none">
+
+  <div class="page-title" style="margin-bottom:4px">Saldos con motorizados</div>
+  <div class="page-sub">Verde = les debemos · Rojo = nos deben</div>
+
+  <div class="metrics" style="grid-template-columns:repeat(3,1fr);margin-bottom:16px">
+    <div class="metric"><div class="metric-label">Total a pagar (les debemos)</div><div class="metric-val green">S/ 168.00</div></div>
+    <div class="metric"><div class="metric-label">Total a cobrar (nos deben)</div><div class="metric-val red">S/ 12.00</div></div>
+    <div class="metric"><div class="metric-label">Liquidaciones pendientes</div><div class="metric-val amber">4 días</div></div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><span class="card-title">Resumen por motorizado</span></div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Motorizado</th><th>Saldo total</th><th>Días pendientes</th><th>Estado</th><th></th></tr>
+        </thead>
+        <tbody id="tbody-motos-caja"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Detalle por día -->
+  <div id="detalle-moto-caja" style="display:none;margin-top:16px">
+    <div class="card">
+      <div class="card-head">
+        <span class="card-title" id="titulo-detalle-moto">Detalle</span>
+        <button class="btn btn-sm" onclick="cerrarDetalleMoto()"><i class="ti ti-x"></i> Cerrar</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Fecha</th><th>Entregas</th><th>Puntos cobrados</th>
+              <th>Adelantos</th><th>Saldo del día</th><th>¿Pagado?</th><th>Acción</th>
+            </tr>
+          </thead>
+          <tbody id="tbody-detalle-moto-caja"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<style>
+.caja-tab { padding:10px 20px; border:none; background:transparent; cursor:pointer; font-size:13px; color:var(--color-text-secondary); border-bottom:2px solid transparent; margin-bottom:-1.5px; display:inline-flex; align-items:center; gap:6px; transition:all .15s; }
+.caja-tab:hover { color:var(--color-text-primary); }
+.caja-tab.active { color:var(--color-blue); border-bottom-color:var(--color-blue); font-weight:500; }
+.badge-pago-si { background:#EAF3DE; color:#3B6D11; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:500; }
+.badge-pago-no { background:#FCEBEB; color:#A32D2D; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:500; }
+.btn-pagar { padding:4px 12px; font-size:12px; border-radius:6px; border:0.5px solid #B5D4F4; background:#E6F1FB; color:#185FA5; cursor:pointer; transition:background .15s; }
+.btn-pagar:hover { background:#C5DFF7; }
+</style>

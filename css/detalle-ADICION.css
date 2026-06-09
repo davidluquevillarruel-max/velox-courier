@@ -1,0 +1,13 @@
+/* ============================================================
+   ADICIÓN a detalle.css — agregar al final de tu detalle.css
+   Solo si no tienes ya estas clases
+   ============================================================ */
+
+/* Badge reprogramado (si no lo tienes ya) */
+.badge.reprogramado {
+  background: #F0EEFF;
+  color: #5240C7;
+}
+
+/* Valor resumen púrpura (reprogramados) */
+.resumen-val.purple { color: #5240C7; }

@@ -1,0 +1,183 @@
+<!-- ============================================================
+     pages/clientes.html — Clientes / Tiendas
+     La lógica vive en js/clientes.js
+     Las tiendas aquí registradas se sincronizan con el
+     selector de órdenes en pedidos.js automáticamente.
+     ============================================================ -->
+
+<div class="page-title">Clientes / Tiendas</div>
+<div class="page-sub">Las tiendas registradas aquí aparecen en el selector al crear nuevas órdenes</div>
+
+<!-- ── KPIs + botón agregar ── -->
+<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px;gap:12px;flex-wrap:wrap">
+  <div class="metrics" style="grid-template-columns:repeat(4,1fr);flex:1;min-width:0;margin-bottom:0">
+    <div class="metric"><div class="metric-label">Total a cobrar</div><div class="metric-val red" id="kpi-cli-cobrar">—</div></div>
+    <div class="metric"><div class="metric-label">Total a devolver</div><div class="metric-val amber" id="kpi-cli-devolver">—</div></div>
+    <div class="metric"><div class="metric-label">Tiendas al día</div><div class="metric-val green" id="kpi-cli-aldia">—</div></div>
+    <div class="metric"><div class="metric-label">Con saldo</div><div class="metric-val red" id="kpi-cli-saldo">—</div></div>
+  </div>
+  <div style="padding-top:2px">
+    <button class="btn btn-primary btn-sm" onclick="abrirModalTienda()">
+      <i class="ti ti-plus"></i> Agregar tienda
+    </button>
+  </div>
+</div>
+
+<!-- ── Tabla ── -->
+<div class="card">
+  <div class="card-head">
+    <span class="card-title">Balance por tienda cliente</span>
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      <div class="date-filter-wrap">
+        <i class="ti ti-calendar"></i>
+        <input type="date" id="filtro-fecha-clientes"
+               onchange="aplicarFiltroClientes()" />
+      </div>
+      <button class="btn btn-sm" onclick="limpiarFiltroClientes()">
+        <i class="ti ti-adjustments-horizontal"></i> Ver todos
+      </button>
+      <span style="font-size:12px;color:var(--color-text-tertiary)" id="lbl-fecha-clientes"></span>
+      <button class="btn btn-sm" onclick="exportarTiendas()">
+        <i class="ti ti-download"></i> Exportar
+      </button>
+    </div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Tienda · Ciclo de pago</th>
+          <th>Contacto</th>
+          <th>Pedidos</th>
+          <th>Entregados</th>
+          <th>No entregados</th>
+          <th>Reprogramados</th>
+          <th>Saldo financiero</th>
+          <th>Estado</th>
+          <th style="width:110px">Acciones</th>
+        </tr>
+      </thead>
+      <tbody id="tbody-clientes"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Lógica de saldo -->
+<div class="card" style="margin-top:16px">
+  <div class="card-head"><span class="card-title">Lógica de saldo</span></div>
+  <div class="saldo-info">
+    <strong>Costo cero:</strong> El cliente pagó el delivery directamente → saldo S/ 0.00.<br>
+    <strong>Saldo a cobrar:</strong> Delivery no pagado → se cobra al cliente.<br>
+    <strong>Devolución:</strong> El cliente pagó el producto y hay diferencia a favor → se devuelve el excedente.
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════
+     MODAL — Agregar / Editar tienda
+════════════════════════════════════════════ -->
+<div id="tienda-modal-overlay"
+     style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.35);z-index:1000;align-items:flex-start;justify-content:center;overflow-y:auto;padding:40px 0">
+  <div style="background:var(--color-bg-primary);border-radius:var(--radius-lg);padding:24px;width:500px;max-width:95vw;box-shadow:0 8px 32px rgba(0,0,0,0.18);margin:auto">
+
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+      <span style="font-size:15px;font-weight:500" id="tienda-modal-titulo">Agregar tienda cliente</span>
+      <button onclick="cerrarModalTienda()"
+              style="background:none;border:none;cursor:pointer;font-size:18px;color:var(--color-text-secondary)">
+        <i class="ti ti-x"></i>
+      </button>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:14px">
+
+      <div>
+        <label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px">Nombre de la tienda *</label>
+        <input id="f-tienda-nombre" class="search-box" style="width:100%" placeholder="Ej: Moda Perú SAC" />
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div>
+          <label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px">RUC * (11 dígitos)</label>
+          <input id="f-tienda-ruc" class="search-box" style="width:100%" placeholder="Ej: 20512345678" maxlength="11" />
+        </div>
+        <div>
+          <label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px">Teléfono</label>
+          <input id="f-tienda-telefono" class="search-box" style="width:100%" placeholder="Ej: 01-234-5678" />
+        </div>
+      </div>
+
+      <div>
+        <label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px">Correo de contacto *</label>
+        <input id="f-tienda-contacto" class="search-box" style="width:100%" placeholder="Ej: ventas@mitienda.pe" type="email" />
+      </div>
+
+      <div>
+        <label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px">Dirección</label>
+        <input id="f-tienda-direccion" class="search-box" style="width:100%" placeholder="Ej: Av. Brasil 450, Jesús María" />
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div>
+          <label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px">Ciclo de pago</label>
+          <select id="f-tienda-ciclo" class="filter-select" style="width:100%">
+            <option value="diario">Diario</option>
+            <option value="semanal">Semanal</option>
+            <option value="quincenal">Quincenal</option>
+            <option value="mensual">Mensual</option>
+          </select>
+        </div>
+        <div>
+          <label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px">Estado</label>
+          <select id="f-tienda-activa" class="filter-select" style="width:100%">
+            <option value="true">Activa</option>
+            <option value="false">Inactiva</option>
+          </select>
+        </div>
+      </div>
+
+      <div>
+        <label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px">Observaciones / notas internas</label>
+        <input id="f-tienda-obs" class="search-box" style="width:100%" placeholder="Ej: Paga los viernes, coordinar con Ana" />
+      </div>
+
+      <!-- Aviso de sincronización -->
+      <div style="background:#E6F1FB;border-radius:var(--radius-md);padding:10px 14px;font-size:12px;color:#185FA5;display:flex;gap:8px;align-items:flex-start">
+        <i class="ti ti-info-circle" style="font-size:16px;flex-shrink:0;margin-top:1px"></i>
+        <span>Al guardar, esta tienda aparecerá automáticamente en el selector al registrar nuevas órdenes.</span>
+      </div>
+
+      <div id="tienda-modal-error"
+           style="display:none;color:#A32D2D;font-size:12px;padding:8px 12px;background:#FCEBEB;border-radius:var(--radius-md)"></div>
+    </div>
+
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:20px">
+      <button class="btn btn-sm" onclick="cerrarModalTienda()">Cancelar</button>
+      <button class="btn btn-primary btn-sm" onclick="guardarTienda()" id="btn-guardar-tienda">
+        <i class="ti ti-plus"></i> Agregar
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════
+     MODAL — Confirmar eliminación
+════════════════════════════════════════════ -->
+<div id="tienda-confirm-overlay"
+     style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.35);z-index:1000;align-items:center;justify-content:center">
+  <div style="background:var(--color-bg-primary);border-radius:var(--radius-lg);padding:24px;width:400px;max-width:95vw;box-shadow:0 8px 32px rgba(0,0,0,0.18)">
+    <div style="font-size:15px;font-weight:500;margin-bottom:8px">Eliminar tienda</div>
+    <div style="font-size:13px;color:var(--color-text-secondary);margin-bottom:8px">
+      ¿Eliminar a <strong id="confirm-tienda-nombre"></strong> del sistema?
+    </div>
+    <div style="font-size:12px;color:#BA7517;background:#FAEEDA;padding:8px 12px;border-radius:var(--radius-md);margin-bottom:16px">
+      <i class="ti ti-alert-triangle"></i>
+      El historial de órdenes se conservará. La tienda dejará de aparecer en el selector de nuevas órdenes.
+    </div>
+    <div style="display:flex;justify-content:flex-end;gap:8px">
+      <button class="btn btn-sm" onclick="cerrarConfirmTienda()">Cancelar</button>
+      <button class="btn btn-danger btn-sm" onclick="ejecutarEliminarTienda()">
+        <i class="ti ti-trash"></i> Eliminar
+      </button>
+    </div>
+  </div>
+</div>
+

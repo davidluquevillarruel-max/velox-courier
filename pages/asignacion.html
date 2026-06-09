@@ -1,0 +1,99 @@
+<!-- ============================================================
+     pages/asignacion.html — Asignación de órdenes
+     Datos desde ORDENES (pedidos.js) y MOTORIZADOS (motorizados.js)
+     ============================================================ -->
+
+<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px;flex-wrap:wrap;gap:10px">
+  <div>
+    <div class="page-title">Asignación de órdenes</div>
+    <div class="page-sub">Asigna pedidos pendientes a los motorizados del día</div>
+  </div>
+  <!-- Botón Autoasignar -->
+  <button class="btn btn-primary" onclick="autoAsignar()">
+    <i class="ti ti-wand"></i> Autoasignar todos
+  </button>
+</div>
+
+<!-- Selector de motorizado -->
+<div style="margin-bottom:16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+  <select class="filter-select" id="moto-select"
+          style="min-width:260px" onchange="onMotoSelectChange()">
+    <!-- Se llena desde asignacion.js -->
+  </select>
+  <span style="font-size:13px;color:var(--color-text-secondary)">
+    Selecciona un motorizado para ver sus órdenes asignadas
+  </span>
+</div>
+
+<!-- Dos columnas -->
+<div class="assign-layout">
+
+  <!-- Pool: pendientes -->
+  <div class="assign-pool">
+    <div class="assign-head">
+      <i class="ti ti-package" aria-hidden="true"></i>
+      Pedidos pendientes de asignación
+      <span style="float:right;background:var(--color-blue-bg);color:var(--color-blue-text);
+                   padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600"
+            id="count-libre">0</span>
+    </div>
+    <div class="assign-list" id="pool-libre">
+      <!-- Se llena desde asignacion.js -->
+    </div>
+  </div>
+
+  <!-- Pool: asignados -->
+  <div class="assign-pool">
+    <div class="assign-head">
+      <i class="ti ti-motorbike" aria-hidden="true"></i>
+      Órdenes asignadas al motorizado
+      <span style="float:right;background:var(--color-green-bg);color:var(--color-green-text);
+                   padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600"
+            id="count-asig">0</span>
+    </div>
+    <div class="assign-list" id="pool-asig">
+      <div style="padding:20px;text-align:center;color:var(--color-text-tertiary);font-size:13px"
+           id="empty-asig">
+        Selecciona un motorizado para ver sus órdenes
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ══════════════════════════════════════════
+     MODAL — Reasignar a otro motorizado
+════════════════════════════════════════════ -->
+<div id="modal-reasignar"
+     style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.40);
+            z-index:1000;align-items:center;justify-content:center">
+  <div style="background:var(--color-bg-primary);border-radius:var(--radius-lg);
+              padding:28px;width:480px;max-width:95vw;max-height:80vh;
+              overflow-y:auto;box-shadow:var(--shadow-lg)">
+
+    <!-- Cabecera -->
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+      <span style="font-size:16px;font-weight:600">Reasignar orden</span>
+      <button onclick="cerrarModalReasignar()"
+              style="background:none;border:none;cursor:pointer;font-size:20px;
+                     color:var(--color-text-secondary);line-height:1">
+        <i class="ti ti-x"></i>
+      </button>
+    </div>
+
+    <!-- Info de la orden -->
+    <div id="reasignar-orden-info"
+         style="font-size:12px;color:var(--color-text-secondary);
+                background:var(--color-bg-secondary);padding:8px 12px;
+                border-radius:var(--radius-md);margin-bottom:16px">
+    </div>
+
+    <div style="font-size:13px;font-weight:500;margin-bottom:10px;color:var(--color-text-secondary)">
+      Selecciona el motorizado al que deseas reasignar:
+    </div>
+
+    <!-- Lista de motorizados disponibles -->
+    <div id="reasignar-lista"></div>
+
+  </div>
+</div>

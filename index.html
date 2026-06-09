@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Velox Courier - Admin</title>
+
+  <!-- ══════════════════════════════════════════
+       FUENTES EXTERNAS (Google Fonts)
+  ══════════════════════════════════════════ -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
+
+  <!-- ══════════════════════════════════════════
+       ICONOS EXTERNOS (CDN)
+  ══════════════════════════════════════════ -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
+
+  <!-- ══════════════════════════════════════════
+       ESTILOS PROPIOS (css/)
+  ══════════════════════════════════════════ -->
+  <link rel="stylesheet" href="css/base.css" />
+  <link rel="stylesheet" href="css/layout.css" />
+  <link rel="stylesheet" href="css/components.css" />
+  <link rel="stylesheet" href="css/tables.css" />
+  <link rel="stylesheet" href="css/charts.css" />
+  <link rel="stylesheet" href="css/detalle.css" />
+</head>
+<body>
+
+<div class="layout">
+
+  <!-- ══════════════════════════════════════════
+       SIDEBAR
+  ══════════════════════════════════════════ -->
+  <div class="sidebar">
+
+    <!-- Logo real de Velox Courier -->
+    <div class="logo">
+      <div class="logo-inner">
+        <img src="img/velox_logo.jpeg" alt="Velox Courier" class="logo-img" />
+      </div>
+    </div>
+
+    <!-- Navegación -->
+    <nav class="nav">
+      <div class="nav-item active" onclick="showPage('pedidos')">
+        <i class="ti ti-package" aria-hidden="true"></i> Todos los pedidos
+      </div>
+      <div class="nav-item" onclick="showPage('motorizados')">
+        <i class="ti ti-motorbike" aria-hidden="true"></i> Motorizados
+      </div>
+      <div class="nav-item" onclick="showPage('clientes')">
+        <i class="ti ti-building-store" aria-hidden="true"></i> Clientes / Tiendas
+      </div>
+      <div class="nav-item" onclick="showPage('evidencias')">
+        <i class="ti ti-chart-bar" aria-hidden="true"></i> Evidencias
+      </div>
+      <div class="nav-item" onclick="showPage('tarifas')">
+        <i class="ti ti-map-pin" aria-hidden="true"></i> Tarifas
+      </div>
+      <div class="nav-item" onclick="showPage('caja')">
+        <i class="ti ti-cash" aria-hidden="true"></i> Caja
+      </div>
+      <div class="nav-item" onclick="showPage('asignacion')">
+        <i class="ti ti-arrows-exchange" aria-hidden="true"></i> Asignación
+      </div>
+    </nav>
+
+    <!-- Footer con fecha -->
+    <div class="sidebar-footer">
+      <i class="ti ti-calendar" aria-hidden="true"></i>
+      Hoy: <span id="fecha-hoy"></span>
+    </div>
+
+  </div><!-- /sidebar -->
+
+  <!-- ══════════════════════════════════════════
+       ÁREA PRINCIPAL
+  ══════════════════════════════════════════ -->
+  <div class="main" id="main-content">
+    <!-- El contenido se carga dinámicamente desde pages/ -->
+  </div>
+
+</div><!-- /layout -->
+
+<!-- Notificación flotante global -->
+<div class="notification" id="notif"></div>
+
+<!-- ══════════════════════════════════════════
+     SCRIPTS
+══════════════════════════════════════════ -->
+<script src="js/utils.js"></script>
+<script src="js/tarifas.js"></script>
+<script src="js/caja.js"></script>
+<script src="js/motorizados.js"></script>
+<script src="js/pedidos.js"></script>
+<script src="js/clientes.js"></script>
+<script src="js/navigation.js"></script>
+<script src="js/filters.js"></script>
+<script src="js/asignacion.js"></script>
+<script src="js/charts.js"></script>
+
+</body>
+</html>

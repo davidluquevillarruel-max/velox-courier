@@ -1,0 +1,355 @@
+/* ============================================================
+   layout.css — Sidebar y estructura principal
+   CourierAdmin · Sistema de gestión interna
+   ============================================================ */
+
+.layout {
+  display: flex;
+  height: 100vh;
+  min-height: 700px;
+}
+
+/* ══════════════════════════════════════
+   SIDEBAR
+══════════════════════════════════════ */
+.sidebar {
+  width: 230px;
+  background: var(--color-bg-primary);
+  border-right: 1px solid var(--color-border-tertiary);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  box-shadow: var(--shadow-sm);
+}
+
+/* ── Logo ── */
+.logo {
+  padding: 22px 20px 18px;
+  border-bottom: 1px solid var(--color-border-tertiary);
+}
+
+.logo-inner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* Imagen real del logo */
+.logo-img {
+  height: 38px;
+  width: auto;
+  object-fit: contain;
+}
+
+/* Fallback: ícono si no hay imagen */
+.logo-icon {
+  font-size: 24px;
+  color: var(--color-blue);
+}
+
+.logo-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  letter-spacing: -0.2px;
+}
+
+.logo-sub {
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  margin-top: 1px;
+}
+
+/* ── Navegación ── */
+nav.nav {
+  padding: 14px 10px;
+  flex: 1;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  font-weight: 400;
+  margin-bottom: 2px;
+  transition: background 0.15s, color 0.15s;
+  user-select: none;
+}
+
+.nav-item i {
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.nav-item:hover {
+  background: var(--color-bg-secondary);
+  color: var(--color-text-primary);
+}
+
+/* Ítem activo — fondo azul, texto blanco */
+.nav-item.active {
+  background: var(--color-blue);
+  color: #ffffff;
+  font-weight: 500;
+}
+
+.nav-item.active i {
+  color: #ffffff;
+}
+
+/* ── Footer del sidebar ── */
+.sidebar-footer {
+  padding: 14px 20px;
+  border-top: 1px solid var(--color-border-tertiary);
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sidebar-footer i {
+  font-size: 14px;
+}
+
+/* ══════════════════════════════════════
+   ÁREA PRINCIPAL
+══════════════════════════════════════ */
+.main {
+  flex: 1;
+  overflow-y: auto;
+  padding: 28px 32px;
+  background: var(--color-bg-tertiary);
+}
+
+/* ── Páginas ── */
+.page {
+  display: none;
+}
+
+.page.active {
+  display: block;
+}
+
+.page-title {
+  font-size: 22px;
+  font-weight: 600;
+  margin-bottom: 4px;
+  color: var(--color-text-primary);
+  letter-spacing: -0.3px;
+}
+
+.page-sub {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  margin-bottom: 24px;
+}
+
+/* ══════════════════════════════════════
+   KPI CARDS (métricas superiores)
+   Diseño: fondo blanco, borde izquierdo
+   coloreado, número grande, ícono derecho
+══════════════════════════════════════ */
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+  margin-bottom: 24px;
+}
+
+.metric {
+  background: var(--color-bg-primary);
+  border-radius: var(--radius-lg);
+  padding: 18px 20px;
+  box-shadow: var(--shadow-sm);
+  border: 1px solid var(--color-border-tertiary);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  /* Borde izquierdo coloreado — se aplica por variante */
+  border-left: 4px solid transparent;
+  position: relative;
+}
+
+/* Variantes de color para el borde izquierdo */
+.metric.blue   { border-left-color: var(--metric-border-blue); }
+.metric.green  { border-left-color: var(--metric-border-green); }
+.metric.amber  { border-left-color: var(--metric-border-amber); }
+.metric.red    { border-left-color: var(--metric-border-red); }
+
+.metric-body {
+  flex: 1;
+}
+
+.metric-label {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  margin-bottom: 6px;
+  font-weight: 500;
+}
+
+.metric-val {
+  font-size: 26px;
+  font-weight: 600;
+  letter-spacing: -0.5px;
+  line-height: 1;
+}
+
+.metric-val.blue   { color: var(--color-blue); }
+.metric-val.green  { color: var(--color-green); }
+.metric-val.amber  { color: var(--color-amber); }
+.metric-val.red    { color: var(--color-red); }
+
+/* Ícono circular a la derecha */
+.metric-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  flex-shrink: 0;
+}
+
+.metric-icon.blue   { background: var(--color-blue-icon);  color: var(--color-blue-text); }
+.metric-icon.green  { background: var(--color-green-icon); color: var(--color-green-text); }
+.metric-icon.amber  { background: var(--color-amber-icon); color: var(--color-amber-text); }
+.metric-icon.red    { background: var(--color-red-icon);   color: var(--color-red-text); }
+
+/* ══════════════════════════════════════
+   FILTROS Y BARRA DE HERRAMIENTAS
+══════════════════════════════════════ */
+.filters {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+/* Input de búsqueda con ícono lupa integrado */
+.search-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.search-wrap .search-icon {
+  position: absolute;
+  left: 10px;
+  color: var(--color-text-tertiary);
+  font-size: 15px;
+  pointer-events: none;
+}
+
+.search-box {
+  padding: 8px 12px 8px 32px;
+  border-radius: var(--radius-xl);
+  border: 1px solid var(--color-border-secondary);
+  background: var(--color-bg-primary);
+  font-size: 13px;
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+  width: 220px;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  outline: none;
+}
+
+.search-box:focus {
+  border-color: var(--color-blue);
+  box-shadow: 0 0 0 3px var(--color-blue-bg);
+}
+
+.search-box::placeholder {
+  color: var(--color-text-tertiary);
+}
+
+/* Select con flecha custom */
+.filter-select {
+  padding: 8px 32px 8px 12px;
+  border-radius: var(--radius-xl);
+  border: 1px solid var(--color-border-secondary);
+  background: var(--color-bg-primary);
+  font-size: 13px;
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+  cursor: pointer;
+  outline: none;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2.5'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  transition: border-color 0.15s;
+}
+
+.filter-select:focus {
+  border-color: var(--color-blue);
+  box-shadow: 0 0 0 3px var(--color-blue-bg);
+}
+
+/* Filtro de fecha estilizado */
+.date-filter-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  background: var(--color-bg-primary);
+  border: 1px solid var(--color-border-secondary);
+  border-radius: var(--radius-xl);
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+
+.date-filter-wrap:focus-within {
+  border-color: var(--color-blue);
+  box-shadow: 0 0 0 3px var(--color-blue-bg);
+}
+
+.date-filter-wrap i {
+  color: var(--color-text-secondary);
+  font-size: 15px;
+}
+
+.date-filter-wrap input[type="date"] {
+  border: none;
+  background: transparent;
+  font-size: 13px;
+  font-family: var(--font-sans);
+  color: var(--color-text-primary);
+  outline: none;
+  cursor: pointer;
+}
+
+/* ══════════════════════════════════════
+   LAYOUT ESPECIALES
+══════════════════════════════════════ */
+
+/* Asignación — dos columnas */
+.assign-layout {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+/* Evidencias grid */
+.evidencia-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+/* Motorizados grid */
+.moto-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+  margin-bottom: 16px;
+}

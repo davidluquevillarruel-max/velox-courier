@@ -1,0 +1,40 @@
+/* ============================================================
+   tables.css — Estilos de tablas de datos
+   CourierAdmin · Sistema de gestión interna
+   ============================================================ */
+
+.table-wrap {
+  overflow-x: auto;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+thead th {
+  background: var(--color-bg-secondary);
+  padding: 11px 16px;
+  text-align: left;
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  border-bottom: 1px solid var(--color-border-tertiary);
+  white-space: nowrap;
+  letter-spacing: 0.1px;
+}
+
+tbody td {
+  padding: 11px 16px;
+  border-bottom: 1px solid var(--color-border-tertiary);
+  vertical-align: middle;
+}
+
+tbody tr:last-child td {
+  border-bottom: none;
+}
+
+tbody tr:hover td {
+  background: var(--color-bg-secondary);
+}

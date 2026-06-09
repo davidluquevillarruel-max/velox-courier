@@ -1,0 +1,45 @@
+<!-- ============================================================
+     pages/detalle-motorizado.html — Shell de detalle motorizado
+     Todos los datos y el render viven en js/motorizados.js
+     navigation.js llama a renderDetalleMoto(motoId) tras cargar.
+     ============================================================ -->
+
+<div id="detalle-root"></div>
+
+<!-- ══════════════════════════════════════════
+     MODAL — Reasignar orden a otro motorizado
+     Se activa desde el botón Reasignar en la tabla de órdenes
+════════════════════════════════════════════ -->
+<div id="modal-reasignar-det"
+     style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.40);
+            z-index:1000;align-items:center;justify-content:center">
+  <div style="background:var(--color-bg-primary);border-radius:var(--radius-lg);
+              padding:28px;width:480px;max-width:95vw;max-height:80vh;
+              overflow-y:auto;box-shadow:var(--shadow-lg)">
+
+    <!-- Cabecera -->
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <span style="font-size:16px;font-weight:600">Reasignar orden</span>
+      <button onclick="cerrarModalReasignarDetalle()"
+              style="background:none;border:none;cursor:pointer;font-size:20px;
+                     color:var(--color-text-secondary);line-height:1">
+        <i class="ti ti-x"></i>
+      </button>
+    </div>
+
+    <!-- Info orden -->
+    <div id="reasignar-det-info"
+         style="font-size:12px;color:var(--color-text-secondary);
+                background:var(--color-bg-secondary);padding:8px 12px;
+                border-radius:var(--radius-md);margin-bottom:16px">
+    </div>
+
+    <div style="font-size:13px;font-weight:500;margin-bottom:10px;color:var(--color-text-secondary)">
+      Selecciona el motorizado al que deseas reasignar:
+    </div>
+
+    <!-- Lista motorizados -->
+    <div id="reasignar-det-lista"></div>
+
+  </div>
+</div>

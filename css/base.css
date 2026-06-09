@@ -1,0 +1,89 @@
+/* ============================================================
+   base.css — Reset y variables globales
+   CourierAdmin · Sistema de gestión interna
+   ============================================================ */
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+:root {
+  /* ── Tipografía ── */
+  --font-sans: 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'Courier New', Courier, monospace;
+
+  /* ── Fondos ── */
+  --color-bg-primary:    #ffffff;
+  --color-bg-secondary:  #f7f8fa;
+  --color-bg-tertiary:   #f0f2f5;
+
+  /* ── Texto ── */
+  --color-text-primary:   #1a1a2e;
+  --color-text-secondary: #6b7280;
+  --color-text-tertiary:  #9ca3af;
+
+  /* ── Bordes ── */
+  --color-border-tertiary:  rgba(0,0,0,0.07);
+  --color-border-secondary: rgba(0,0,0,0.15);
+
+  /* ── Radios ── */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 18px;
+
+  /* ── Sombras ── */
+  --shadow-sm: 0 1px 4px rgba(0,0,0,0.06);
+  --shadow-md: 0 2px 12px rgba(0,0,0,0.08);
+  --shadow-lg: 0 8px 32px rgba(0,0,0,0.12);
+
+  /* ══════════════════════════════════════
+     SEMÁNTICOS DE COLOR
+     Cambiar aquí afecta todo el sistema
+  ══════════════════════════════════════ */
+
+  /* Verde — entregado / positivo */
+  --color-green:        #16a34a;
+  --color-green-bg:     #dcfce7;
+  --color-green-text:   #15803d;
+  --color-green-icon:   #bbf7d0;
+
+  /* Ámbar — en ruta / advertencia */
+  --color-amber:        #d97706;
+  --color-amber-bg:     #fef3c7;
+  --color-amber-text:   #92400e;
+  --color-amber-icon:   #fde68a;
+
+  /* Rojo — no entregado / error */
+  --color-red:          #dc2626;
+  --color-red-bg:       #fee2e2;
+  --color-red-text:     #991b1b;
+  --color-red-icon:     #fecaca;
+
+  /* Azul — total / acción principal */
+  --color-blue:         #2563eb;
+  --color-blue-bg:      #eff6ff;
+  --color-blue-text:    #1d4ed8;
+  --color-blue-icon:    #bfdbfe;
+
+  /* Morado — reprogramado */
+  --color-purple-bg:    #ede9fe;
+  --color-purple-text:  #5b21b6;
+
+  /* ── KPI card — borde izquierdo por color ── */
+  --metric-border-blue:   var(--color-blue);
+  --metric-border-green:  var(--color-green);
+  --metric-border-amber:  var(--color-amber);
+  --metric-border-red:    var(--color-red);
+}
+
+body {
+  font-family: var(--font-sans);
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-primary);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}

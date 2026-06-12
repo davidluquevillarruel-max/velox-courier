@@ -1,76 +1,88 @@
 <!-- ============================================================
-     pages/evidencias.html — Métricas y seguimiento
-     La lógica vive en js/charts.js → initEvidencias()
+     pages/evidencias.html — Dashboard de métricas
+     Todos los datos vienen de js/charts.js (API en tiempo real)
      ============================================================ -->
 
 <div class="page-title">Evidencias y métricas</div>
 <div class="page-sub">Seguimiento de rendimiento general del servicio</div>
 
-<!-- Selector de rango -->
+<!-- ── Selector de rango ── -->
 <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;flex-wrap:wrap">
   <span style="font-size:13px;color:var(--color-text-secondary)">Período:</span>
   <div style="display:flex;gap:4px">
-    <button class="btn btn-sm ev-rango active" onclick="setRangoEvidencias(this,'hoy')">Hoy</button>
-    <button class="btn btn-sm ev-rango" onclick="setRangoEvidencias(this,'semana')">Esta semana</button>
-    <button class="btn btn-sm ev-rango" onclick="setRangoEvidencias(this,'mes')">Este mes</button>
+    <button class="btn btn-sm ev-rango active" data-rango="todos" onclick="setRangoEvidencias(this,'todos')">Todos</button>
+    <button class="btn btn-sm ev-rango" data-rango="hoy" onclick="setRangoEvidencias(this,'hoy')">Hoy</button>
+    <button class="btn btn-sm ev-rango" data-rango="semana" onclick="setRangoEvidencias(this,'semana')">Esta semana</button>
+    <button class="btn btn-sm ev-rango" data-rango="mes" onclick="setRangoEvidencias(this,'mes')">Este mes</button>
   </div>
+
+  <span style="font-size:13px;color:var(--color-text-secondary);margin-left:8px">o rango personalizado:</span>
+  <div class="date-filter-wrap">
+    <i class="ti ti-calendar"></i>
+    <input type="date" id="ev-filtro-desde" onchange="aplicarFiltroEvidenciasFecha()" />
+  </div>
+  <span style="font-size:13px;color:var(--color-text-secondary)">hasta</span>
+  <div class="date-filter-wrap">
+    <i class="ti ti-calendar"></i>
+    <input type="date" id="ev-filtro-hasta" onchange="aplicarFiltroEvidenciasFecha()" />
+  </div>
+  <button class="btn btn-sm" onclick="limpiarFiltroEvidenciasFecha()">
+    <i class="ti ti-adjustments-horizontal"></i> Limpiar
+  </button>
 </div>
 
-<!-- KPIs principales -->
+<!-- ── KPIs principales ── -->
 <div class="metrics" style="grid-template-columns:repeat(5,1fr);margin-bottom:16px">
-  <div class="metric blue">
-    <div class="metric-body"><div class="metric-label">Pedidos totales</div><div class="metric-val blue" id="ev-total">—</div></div>
-    <div class="metric-icon blue"><i class="ti ti-package"></i></div>
+  <div class="metric">
+    <div class="metric-label">Pedidos totales</div>
+    <div class="metric-val blue" id="ev-total">—</div>
   </div>
-  <div class="metric green">
-    <div class="metric-body"><div class="metric-label">Entregados</div><div class="metric-val green" id="ev-entregados">—</div></div>
-    <div class="metric-icon green"><i class="ti ti-circle-check"></i></div>
+  <div class="metric">
+    <div class="metric-label">Entregados</div>
+    <div class="metric-val green" id="ev-entregados">—</div>
   </div>
-  <div class="metric red">
-    <div class="metric-body"><div class="metric-label">No entregados</div><div class="metric-val red" id="ev-no-entregados">—</div></div>
-    <div class="metric-icon red"><i class="ti ti-circle-x"></i></div>
+  <div class="metric">
+    <div class="metric-label">No entregados</div>
+    <div class="metric-val red" id="ev-no-entregados">—</div>
   </div>
-  <div class="metric green">
-    <div class="metric-body"><div class="metric-label">Tasa de entrega</div><div class="metric-val green" id="ev-tasa">—</div></div>
-    <div class="metric-icon green"><i class="ti ti-chart-line"></i></div>
+  <div class="metric">
+    <div class="metric-label">Tasa de entrega</div>
+    <div class="metric-val green" id="ev-tasa">—</div>
   </div>
-  <div class="metric blue">
-    <div class="metric-body"><div class="metric-label">Ingreso delivery</div><div class="metric-val blue" id="ev-ingreso">—</div></div>
-    <div class="metric-icon blue"><i class="ti ti-cash"></i></div>
+  <div class="metric">
+    <div class="metric-label">Ingreso delivery</div>
+    <div class="metric-val blue" id="ev-ingreso">—</div>
   </div>
 </div>
 
-<!-- KPIs secundarios -->
+<!-- ── KPIs secundarios ── -->
 <div class="evidencia-grid" style="grid-template-columns:repeat(4,1fr)">
   <div class="ev-card">
-    <div class="ev-title"><i class="ti ti-clock"></i> Tiempo prom. entrega</div>
-    <div class="ev-num" id="ev-tiempo">—</div>
-    <div class="ev-change" style="color:var(--color-text-tertiary);font-size:11px">Disponible con timestamps</div>
+    <div class="ev-title"><i class="ti ti-wallet" aria-hidden="true"></i> Pago a motorizados</div>
+    <div class="ev-num" id="ev-pagomotos">—</div>
   </div>
   <div class="ev-card">
-    <div class="ev-title"><i class="ti ti-alert-triangle"></i> Incidencias (ausente)</div>
+    <div class="ev-title"><i class="ti ti-alert-triangle" aria-hidden="true"></i> Incidencias (ausente)</div>
     <div class="ev-num" id="ev-ausentes">—</div>
   </div>
   <div class="ev-card">
-    <div class="ev-title"><i class="ti ti-refresh"></i> Reprogramados</div>
+    <div class="ev-title"><i class="ti ti-refresh" aria-hidden="true"></i> Reprogramados</div>
     <div class="ev-num" id="ev-reprog">—</div>
   </div>
   <div class="ev-card">
-    <div class="ev-title"><i class="ti ti-coin"></i> Saldo por cobrar</div>
+    <div class="ev-title"><i class="ti ti-coin" aria-hidden="true"></i> Saldo por cobrar</div>
     <div class="ev-num" id="ev-saldo">—</div>
   </div>
 </div>
 
-<!-- Gráfico de barras -->
+<!-- ── Gráfico de barras ── -->
 <div class="card" style="margin-top:16px">
   <div class="card-head">
     <span class="card-title">Entregas por día</span>
     <div style="display:flex;gap:10px;font-size:12px;align-items:center">
       <span style="display:flex;align-items:center;gap:4px"><span class="legend-dot green"></span>Entregados</span>
-      <span style="display:flex;align-items:center;gap:4px"><span class="legend-dot red"></span>No entregados</span>
-      <span style="display:flex;align-items:center;gap:4px">
-        <span style="width:10px;height:10px;border-radius:2px;background:var(--color-amber);display:inline-block"></span>Reprogramados
-      </span>
+      <span style="display:flex;align-items:center;gap:4px"><span class="legend-dot red"></span>No entregados / Ausentes</span>
+      <span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:2px;background:#EF9F27;display:inline-block"></span>Reprogramados</span>
     </div>
   </div>
   <div style="padding:16px 20px">
@@ -78,16 +90,23 @@
   </div>
 </div>
 
-<!-- Rendimiento por motorizado -->
+<!-- ── Rendimiento por motorizado ── -->
 <div class="card" style="margin-top:16px">
   <div class="card-head"><span class="card-title">Rendimiento por motorizado</span></div>
   <div class="table-wrap">
     <table>
       <thead>
         <tr>
-          <th>Motorizado</th><th>Zona</th><th>Pedidos</th>
-          <th>Entregados</th><th>No entregados</th><th>Reprogramados</th>
-          <th>Ausentes</th><th>Tasa entrega</th><th>Ingreso generado</th>
+          <th>Motorizado</th>
+          <th>Zona</th>
+          <th>Pedidos</th>
+          <th>Entregados</th>
+          <th>No entregados</th>
+          <th>Reprogramados</th>
+          <th>Ausentes</th>
+          <th>Tasa entrega</th>
+          <th>Ingreso generado</th>
+          <th></th>
         </tr>
       </thead>
       <tbody id="tbody-ev-motos"></tbody>
@@ -95,16 +114,22 @@
   </div>
 </div>
 
-<!-- Rendimiento por tienda -->
+<!-- ── Rendimiento por tienda ── -->
 <div class="card" style="margin-top:16px">
   <div class="card-head"><span class="card-title">Rendimiento por tienda cliente</span></div>
   <div class="table-wrap">
     <table>
       <thead>
         <tr>
-          <th>Tienda</th><th>Pedidos</th><th>Entregados</th>
-          <th>No entregados</th><th>Reprogramados</th><th>Tasa entrega</th>
-          <th>Facturado</th><th>Cobrado</th><th>Saldo</th>
+          <th>Tienda</th>
+          <th>Pedidos</th>
+          <th>Entregados</th>
+          <th>No entregados</th>
+          <th>Reprogramados</th>
+          <th>Tasa entrega</th>
+          <th>Facturado</th>
+          <th>Cobrado</th>
+          <th>Saldo</th>
         </tr>
       </thead>
       <tbody id="tbody-ev-tiendas"></tbody>
@@ -113,5 +138,16 @@
 </div>
 
 <style>
+.ev-rango { transition: background .15s; }
 .ev-rango.active { background: var(--color-blue); color: #fff; border-color: var(--color-blue); }
 </style>
+
+<!-- ══════════════════════════════════════════
+     MODAL — Detalle de motorizado (dashboard)
+════════════════════════════════════════════ -->
+<div id="ev-moto-modal-overlay"
+     style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.35);z-index:1000;align-items:flex-start;justify-content:center;overflow-y:auto;padding:40px 0">
+  <div style="background:var(--color-bg-primary);border-radius:var(--radius-lg);padding:24px;width:560px;max-width:95vw;box-shadow:0 8px 32px rgba(0,0,0,0.18);margin:auto">
+    <div id="ev-moto-modal-body"></div>
+  </div>
+</div>

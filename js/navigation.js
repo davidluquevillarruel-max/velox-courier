@@ -83,6 +83,7 @@ function abrirDetalleTienda(tiendaId) {
 
 /* ── Carga inicial ── */
 document.addEventListener('DOMContentLoaded', function() {
+  _mostrarUsuarioSesion();
   fetch('pages/pedidos.html')
     .then(function(r) { return r.text(); })
     .then(function(html) {
@@ -93,3 +94,29 @@ document.addEventListener('DOMContentLoaded', function() {
       console.error('Error carga inicial:', err);
     });
 });
+
+
+/* ════════════════════════════════════════════
+   SESIÓN DE USUARIO
+════════════════════════════════════════════ */
+function _mostrarUsuarioSesion() {
+  var raw = localStorage.getItem('velox_usuario');
+  if (!raw) return;
+  try {
+    var u = JSON.parse(raw);
+    var nombreEl = document.getElementById('usuario-nombre');
+    var rolEl    = document.getElementById('usuario-rol');
+    var avatarEl = document.getElementById('usuario-avatar');
+    if (nombreEl) nombreEl.textContent = u.nombre || u.email || 'Usuario';
+    if (rolEl)    rolEl.textContent    = u.rol || '';
+    if (avatarEl) {
+      var iniciales = (u.nombre || u.email || '?').trim().split(/\s+/).map(function(p){ return p[0]; }).slice(0,2).join('').toUpperCase();
+      avatarEl.textContent = iniciales;
+    }
+  } catch (e) { /* sesión inválida */ }
+}
+
+window.cerrarSesion = function() {
+  localStorage.removeItem('velox_usuario');
+  window.location.href = 'login.html';
+};

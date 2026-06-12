@@ -6,6 +6,7 @@ var TIENDAS_REGISTRO = [];
 var _tiendaEditId = null;
 var _tiendaElimId = null;
 var _filtroFechaClientes = '';
+var _filtroTiendaClientes = '';
 
 function _fechaDisplayCli(yyyymmdd) {
   if (!yyyymmdd) return '—';
@@ -66,7 +67,7 @@ window.renderClientes = async function() {
   var filas = await Promise.all(TIENDAS_REGISTRO.map(async function(t) {
     var s = fecha ? await _calcularStatsTienda(t.id, fecha) : null;
     /* Si hay filtro de fecha y la tienda no tiene órdenes ese día, no mostrarla */
-    if (fecha && (!s || s.total === 0)) return '';
+    if (fecha && (!s || s.total === 0)) return null;
     var porCobrar   = s ? (s.saldoNeto>0?s.saldoNeto:0) : 0;
     var porDevolver = s ? (s.saldoNeto<0?Math.abs(s.saldoNeto):0) : 0;
     var pedidos     = s ? s.total : 0;
@@ -81,7 +82,7 @@ window.renderClientes = async function() {
 
     var estadoCli = (porCobrar>0||porDevolver>0) ? (porCobrar>0?'Deuda':'Dev. pendiente') : 'Al día';
 
-    return '<tr>' +
+    var html = '<tr>' +
       '<td><div style="font-weight:500">' + t.nombre + '</div>' +
         '<div style="font-size:11px;color:var(--color-text-secondary)">' +
           (t.ruc?'RUC: '+t.ruc+' · ':'') + t.ciclo_pago +
@@ -100,14 +101,40 @@ window.renderClientes = async function() {
         '<button class="btn btn-sm" onclick="confirmarEliminarTienda(' + t.id + ')" style="color:#A32D2D;border-color:#F09595"><i class="ti ti-trash"></i></button>' +
       '</div></td>' +
     '</tr>';
+
+    return { nombre: t.nombre, html: html };
   }));
 
-  tbody.innerHTML = filas.join('') || '<tr><td colspan="9" style="text-align:center;padding:24px;color:var(--color-text-tertiary)">Sin tiendas registradas</td></tr>';
+  filas = filas.filter(Boolean);
+
+  /* ── Chips de tiendas (solo si hay filtro de fecha) ── */
+  var chipsContainer = document.getElementById('tiendas-chips-clientes');
+  if (chipsContainer) {
+    if (fecha && filas.length > 0) {
+      var chips = '<div style="display:flex;flex-wrap:wrap;gap:6px;padding:0 16px 14px">';
+      chips += '<button class="chip-tienda' + (_filtroTiendaClientes===''?' active':'') + '" onclick="filtrarPorTiendaClientes(\'\')">Todos</button>';
+      filas.forEach(function(f) {
+        var activo = _filtroTiendaClientes === f.nombre ? ' active' : '';
+        chips += '<button class="chip-tienda' + activo + '" onclick="filtrarPorTiendaClientes(\'' + f.nombre.replace(/'/g,"\\'") + '\')">' + f.nombre + '</button>';
+      });
+      chips += '</div>';
+      chipsContainer.innerHTML = chips;
+    } else {
+      chipsContainer.innerHTML = '';
+      _filtroTiendaClientes = '';
+    }
+  }
+
+  /* ── Filtrar por tienda seleccionada (si aplica) ── */
+  var filasVisibles = filas;
+  if (fecha && _filtroTiendaClientes) {
+    filasVisibles = filas.filter(function(f){ return f.nombre === _filtroTiendaClientes; });
+  }
+
+  tbody.innerHTML = filasVisibles.map(function(f){ return f.html; }).join('') ||
+    '<tr><td colspan="9" style="text-align:center;padding:24px;color:var(--color-text-tertiary)">Sin tiendas registradas</td></tr>';
 
   /* KPIs */
-  var totalCobrar=0, totalDev=0, alDia=0, conSaldo=0;
-  filas; /* ya calculado arriba en el map, recalcular desde TIENDAS */
-  /* Recalcular KPIs simples */
   var set = function(id,v){ var el=document.getElementById(id); if(el) el.textContent=v; };
   set('kpi-cli-cobrar',   '—');
   set('kpi-cli-devolver', '—');
@@ -115,16 +142,26 @@ window.renderClientes = async function() {
   set('kpi-cli-saldo',    '—');
 };
 
+/* ── Filtro por chip de tienda ── */
+window.filtrarPorTiendaClientes = function(nombre) {
+  _filtroTiendaClientes = nombre;
+  renderClientes();
+};
+
 window.aplicarFiltroClientes = function() {
   var inp = document.getElementById('filtro-fecha-clientes');
   _filtroFechaClientes = inp ? inp.value : '';
+  _filtroTiendaClientes = '';
   renderClientes();
 };
 
 window.limpiarFiltroClientes = function() {
   _filtroFechaClientes = '';
+  _filtroTiendaClientes = '';
   var inp = document.getElementById('filtro-fecha-clientes');
   if (inp) inp.value = '';
+  var chipsContainer = document.getElementById('tiendas-chips-clientes');
+  if (chipsContainer) chipsContainer.innerHTML = '';
   renderClientes();
 };
 

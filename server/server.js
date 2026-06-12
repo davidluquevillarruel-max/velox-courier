@@ -19,6 +19,7 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, '..')));
 
 /* ── Rutas de la API ── */
+app.use('/api/auth',         require('./routes/auth'));
 app.use('/api/ordenes',      require('./routes/ordenes'));
 app.use('/api/motorizados',  require('./routes/motorizados'));
 app.use('/api/tiendas',      require('./routes/tiendas'));

@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Velox Courier - Iniciar sesión</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:ital,wght@0,300;0,400;0,500;0,600;0,700;1,300;1,400;1,500;1,700&family=Ubuntu:ital,wght@0,300;0,400;0,500;0,700;1,300;1,400;1,500;1,700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css" />
+
+  <link rel="stylesheet" href="css/base.css" />
+  <link rel="stylesheet" href="css/layout.css" />
+  <link rel="stylesheet" href="css/components.css" />
+
+  <style>
+    body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      background: var(--color-bg-secondary);
+    }
+    .login-box {
+      background: var(--color-bg-primary);
+      border-radius: var(--radius-lg);
+      box-shadow: 0 8px 32px rgba(0,0,0,0.10);
+      padding: 36px 32px;
+      width: 380px;
+      max-width: 90vw;
+    }
+    .login-logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 24px;
+    }
+    .login-logo i {
+      font-size: 28px;
+      color: var(--color-blue);
+    }
+    .login-logo .name {
+      font-size: 18px;
+      font-weight: 700;
+    }
+    .login-logo .sub {
+      font-size: 12px;
+      color: var(--color-text-secondary);
+    }
+    .login-field { margin-bottom: 16px; }
+    .login-field label {
+      display: block;
+      font-size: 12px;
+      color: var(--color-text-secondary);
+      margin-bottom: 6px;
+    }
+    .login-field input {
+      width: 100%;
+      padding: 10px 14px;
+      border: 1px solid var(--color-border-secondary);
+      border-radius: var(--radius-md);
+      font-size: 14px;
+      font-family: inherit;
+      box-sizing: border-box;
+    }
+    .login-field input:focus {
+      outline: none;
+      border-color: var(--color-blue);
+      box-shadow: 0 0 0 3px var(--color-blue-bg);
+    }
+    .login-btn {
+      width: 100%;
+      padding: 11px;
+      background: var(--color-blue);
+      color: #fff;
+      border: none;
+      border-radius: var(--radius-md);
+      font-size: 14px;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+    .login-btn:hover { opacity: 0.9; }
+    .login-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+    .login-error {
+      background: var(--color-red-bg);
+      color: var(--color-red-text);
+      font-size: 13px;
+      padding: 10px 14px;
+      border-radius: var(--radius-md);
+      margin-bottom: 16px;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="login-box">
+    <div class="login-logo">
+      <i class="ti ti-truck-delivery" aria-hidden="true"></i>
+      <div>
+        <div class="name">Velox Courier</div>
+        <div class="sub">Panel de gestión</div>
+      </div>
+    </div>
+
+    <div class="login-error" id="login-error"></div>
+
+    <form id="login-form" onsubmit="return false;">
+      <div class="login-field">
+        <label for="login-email">Correo electrónico</label>
+        <input type="email" id="login-email" placeholder="admin@velox.pe" autocomplete="username" required />
+      </div>
+      <div class="login-field">
+        <label for="login-password">Contraseña</label>
+        <input type="password" id="login-password" placeholder="••••••••" autocomplete="current-password" required />
+      </div>
+      <button type="submit" class="login-btn" id="login-btn" onclick="hacerLogin()">
+        <i class="ti ti-login"></i> Iniciar sesión
+      </button>
+    </form>
+  </div>
+
+  <script src="js/login.js"></script>
+</body>
+</html>

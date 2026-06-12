@@ -13,12 +13,12 @@ echo  Iniciando Node.js...
 echo  No cierres esta ventana mientras uses el sistema.
 echo.
 echo  Abre tu navegador en:
-echo  http://localhost:3000/index.html
+echo  http://localhost:3000/login.html
 echo.
 echo  ==========================================
 echo.
 
-start "" "http://localhost:3000/index.html"
+start "" "http://localhost:3000/login.html"
 node server.js
 
 pause

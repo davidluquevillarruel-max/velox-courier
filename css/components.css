@@ -3,22 +3,19 @@
    CourierAdmin · Sistema de gestión interna
    ============================================================ */
 
-/* ══════════════════════════════════════
-   CARD GENÉRICA
-══════════════════════════════════════ */
+/* ── Card genérica ── */
 .card {
   background: var(--color-bg-primary);
-  border: 1px solid var(--color-border-tertiary);
+  border: 0.5px solid var(--color-border-tertiary);
   border-radius: var(--radius-lg);
   padding: 0;
   margin-bottom: 16px;
   overflow: hidden;
-  box-shadow: var(--shadow-sm);
 }
 
 .card-head {
-  padding: 16px 20px;
-  border-bottom: 1px solid var(--color-border-tertiary);
+  padding: 14px 16px;
+  border-bottom: 0.5px solid var(--color-border-tertiary);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -26,51 +23,42 @@
 
 .card-title {
   font-size: 14px;
-  font-weight: 600;
-  color: var(--color-text-primary);
+  font-weight: 500;
 }
 
-/* ══════════════════════════════════════
-   BOTONES
-══════════════════════════════════════ */
+/* ── Botones ── */
 .btn {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 8px 16px;
-  border-radius: var(--radius-xl);
-  border: 1px solid var(--color-border-secondary);
+  padding: 7px 14px;
+  border-radius: var(--radius-md);
+  border: 0.5px solid var(--color-border-secondary);
   background: transparent;
   cursor: pointer;
   font-size: 13px;
-  font-family: var(--font-sans);
-  font-weight: 500;
   color: var(--color-text-primary);
-  transition: background 0.15s, box-shadow 0.15s;
-  white-space: nowrap;
+  transition: background 0.15s;
 }
 
 .btn:hover {
   background: var(--color-bg-secondary);
-  box-shadow: var(--shadow-sm);
 }
 
 .btn-primary {
   background: var(--color-blue);
   color: #fff;
   border-color: var(--color-blue);
-  box-shadow: 0 1px 6px rgba(37,99,235,0.25);
 }
 
 .btn-primary:hover {
-  background: var(--color-blue-text);
-  box-shadow: 0 2px 10px rgba(37,99,235,0.35);
+  background: #0C447C;
 }
 
 .btn-danger {
   background: transparent;
   color: var(--color-red-text);
-  border-color: #fca5a5;
+  border-color: #F09595;
 }
 
 .btn-danger:hover {
@@ -78,23 +66,20 @@
 }
 
 .btn-sm {
-  padding: 5px 12px;
+  padding: 4px 10px;
   font-size: 12px;
 }
 
-/* ══════════════════════════════════════
-   BADGES DE ESTADO
-══════════════════════════════════════ */
+/* ── Badges de estado ── */
 .badge {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 3px 10px;
+  padding: 3px 9px;
   border-radius: 20px;
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 500;
   white-space: nowrap;
-  letter-spacing: 0.1px;
 }
 
 .badge.entregado    { background: var(--color-green-bg);  color: var(--color-green-text); }
@@ -102,47 +87,36 @@
 .badge.ausente      { background: var(--color-amber-bg);  color: var(--color-amber-text); }
 .badge.pendiente    { background: var(--color-blue-bg);   color: var(--color-blue-text); }
 .badge.asignado     { background: var(--color-purple-bg); color: var(--color-purple-text); }
-.badge.reprogramado { background: var(--color-purple-bg); color: var(--color-purple-text); }
 
 /* ── Colores de balance ── */
-.balance-pos  { color: var(--color-green);      font-weight: 600; }
-.balance-neg  { color: var(--color-red-text);   font-weight: 600; }
+.balance-pos  { color: var(--color-green);     font-weight: 500; }
+.balance-neg  { color: var(--color-red-text);  font-weight: 500; }
 .balance-zero { color: var(--color-text-secondary); }
 
-/* ══════════════════════════════════════
-   AVATAR CIRCULAR
-══════════════════════════════════════ */
+/* ── Avatar circular ── */
 .avatar {
-  width: 40px;
-  height: 40px;
+  width: 38px;
+  height: 38px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 500;
   flex-shrink: 0;
 }
 
-.av-blue   { background: var(--color-blue-icon);  color: var(--color-blue-text); }
-.av-teal   { background: #bbf7d0;                 color: #065f46; }
-.av-purple { background: var(--color-purple-bg);  color: var(--color-purple-text); }
-.av-amber  { background: var(--color-amber-icon); color: var(--color-amber-text); }
+.av-blue   { background: var(--color-blue-bg);   color: var(--color-blue); }
+.av-teal   { background: #E1F5EE;                color: #0F6E56; }
+.av-purple { background: var(--color-purple-bg); color: var(--color-purple-text); }
+.av-amber  { background: var(--color-amber-bg);  color: var(--color-amber-text); }
 
-/* ══════════════════════════════════════
-   TARJETA DE MOTORIZADO
-══════════════════════════════════════ */
+/* ── Tarjeta de motorizado ── */
 .moto-card {
   background: var(--color-bg-primary);
-  border: 1px solid var(--color-border-tertiary);
+  border: 0.5px solid var(--color-border-tertiary);
   border-radius: var(--radius-lg);
-  padding: 18px;
-  box-shadow: var(--shadow-sm);
-  transition: box-shadow 0.15s;
-}
-
-.moto-card:hover {
-  box-shadow: var(--shadow-md);
+  padding: 16px;
 }
 
 .moto-head {
@@ -154,7 +128,7 @@
 
 .moto-name {
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .moto-phone {
@@ -191,7 +165,7 @@
 .fill-red   { background: var(--color-red); }
 .fill-amber { background: var(--color-amber); }
 
-/* ── Mini stats ── */
+/* ── Mini stats (entregado / no entregado / ausente) ── */
 .stat-row {
   display: flex;
   gap: 8px;
@@ -201,14 +175,14 @@
 .stat-mini {
   flex: 1;
   text-align: center;
-  padding: 7px 6px;
+  padding: 6px;
   border-radius: var(--radius-md);
   font-size: 11px;
 }
 
 .stat-mini .num {
   font-size: 16px;
-  font-weight: 600;
+  font-weight: 500;
   display: block;
 }
 
@@ -216,69 +190,62 @@
 .stat-mini.r { background: var(--color-red-bg);   color: var(--color-red-text); }
 .stat-mini.a { background: var(--color-amber-bg); color: var(--color-amber-text); }
 
-/* ══════════════════════════════════════
-   EVIDENCIAS
-══════════════════════════════════════ */
+/* ── Evidencias ── */
 .ev-card {
   background: var(--color-bg-primary);
-  border: 1px solid var(--color-border-tertiary);
+  border: 0.5px solid var(--color-border-tertiary);
   border-radius: var(--radius-lg);
-  padding: 18px;
-  box-shadow: var(--shadow-sm);
+  padding: 16px;
 }
 
 .ev-title {
   font-size: 13px;
   font-weight: 500;
-  margin-bottom: 10px;
+  margin-bottom: 12px;
   color: var(--color-text-secondary);
 }
 
 .ev-num {
   font-size: 28px;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .ev-change {
   font-size: 12px;
-  margin-top: 4px;
+  margin-top: 2px;
 }
 
 .ev-up   { color: var(--color-green); }
 .ev-down { color: var(--color-red-text); }
 
-/* ══════════════════════════════════════
-   PANEL DE ASIGNACIÓN
-══════════════════════════════════════ */
+/* ── Panel de asignación ── */
 .assign-pool {
   background: var(--color-bg-primary);
-  border: 1px solid var(--color-border-tertiary);
+  border: 0.5px solid var(--color-border-tertiary);
   border-radius: var(--radius-lg);
   overflow: hidden;
-  box-shadow: var(--shadow-sm);
 }
 
 .assign-head {
-  padding: 14px 18px;
-  border-bottom: 1px solid var(--color-border-tertiary);
+  padding: 12px 16px;
+  border-bottom: 0.5px solid var(--color-border-tertiary);
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 500;
   background: var(--color-bg-secondary);
 }
 
 .assign-list {
-  padding: 10px;
+  padding: 8px;
 }
 
 .assign-item {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 9px 12px;
+  padding: 8px 10px;
   border-radius: var(--radius-md);
-  margin-bottom: 6px;
-  border: 1px solid var(--color-border-tertiary);
-  transition: background 0.15s;
+  margin-bottom: 4px;
+  border: 0.5px solid var(--color-border-tertiary);
 }
 
 .assign-item:hover {
@@ -286,86 +253,93 @@
 }
 
 .assign-info   { font-size: 12px; }
-.assign-code   { font-weight: 600; font-size: 13px; }
+.assign-code   { font-weight: 500; font-size: 13px; }
 .assign-dest   { color: var(--color-text-secondary); }
 
-/* ══════════════════════════════════════
-   NOTIFICACIÓN FLOTANTE
-══════════════════════════════════════ */
+/* ── Notificación flotante ── */
 .notification {
   position: fixed;
-  bottom: 24px;
-  right: 24px;
+  bottom: 20px;
+  right: 20px;
   background: var(--color-blue);
   color: #fff;
-  padding: 11px 18px;
-  border-radius: var(--radius-xl);
+  padding: 10px 16px;
+  border-radius: var(--radius-md);
   font-size: 13px;
-  font-weight: 500;
   display: none;
   z-index: 999;
-  box-shadow: 0 4px 16px rgba(37,99,235,0.30);
+  box-shadow: 0 2px 12px rgba(0,0,0,0.15);
 }
 
 /* ── Lógica de saldo (texto descriptivo) ── */
 .saldo-info {
-  padding: 16px 20px;
+  padding: 14px 16px;
   font-size: 13px;
   color: var(--color-text-secondary);
-  line-height: 1.8;
+  line-height: 1.7;
 }
 
 .saldo-info strong {
   color: var(--color-text-primary);
 }
 
-/* ══════════════════════════════════════
-   EMPTY STATE (tabla sin resultados)
-══════════════════════════════════════ */
-.empty-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 56px 24px;
-  text-align: center;
-}
-
-.empty-state-icon {
-  width: 72px;
-  height: 72px;
-  border-radius: 50%;
-  background: var(--color-bg-secondary);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 28px;
-  color: var(--color-text-tertiary);
-  margin-bottom: 16px;
-  position: relative;
-}
-
-/* Puntos decorativos alrededor del ícono */
-.empty-state-icon::before,
-.empty-state-icon::after {
-  content: '';
-  position: absolute;
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--color-border-secondary);
-}
-.empty-state-icon::before { top: -4px; right: 2px; }
-.empty-state-icon::after  { bottom: 0px; left: -6px; }
-
-.empty-state-title {
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--color-text-primary);
-  margin-bottom: 6px;
-}
-
-.empty-state-sub {
-  font-size: 13px;
+/* ── Chips de tienda (filtro adicional en Clientes) ── */
+.chip-tienda {
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border-secondary);
+  background: var(--color-bg-primary);
   color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: all 0.15s;
 }
+.chip-tienda:hover {
+  border-color: var(--color-blue);
+  color: var(--color-blue-text);
+}
+.chip-tienda.active {
+  background: var(--color-blue);
+  border-color: var(--color-blue);
+  color: #fff;
+  font-weight: 600;
+}
+
+/* ── Badges de estado de pago (Caja) ── */
+.badge-pago-si,
+.badge-pago-no {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.badge-pago-si {
+  background: var(--color-green-bg);
+  color: var(--color-green-text);
+}
+.badge-pago-no {
+  background: var(--color-red-bg);
+  color: var(--color-red-text);
+}
+
+/* ── Botón "Marcar pagado" (Caja) ── */
+.btn-pagar {
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-blue);
+  background: var(--color-blue);
+  color: #fff;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: opacity 0.15s;
+}
+.btn-pagar:hover { opacity: 0.85; }

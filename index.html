@@ -10,10 +10,12 @@
   ══════════════════════════════════════════ -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Poppins:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:ital,wght@0,300;0,400;0,500;0,600;0,700;1,300;1,400;1,500;1,700&family=Ubuntu:ital,wght@0,300;0,400;0,500;0,700;1,300;1,400;1,500;1,700&display=swap" rel="stylesheet">
 
   <!-- ══════════════════════════════════════════
        ICONOS EXTERNOS (CDN)
+       · Tabler Icons  → iconos de interfaz usados en el sistema
+       · Font Awesome  → iconos adicionales opcionales
   ══════════════════════════════════════════ -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
@@ -30,21 +32,35 @@
 </head>
 <body>
 
+<!-- ══════════════════════════════════════════
+     GUARD DE AUTENTICACIÓN
+     Si no hay sesión guardada, redirige a login.html
+════════════════════════════════════════════ -->
+<script>
+  (function() {
+    var sesion = localStorage.getItem('velox_usuario');
+    if (!sesion) {
+      window.location.href = 'login.html';
+    }
+  })();
+</script>
+
 <div class="layout">
 
   <!-- ══════════════════════════════════════════
-       SIDEBAR
+       SIDEBAR — navegación principal
   ══════════════════════════════════════════ -->
   <div class="sidebar">
-
-    <!-- Logo real de Velox Courier -->
     <div class="logo">
       <div class="logo-inner">
-        <img src="img/velox_logo.jpeg" alt="Velox Courier" class="logo-img" />
+        <i class="ti ti-truck-delivery logo-icon" aria-hidden="true"></i>
+        <div>
+          <div class="logo-name">VeloxCourierAdmin</div>
+          <div class="logo-sub">Panel de gestión</div>
+        </div>
       </div>
     </div>
 
-    <!-- Navegación -->
     <nav class="nav">
       <div class="nav-item active" onclick="showPage('pedidos')">
         <i class="ti ti-package" aria-hidden="true"></i> Todos los pedidos
@@ -69,16 +85,27 @@
       </div>
     </nav>
 
-    <!-- Footer con fecha -->
     <div class="sidebar-footer">
-      <i class="ti ti-calendar" aria-hidden="true"></i>
+      <div id="usuario-sesion" style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px">
+        <div style="display:flex;align-items:center;gap:8px;overflow:hidden">
+          <div style="width:28px;height:28px;border-radius:50%;background:var(--color-blue);color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0" id="usuario-avatar">—</div>
+          <div style="overflow:hidden">
+            <div style="font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" id="usuario-nombre">—</div>
+            <div style="font-size:10px;color:var(--color-text-tertiary);text-transform:capitalize" id="usuario-rol">—</div>
+          </div>
+        </div>
+        <button onclick="cerrarSesion()" title="Cerrar sesión" style="background:none;border:none;cursor:pointer;color:var(--color-text-secondary);font-size:16px;flex-shrink:0">
+          <i class="ti ti-logout" aria-hidden="true"></i>
+        </button>
+      </div>
       Hoy: <span id="fecha-hoy"></span>
     </div>
-
   </div><!-- /sidebar -->
 
   <!-- ══════════════════════════════════════════
-       ÁREA PRINCIPAL
+       ÁREA PRINCIPAL — contenedor de páginas
+       Cada página vive en pages/*.html
+       y se inyecta aquí por navigation.js
   ══════════════════════════════════════════ -->
   <div class="main" id="main-content">
     <!-- El contenido se carga dinámicamente desde pages/ -->
@@ -90,7 +117,12 @@
 <div class="notification" id="notif"></div>
 
 <!-- ══════════════════════════════════════════
-     SCRIPTS
+     SCRIPTS (orden importa)
+     utils     → debe ir primero (showNotif, fecha)
+     navigation → carga las páginas desde pages/
+     filters   → filterTable, filterByStatus
+     asignacion → asignar, desasignar
+     charts    → gráfico de barras
 ══════════════════════════════════════════ -->
 <script src="js/utils.js"></script>
 <script src="js/tarifas.js"></script>

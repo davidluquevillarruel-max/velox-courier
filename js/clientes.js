@@ -64,46 +64,89 @@ window.renderClientes = async function() {
   var tbody = document.getElementById('tbody-clientes');
   if (!tbody) return;
 
-  var filas = await Promise.all(TIENDAS_REGISTRO.map(async function(t) {
-    var s = fecha ? await _calcularStatsTienda(t.id, fecha) : null;
+  /* Detectar rol */
+  var _sesionCli  = (function(){ var r=localStorage.getItem('velox_usuario'); if(!r) return null; try{return JSON.parse(r);}catch(e){return null;} })();
+  var _esTienda   = _sesionCli && _sesionCli.rol === 'tienda';
+  var _nomTienda  = _esTienda ? (_sesionCli.nombre||'') : '';
+
+  /* Ocultar botón agregar si es tienda */
+  var _btnAgregar = document.querySelector('[onclick="abrirModalTienda()"]');
+  if (_btnAgregar) _btnAgregar.style.display = _esTienda ? 'none' : '';
+
+  /* Lista de tiendas a mostrar */
+  var _listaT = _esTienda
+    ? TIENDAS_REGISTRO.filter(function(t){ return t.nombre.trim().toUpperCase() === _nomTienda.trim().toUpperCase(); })
+    : TIENDAS_REGISTRO;
+
+  /* Cargar resumen de todas las tiendas en UNA sola query */
+  var resumenMap = {};
+  try {
+    var urlRes  = API + '/tiendas/resumen' + (fecha ? '?fecha=' + fecha : '');
+    var rRes    = await fetch(urlRes);
+    var resData = await rRes.json();
+    resData.forEach(function(d){ resumenMap[d.id_tienda] = d; });
+  } catch(e) { console.error('Error resumen:', e); }
+
+  var filas = _listaT.map(function(t) {
+    var s = resumenMap[t.id];
     /* Si hay filtro de fecha y la tienda no tiene órdenes ese día, no mostrarla */
-    if (fecha && (!s || s.total === 0)) return null;
-    var porCobrar   = s ? (s.saldoNeto>0?s.saldoNeto:0) : 0;
-    var porDevolver = s ? (s.saldoNeto<0?Math.abs(s.saldoNeto):0) : 0;
-    var pedidos     = s ? s.total : 0;
-    var entregados  = s ? s.entregados : 0;
-    var noEntregados= s ? s.noEntregados : 0;
-    var reprog      = s ? s.reprog : 0;
+    if (fecha && (!s || parseInt(s.total||0) === 0)) return null;
+    var porCobrar   = s ? parseFloat(s.por_cobrar||0)   : 0;
+    var porDevolver = s ? parseFloat(s.por_devolver||0) : 0;
+    var pedidos     = s ? parseInt(s.total||0)          : 0;
+    var entregados  = s ? parseInt(s.entregados||0)     : 0;
+    var noEntregados= s ? parseInt(s.no_entregados||0)  : 0;
+    var reprog      = s ? parseInt(s.reprogramados||0)  : 0;
 
     var saldoHTML = '';
     if (porCobrar>0)   saldoHTML += '<span class="balance-pos">S/ ' + porCobrar.toFixed(2) + '</span>';
     if (porDevolver>0) saldoHTML += (saldoHTML?'<br>':'') + '<span class="balance-neg">− S/ ' + porDevolver.toFixed(2) + '</span>';
     if (!saldoHTML)     saldoHTML  = '<span class="balance-zero">S/ 0.00</span>';
 
-    var estadoCli = (porCobrar>0||porDevolver>0) ? (porCobrar>0?'Deuda':'Dev. pendiente') : 'Al día';
+    var estadoCli = (porCobrar>0) ? 'Deuda' : (porDevolver>0) ? 'Dev. pendiente' : 'Al día';
+
+    /* Teléfono + Yape */
+    var telHTML = '';
+    if (t.telefono) {
+      var tel51 = '51' + t.telefono.replace(/[^0-9]/g,'');
+      telHTML += '<a href="https://wa.me/'+tel51+'" target="_blank" style="display:inline-flex;align-items:center;gap:4px;color:#25D366;text-decoration:none;font-weight:500"><i class="ti ti-brand-whatsapp"></i> '+t.telefono+'</a>';
+    } else {
+      telHTML += '<span style="color:var(--color-text-tertiary)">—</span>';
+    }
+    if (t.yape) telHTML += '<br><span style="font-size:11px;color:var(--color-text-secondary)"><i class="ti ti-currency-sol"></i> Yape: '+t.yape+'</span>';
+
+    /* Botón WA resumen */
+    var btnWA = t.telefono
+      ? '<td><button class="btn btn-sm" onclick="enviarResumenRapidoWP(this)" data-tel="'+t.telefono+'" data-nombre="'+t.nombre.replace(/"/g,' ')+'" title="Enviar resumen WA" style="background:#25D366;color:#fff;border-color:#25D366;padding:4px 8px"><i class="ti ti-brand-whatsapp"></i></button></td>'
+      : '<td style="color:var(--color-text-tertiary);font-size:12px">—</td>';
+
+    /* Acciones — tienda no puede editar/eliminar */
+    var accionesHTML = _esTienda
+      ? '<td><button class="btn btn-sm" onclick="abrirDetalleTienda(\'' + t.id + '\')" title="Ver detalle"><i class="ti ti-eye"></i></button></td>'
+      : '<td><div style="display:flex;gap:4px">' +
+          '<button class="btn btn-sm" onclick="abrirDetalleTienda(\'' + t.id + '\')" title="Ver detalle"><i class="ti ti-eye"></i></button>' +
+          '<button class="btn btn-sm" onclick="editarTienda(' + t.id + ')" title="Editar"><i class="ti ti-pencil"></i></button>' +
+          '<button class="btn btn-sm" onclick="confirmarEliminarTienda(' + t.id + ')" style="color:#A32D2D;border-color:#F09595"><i class="ti ti-trash"></i></button>' +
+        '</div></td>';
 
     var html = '<tr>' +
       '<td><div style="font-weight:500">' + t.nombre + '</div>' +
         '<div style="font-size:11px;color:var(--color-text-secondary)">' +
           (t.ruc?'RUC: '+t.ruc+' · ':'') + t.ciclo_pago +
         '</div></td>' +
-      '<td style="font-size:12px">' + (t.contacto||'—') +
-        (t.telefono?'<br><span style="color:var(--color-text-secondary)">'+t.telefono+'</span>':'') + '</td>' +
+      '<td style="font-size:12px">' + telHTML + '</td>' +
+      btnWA +
       '<td><strong>' + pedidos + '</strong></td>' +
       '<td style="color:var(--color-green);font-weight:600">' + entregados + '</td>' +
       '<td style="color:var(--color-red-text);font-weight:600">' + noEntregados + '</td>' +
       '<td style="color:var(--color-purple-text);font-weight:600">' + reprog + '</td>' +
       '<td>' + saldoHTML + '</td>' +
       '<td>' + _badgeEstadoTienda(estadoCli) + '</td>' +
-      '<td><div style="display:flex;gap:4px">' +
-        '<button class="btn btn-sm" onclick="abrirDetalleTienda(\'' + t.id + '\')" title="Ver detalle"><i class="ti ti-eye"></i></button>' +
-        '<button class="btn btn-sm" onclick="editarTienda(' + t.id + ')" title="Editar"><i class="ti ti-pencil"></i></button>' +
-        '<button class="btn btn-sm" onclick="confirmarEliminarTienda(' + t.id + ')" style="color:#A32D2D;border-color:#F09595"><i class="ti ti-trash"></i></button>' +
-      '</div></td>' +
+      accionesHTML +
     '</tr>';
 
     return { nombre: t.nombre, html: html };
-  }));
+  });
 
   filas = filas.filter(Boolean);
 
@@ -134,12 +177,20 @@ window.renderClientes = async function() {
   tbody.innerHTML = filasVisibles.map(function(f){ return f.html; }).join('') ||
     '<tr><td colspan="9" style="text-align:center;padding:24px;color:var(--color-text-tertiary)">Sin tiendas registradas</td></tr>';
 
-  /* KPIs */
+  /* KPIs — calcular desde resumenMap */
+  var totCobrar=0, totDevolver=0, alDia=0, conSaldo=0;
+  Object.values(resumenMap).forEach(function(s){
+    var c = parseFloat(s.por_cobrar||0);
+    var d = parseFloat(s.por_devolver||0);
+    if (c>0||d>0) conSaldo++; else alDia++;
+    totCobrar   += c;
+    totDevolver += d;
+  });
   var set = function(id,v){ var el=document.getElementById(id); if(el) el.textContent=v; };
-  set('kpi-cli-cobrar',   '—');
-  set('kpi-cli-devolver', '—');
-  set('kpi-cli-aldia',    '—');
-  set('kpi-cli-saldo',    '—');
+  set('kpi-cli-cobrar',   totCobrar>0   ? 'S/ '+totCobrar.toFixed(2)   : '—');
+  set('kpi-cli-devolver', totDevolver>0 ? 'S/ '+totDevolver.toFixed(2) : '—');
+  set('kpi-cli-aldia',    alDia);
+  set('kpi-cli-saldo',    conSaldo);
 };
 
 /* ── Filtro por chip de tienda ── */
@@ -152,6 +203,7 @@ window.aplicarFiltroClientes = function() {
   var inp = document.getElementById('filtro-fecha-clientes');
   _filtroFechaClientes = inp ? inp.value : '';
   _filtroTiendaClientes = '';
+  _marcarBotonActivoClientes(null);
   renderClientes();
 };
 
@@ -162,6 +214,39 @@ window.limpiarFiltroClientes = function() {
   if (inp) inp.value = '';
   var chipsContainer = document.getElementById('tiendas-chips-clientes');
   if (chipsContainer) chipsContainer.innerHTML = '';
+  _marcarBotonActivoClientes(null);
+  renderClientes();
+};
+
+function _hoyCli() {
+  var d = new Date();
+  var mm = ('0'+(d.getMonth()+1)).slice(-2);
+  var dd = ('0'+d.getDate()).slice(-2);
+  return d.getFullYear() + '-' + mm + '-' + dd;
+}
+
+function _ayerCli() {
+  var d = new Date();
+  d.setDate(d.getDate() - 1);
+  var mm = ('0'+(d.getMonth()+1)).slice(-2);
+  var dd = ('0'+d.getDate()).slice(-2);
+  return d.getFullYear() + '-' + mm + '-' + dd;
+}
+
+function _marcarBotonActivoClientes(tipo) {
+  var btnHoy  = document.getElementById('btn-hoy-clientes');
+  var btnAyer = document.getElementById('btn-ayer-clientes');
+  if (btnHoy)  btnHoy.classList.toggle('active', tipo === 'hoy');
+  if (btnAyer) btnAyer.classList.toggle('active', tipo === 'ayer');
+}
+
+window.filtroRapidoClientes = function(tipo) {
+  var fecha = tipo === 'hoy' ? _hoyCli() : _ayerCli();
+  _filtroFechaClientes = fecha;
+  _filtroTiendaClientes = '';
+  var inp = document.getElementById('filtro-fecha-clientes');
+  if (inp) inp.value = fecha;
+  _marcarBotonActivoClientes(tipo);
   renderClientes();
 };
 
@@ -185,6 +270,10 @@ window.renderDetalleTienda = async function(tiendaId) {
 
   var r = await fetch(API + '/tiendas/' + tiendaId + '/ordenes');
   var ordenes = await r.json();
+  window._detalleOrdenesCache    = ordenes;   /* referencia para enviarResumenWP */
+  window._detalleTiendaNombre    = tienda.nombre;
+  window._detalleTiendaTelefono  = tienda.telefono || '';
+  window._detalleMapaFechaCache  = null;       /* se llena después de agrupar */
 
   /* Calcular totales generales solo con estados que generan cobro */
   var _ec = ['entregado','ausente'];
@@ -207,6 +296,7 @@ window.renderDetalleTienda = async function(tiendaId) {
   if (_filtroFechaClientes && mapaFecha[_filtroFechaClientes]) {
     fechas = [_filtroFechaClientes].concat(fechas.filter(function(f){ return f !== _filtroFechaClientes; }));
   }
+  window._detalleMapaFechaCache = mapaFecha; /* para enviarResumenWP */
 
   var estadoT  = tot.saldo > 0 ? 'Deuda' : tot.saldo < 0 ? 'Dev. pendiente' : 'Al día';
   var badgeEstadoMap = { 'Al día':'entregado', 'Dev. pendiente':'ausente', 'Deuda':'no-entregado' };
@@ -229,6 +319,14 @@ window.renderDetalleTienda = async function(tiendaId) {
             '<span><span class="badge ' + (badgeEstadoMap[estadoT]||'pendiente') + '">' + estadoT + '</span></span>' +
           '</div>' +
         '</div>' +
+      '</div>' +
+      '<div style="display:flex;gap:8px;align-items:center">' +
+        (tienda.telefono
+          ? '<button class="btn btn-sm" style="background:#25D366;color:#fff;border-color:#25D366;font-weight:600" ' +
+              'onclick="enviarResumenWP(\'' + tienda.telefono + '\',\'' + tienda.nombre.replace(/'/g,"\\'") + '\')">' +
+              '<i class="ti ti-brand-whatsapp"></i> Enviar resumen' +
+            '</button>'
+          : '<span style="font-size:12px;color:var(--color-text-tertiary)">Sin teléfono registrado</span>') +
       '</div>' +
     '</div>' +
 
@@ -396,7 +494,15 @@ window.guardarTienda = async function() {
   var obs       = document.getElementById('f-tienda-obs').value.trim();
   var errEl     = document.getElementById('tienda-modal-error');
 
-  if (!nombre) { errEl.textContent='El nombre es obligatorio.'; errEl.style.display='block'; return; }
+  var validaciones = [
+    validarTexto(nombre, { obligatorio: true, min: 2, max: 100, nombreCampo: 'El nombre de la tienda' }),
+    validarRUC(ruc, { obligatorio: true }),
+    validarEmail(contacto, { obligatorio: true }),
+    validarTelefono(telefono),
+    validarTexto(direccion, { max: 200, nombreCampo: 'La dirección' }),
+    validarTexto(obs, { max: 300, nombreCampo: 'Las observaciones' }),
+  ];
+  if (!ejecutarValidaciones(validaciones, errEl)) return;
 
   var body   = { nombre, ruc, contacto, telefono, direccion, ciclo_pago: ciclo, activa, observaciones: obs };
   var url    = API + '/tiendas' + (_tiendaEditId ? '/' + _tiendaEditId : '');
@@ -433,6 +539,16 @@ window.ejecutarEliminarTienda = async function() {
   } catch(err) { console.error(err); }
 };
 
+window.abrirEliminarTiendaFisico = function() {
+  var t = TIENDAS_REGISTRO.find(function(x){ return x.id == _tiendaElimId; });
+  if (!t) return;
+  var idGuardado = t.id, nombreGuardado = t.nombre;
+  cerrarConfirmTienda();
+  abrirConfirmarEliminacionFisica(nombreGuardado, API + '/tiendas/' + idGuardado + '/permanente', function() {
+    renderClientes();
+  });
+};
+
 window.exportarTiendas = function() {
   var csv = 'Nombre,RUC,Contacto,Teléfono,Dirección,Ciclo\n';
   TIENDAS_REGISTRO.forEach(function(t) {
@@ -444,9 +560,156 @@ window.exportarTiendas = function() {
 };
 
 window.initClientes = function() {
-  /* NO resetear _filtroFechaClientes para mantener la fecha al volver del detalle */
+  /* Si no hay filtro previo (primera vez), arrancar con hoy */
+  if (!_filtroFechaClientes) {
+    _filtroFechaClientes = _hoyCli();
+  }
   renderClientes();
-  /* Restaurar el input de fecha si existe */
+  /* Restaurar el input de fecha y el botón activo */
   var inp = document.getElementById('filtro-fecha-clientes');
-  if (inp && _filtroFechaClientes) inp.value = _filtroFechaClientes;
+  if (inp) inp.value = _filtroFechaClientes;
+  var esHoy  = _filtroFechaClientes === _hoyCli();
+  var esAyer = _filtroFechaClientes === _ayerCli();
+  _marcarBotonActivoClientes(esHoy ? 'hoy' : esAyer ? 'ayer' : null);
+};
+
+/* ════════════════════════════════════════════
+   ENVIAR RESUMEN POR WHATSAPP
+   Genera un mensaje de texto formateado con el
+   resumen del día activo (o de todas las fechas)
+   y abre WhatsApp con ese mensaje pre-cargado.
+════════════════════════════════════════════ */
+window.enviarResumenWP = function(telefono, nombreTienda) {
+  var ordenes  = window._detalleOrdenesCache || [];
+  var mapaFecha = window._detalleMapaFechaCache || {};
+  var _ec = ['entregado','ausente'];
+
+  /* Determinar qué fecha mostrar — la activa en el tab, o todas */
+  var fechas = Object.keys(mapaFecha).sort().reverse();
+  if (_filtroFechaClientes && mapaFecha[_filtroFechaClientes]) {
+    fechas = [_filtroFechaClientes].concat(fechas.filter(function(f){ return f !== _filtroFechaClientes; }));
+  }
+
+  /* Usar solo la fecha activa (primera tab) si existe */
+  var fechaActiva = fechas[0];
+  var ordsDia = fechaActiva ? (mapaFecha[fechaActiva] || []) : ordenes;
+
+  var diaDeliv = ordsDia.reduce(function(s,o){ return s+(_ec.includes(o.estado)?parseFloat(o.delivery_total||0):0); }, 0);
+  var diaCobr  = ordsDia.reduce(function(s,o){ return s+(_ec.includes(o.estado)?parseFloat(o.monto_cobrado||0):0);  }, 0);
+  var diaSaldo = diaDeliv - diaCobr;
+
+  var entregados   = ordsDia.filter(function(o){ return o.estado === 'entregado'; }).length;
+  var reprogramados= ordsDia.filter(function(o){ return o.estado === 'reprogramado'; }).length;
+  var noEntregados = ordsDia.filter(function(o){ return o.estado === 'no-entregado'; }).length;
+
+  var fechaLabel = fechaActiva ? _fechaDisplayCli(fechaActiva) : 'Período completo';
+
+  /* Construir mensaje formateado */
+  var emoji = diaSaldo > 0 ? '🟢' : diaSaldo < 0 ? '🔴' : '⚪';
+  var saldoTexto = diaSaldo > 0
+    ? 'Deuda pendiente: S/ ' + diaSaldo.toFixed(2)
+    : diaSaldo < 0
+    ? 'A devolver a tienda: S/ ' + Math.abs(diaSaldo).toFixed(2)
+    : 'Saldo en cero ✅';
+
+  var msg = '📦 *Velox Courier — ' + (nombreTienda || window._detalleTiendaNombre) + '*\n';
+  msg    += '📅 ' + fechaLabel + '\n';
+  msg    += '─────────────────────\n';
+  msg    += '✅ Entregados: *' + entregados + '*\n';
+  if (reprogramados > 0) msg += '🔄 Reprogramados: *' + reprogramados + '*\n';
+  if (noEntregados  > 0) msg += '❌ No entregados: *' + noEntregados  + '*\n';
+  msg    += '─────────────────────\n';
+  msg    += '💰 Delivery cobrable: *S/ ' + diaDeliv.toFixed(2) + '*\n';
+  msg    += '💵 Cobrado: *S/ ' + diaCobr.toFixed(2) + '*\n';
+  msg    += emoji + ' ' + saldoTexto + '\n';
+  msg    += '─────────────────────\n';
+  msg    += '_Detalle de órdenes:_\n';
+
+  ordsDia.forEach(function(o) {
+    var estadoEmoji = {
+      'entregado':    '✅',
+      'reprogramado': '🔄',
+      'no-entregado': '❌',
+      'ausente':      '⚠️',
+      'cancelado':    '🚫',
+      'en-proceso':   '🚚',
+    }[o.estado] || '📋';
+
+    var linea = estadoEmoji + ' #' + o.codigo + ' · ' + (o.dest_nombre || '—') + ' · ' + o.distrito;
+    if (_ec.includes(o.estado) && parseFloat(o.delivery_total||0) > 0) {
+      linea += ' · S/' + parseFloat(o.delivery_total).toFixed(2);
+    }
+    msg += linea + '\n';
+  });
+
+  msg += '\n_Enviado desde Velox Courier_';
+
+  /* Normalizar teléfono: código Perú 51 + 9 dígitos */
+  var tel = (telefono || window._detalleTiendaTelefono || '').replace(/[^0-9]/g, '');
+  if (tel.length === 9) tel = '51' + tel;
+
+  var url = tel
+    ? 'https://wa.me/' + tel + '?text=' + encodeURIComponent(msg)
+    : 'https://wa.me/?text=' + encodeURIComponent(msg);
+
+  window.open(url, '_blank');
+};
+
+/* ── WhatsApp rápido desde tabla ── */
+window.enviarResumenRapidoWP = async function(btn) {
+  var telefono     = btn.getAttribute('data-tel');
+  var nombreTienda = btn.getAttribute('data-nombre');
+  try {
+    var t = TIENDAS_REGISTRO.find(function(x){ return x.nombre === nombreTienda; });
+    if (!t) return;
+    var fecha = _filtroFechaClientes || _hoyCli();
+    var r = await fetch(API + '/tiendas/' + t.id + '/ordenes?fecha=' + fecha);
+    var ordenes = await r.json();
+    if (!ordenes.length) {
+      if (typeof showNotif==='function') showNotif('Sin ordenes para ' + nombreTienda + ' en esa fecha');
+      return;
+    }
+    var _ec = ['entregado','ausente'];
+    var diaDeliv = ordenes.reduce(function(s,o){ return s+(_ec.includes(o.estado)?parseFloat(o.delivery_total||0):0); },0);
+    var diaCobr  = ordenes.reduce(function(s,o){ return s+(_ec.includes(o.estado)?parseFloat(o.monto_cobrado||0):0);  },0);
+    var diaSaldo = diaDeliv - diaCobr;
+    var entregados    = ordenes.filter(function(o){ return o.estado==='entregado'; }).length;
+    var reprogramados = ordenes.filter(function(o){ return o.estado==='reprogramado'; }).length;
+    var noEntregados  = ordenes.filter(function(o){ return o.estado==='no-entregado'; }).length;
+    var ausentes      = ordenes.filter(function(o){ return o.estado==='ausente'; }).length;
+    var signo      = diaSaldo>0 ? '(+)' : diaSaldo<0 ? '(-)' : '';
+    var saldoTexto = diaSaldo>0 ? 'Deuda pendiente: S/ '+diaSaldo.toFixed(2)
+                   : diaSaldo<0 ? 'A devolver: S/ '+Math.abs(diaSaldo).toFixed(2) : 'Saldo en cero';
+    var msg = '*Velox Courier - ' + nombreTienda + '*\n';
+    msg    += 'Fecha: ' + _fechaDisplayCli(fecha) + '\n';
+    msg    += '─────────────────────\n';
+    msg    += 'Entregados: ' + entregados + '\n';
+    if (ausentes>0)      msg += 'Ausentes: '      + ausentes      + '\n';
+    if (reprogramados>0) msg += 'Reprogramados: ' + reprogramados + '\n';
+    if (noEntregados>0)  msg += 'No entregados: ' + noEntregados  + '\n';
+    msg    += '─────────────────────\n';
+    msg    += 'Delivery cobrable: S/ ' + diaDeliv.toFixed(2) + '\n';
+    msg    += 'Cobrado: S/ '           + diaCobr.toFixed(2)  + '\n';
+    msg    += signo + ' ' + saldoTexto + '\n';
+    msg    += '─────────────────────\n';
+    msg    += 'Detalle de ordenes:\n';
+    ordenes.forEach(function(o) {
+      var etiqueta = {
+        'entregado':'[ENTREGADO]','no-entregado':'[NO ENTREGADO]','ausente':'[AUSENTE]',
+        'reprogramado':'[REPROGRAMADO]','cancelado':'[CANCELADO]','en-proceso':'[EN PROCESO]',
+        'cambio':'[CAMBIO]','devolucion':'[DEVOLUCION]','recojo':'[RECOJO]'
+      }[o.estado] || '['+o.estado.toUpperCase()+']';
+      var delivery = _ec.includes(o.estado) ? (parseFloat(o.delivery_total||0)||parseFloat(o.delivery_base||0)+parseFloat(o.monto_adicional||0)) : 0;
+      var linea = etiqueta + ' #' + o.codigo + ' - ' + (o.dest_nombre||'—') + ' - ' + o.distrito;
+      if (_ec.includes(o.estado) && delivery>0) linea += ' - S/' + delivery.toFixed(2);
+      msg += linea + '\n';
+    });
+    msg += '\nEnviado desde Velox Courier';
+    var tel = (telefono||'').replace(/[^0-9]/g,'');
+    if (tel.length===9) tel='51'+tel;
+    window.open('https://wa.me/'+tel+'?text='+encodeURIComponent(msg),'_blank');
+  } catch(err) {
+    console.error('Error WA:',err);
+    if (typeof showNotif==='function') showNotif('Error al generar resumen');
+  }
 };

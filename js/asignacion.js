@@ -1,6 +1,8 @@
 /* ============================================================
    asignacion.js — Asignación y reasignación de órdenes
-   Fuente de datos: ORDENES (pedidos.js) + MOTORIZADOS (motorizados.js)
+   Carga sus propios datos desde la API (no depende de haber
+   visitado antes la página de Pedidos) y cada acción hace un
+   PATCH real contra la BD, igual que el resto del sistema.
    ============================================================ */
 
 /* ════════════════════════════════════════════
@@ -36,19 +38,57 @@ var ZONA_DISTRITO = {
 };
 
 /* ════════════════════════════════════════════
-   VARIABLES INTERNAS
+   DATOS — cargados desde la API
 ════════════════════════════════════════════ */
-var _reasignandoOrdenId = null; /* ID de la orden en proceso de reasignación */
+var ORDENES_ASIG     = [];
+var MOTORIZADOS_ASIG = [];
+var _reasignandoOrdenId = null;
+
+async function _cargarDatosAsignacion() {
+  try {
+    var [rO, rM] = await Promise.all([
+      fetch(API + '/ordenes'),
+      fetch(API + '/motorizados'),
+    ]);
+    ORDENES_ASIG     = await rO.json();
+    MOTORIZADOS_ASIG = await rM.json();
+  } catch (err) {
+    console.error('Error cargando datos de asignación:', err);
+    ORDENES_ASIG = []; MOTORIZADOS_ASIG = [];
+  }
+}
 
 /* ════════════════════════════════════════════
    INIT
 ════════════════════════════════════════════ */
-window.initAsignacion = function() {
+window.initAsignacion = async function() {
+  var pool = document.getElementById('pool-libre');
+  if (pool) pool.innerHTML = '<div style="padding:24px;text-align:center;color:var(--color-text-tertiary);font-size:13px"><i class="ti ti-loader"></i> Cargando...</div>';
+
+  await _cargarDatosAsignacion();
   _poblarSelectMotorizados();
+
+  /* Si es motorizado, pre-seleccionar su nombre y bloquear el select */
+  var sesion = _obtenerSesionAsig();
+  if (sesion && sesion.rol === 'motorizado' && sesion.nombre) {
+    var sel = document.getElementById('moto-select');
+    if (sel) {
+      sel.value    = sesion.nombre;
+      sel.disabled = true; /* no puede cambiar a otro motorizado */
+    }
+  }
+
   _renderPoolPendientes();
   _renderPoolAsignados();
   _actualizarContadores();
 };
+
+/* Helper para obtener sesión dentro de asignacion.js */
+function _obtenerSesionAsig() {
+  var raw = localStorage.getItem('velox_usuario');
+  if (!raw) return null;
+  try { return JSON.parse(raw); } catch(e) { return null; }
+}
 
 /* ════════════════════════════════════════════
    HELPERS
@@ -60,20 +100,17 @@ function _hoyAsig() {
   return d.getFullYear() + '-' + mm + '-' + dd;
 }
 
-/* Pendiente = sin motorizado asignado (independientemente del estado)
-   Un reprogramado ya asignado NO aparece aquí */
+/* Pendiente = sin motorizado asignado (independientemente del estado) */
 function _getOrdenesPendientes() {
-  if (typeof ORDENES === 'undefined') return [];
-  return ORDENES.filter(function(o) {
+  return ORDENES_ASIG.filter(function(o) {
     return !o.motorizado || o.motorizado.trim() === '';
   });
 }
 
 /* Ordenes asignadas al motorizado seleccionado */
 function _getOrdenesAsignadas(nombreMoto) {
-  if (!nombreMoto || typeof ORDENES === 'undefined') return [];
-  return ORDENES.filter(function(o) {
-    /* Asignada = tiene motorizado, sin importar estado activo */
+  if (!nombreMoto) return [];
+  return ORDENES_ASIG.filter(function(o) {
     return o.motorizado && o.motorizado.trim().toUpperCase() === nombreMoto.trim().toUpperCase()
       && o.estado !== 'entregado'
       && o.estado !== 'cancelado';
@@ -97,10 +134,10 @@ function _badgeEstadoAsig(estado) {
 ════════════════════════════════════════════ */
 function _poblarSelectMotorizados() {
   var sel = document.getElementById('moto-select');
-  if (!sel || typeof MOTORIZADOS === 'undefined') return;
+  if (!sel) return;
   var valorActual = sel.value;
   sel.innerHTML = '<option value="">Seleccionar motorizado...</option>';
-  MOTORIZADOS.filter(function(m){ return m.activo; }).forEach(function(m) {
+  MOTORIZADOS_ASIG.filter(function(m){ return m.activo; }).forEach(function(m) {
     var opt = document.createElement('option');
     opt.value       = m.nombre;
     opt.textContent = m.nombre + (m.zona ? ' — ' + m.zona : '');
@@ -136,13 +173,13 @@ function _renderPoolPendientes() {
     item.dataset.id = o.id;
     item.innerHTML =
       '<div class="assign-info">' +
-        '<div class="assign-code">#' + o.id + ' ' + reprogTag + '</div>' +
+        '<div class="assign-code">#' + o.codigo + ' ' + reprogTag + '</div>' +
         '<div class="assign-dest" style="font-size:11px">' + o.tienda + '</div>' +
         '<div class="assign-dest" style="font-size:11px;color:var(--color-text-tertiary)">' +
-          o.distrito + (o.dest ? ' · ' + o.dest : '') +
+          o.distrito + (o.dest_nombre ? ' · ' + o.dest_nombre : '') +
         '</div>' +
       '</div>' +
-      '<button class="btn btn-primary btn-sm" onclick="asignarOrden(\'' + o.id + '\')">' +
+      '<button class="btn btn-primary btn-sm" onclick="asignarOrden(' + o.id + ')">' +
         'Asignar <i class="ti ti-arrow-right"></i>' +
       '</button>';
     pool.appendChild(item);
@@ -160,7 +197,6 @@ function _renderPoolAsignados() {
   var sel        = document.getElementById('moto-select');
   var nombreMoto = sel ? sel.value : '';
 
-  /* Limpiar ítems anteriores pero no el mensaje vacío */
   Array.from(pool.querySelectorAll('.assign-item')).forEach(function(el){ el.remove(); });
 
   if (!nombreMoto) {
@@ -186,17 +222,17 @@ function _renderPoolAsignados() {
     item.dataset.id = o.id;
     item.innerHTML =
       '<div class="assign-info" style="flex:1">' +
-        '<div class="assign-code">#' + o.id + '</div>' +
+        '<div class="assign-code">#' + o.codigo + '</div>' +
         '<div class="assign-dest" style="font-size:11px">' + o.tienda + ' · ' + o.distrito + '</div>' +
         '<div style="margin-top:3px">' + _badgeEstadoAsig(o.estado) + '</div>' +
       '</div>' +
       '<div style="display:flex;gap:4px;flex-shrink:0">' +
         '<button class="btn btn-sm" style="font-size:11px;padding:4px 8px;color:var(--color-amber-text);border-color:#fcd34d" ' +
-          'onclick="abrirReasignar(\'' + o.id + '\')" title="Reasignar a otro motorizado">' +
+          'onclick="abrirReasignar(' + o.id + ')" title="Reasignar a otro motorizado">' +
           '<i class="ti ti-arrows-exchange"></i> Reasignar' +
         '</button>' +
         '<button class="btn btn-danger btn-sm" style="font-size:11px;padding:4px 8px" ' +
-          'onclick="desasignarOrden(\'' + o.id + '\')" title="Quitar asignación">' +
+          'onclick="desasignarOrden(' + o.id + ')" title="Quitar asignación">' +
           '<i class="ti ti-x"></i>' +
         '</button>' +
       '</div>';
@@ -206,8 +242,9 @@ function _renderPoolAsignados() {
 
 /* ════════════════════════════════════════════
    ASIGNAR — asigna una orden al motorizado seleccionado
+   Hace PATCH real contra la BD (tabla ordenes)
 ════════════════════════════════════════════ */
-window.asignarOrden = function(ordenId) {
+window.asignarOrden = async function(ordenId) {
   var sel        = document.getElementById('moto-select');
   var nombreMoto = sel ? sel.value : '';
 
@@ -216,47 +253,55 @@ window.asignarOrden = function(ordenId) {
     return;
   }
 
-  var orden = ORDENES.find(function(o){ return o.id === ordenId; });
-  if (!orden) return;
+  try {
+    var r = await fetch(API + '/ordenes/' + ordenId + '/asignar', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ motorizado: nombreMoto }),
+    });
+    if (!r.ok) throw new Error('No se pudo asignar');
 
-  orden.motorizado = nombreMoto;
-  if (orden.estado === 'reprogramado' || !orden.estado || orden.estado === '') {
-    orden.estado = 'en-proceso';
+    /* Volver a cargar desde la BD para reflejar el cambio real */
+    await _cargarDatosAsignacion();
+    _renderPoolPendientes();
+    _renderPoolAsignados();
+    _actualizarContadores();
+    if (typeof showNotif === 'function') showNotif('#' + ordenId + ' asignado a ' + nombreMoto);
+  } catch (err) {
+    if (typeof showNotif === 'function') showNotif('Error al asignar el pedido');
   }
-
-  _renderPoolPendientes();
-  _renderPoolAsignados();
-  _actualizarContadores();
-  if (typeof showNotif === 'function') showNotif('#' + ordenId + ' asignado a ' + nombreMoto);
 };
 
 /* ════════════════════════════════════════════
    DESASIGNAR — quita el motorizado de una orden
 ════════════════════════════════════════════ */
-window.desasignarOrden = function(ordenId) {
-  var orden = ORDENES.find(function(o){ return o.id === ordenId; });
-  if (!orden) return;
-  orden.motorizado = '';
-  orden.estado     = 'en-proceso';
+window.desasignarOrden = async function(ordenId) {
+  try {
+    var r = await fetch(API + '/ordenes/' + ordenId + '/asignar', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ motorizado: null }),
+    });
+    if (!r.ok) throw new Error('No se pudo desasignar');
 
-  _renderPoolPendientes();
-  _renderPoolAsignados();
-  _actualizarContadores();
-  if (typeof showNotif === 'function') showNotif('#' + ordenId + ' desasignado');
+    await _cargarDatosAsignacion();
+    _renderPoolPendientes();
+    _renderPoolAsignados();
+    _actualizarContadores();
+    if (typeof showNotif === 'function') showNotif('#' + ordenId + ' desasignado');
+  } catch (err) {
+    if (typeof showNotif === 'function') showNotif('Error al desasignar el pedido');
+  }
 };
 
 /* ════════════════════════════════════════════
    AUTOASIGNAR — distribuye todos los pendientes
-   por zona entre motorizados activos
+   por zona entre motorizados activos.
+   Hace un PATCH por cada orden contra la BD.
 ════════════════════════════════════════════ */
-window.autoAsignar = function() {
-  if (typeof MOTORIZADOS === 'undefined' || typeof ORDENES === 'undefined') return;
-
-  var activos    = MOTORIZADOS.filter(function(m){ return m.activo; });
-  /* Solo órdenes sin motorizado */
-  var pendientes = ORDENES.filter(function(o){
-    return !o.motorizado || o.motorizado.trim() === '';
-  });
+window.autoAsignar = async function() {
+  var activos    = MOTORIZADOS_ASIG.filter(function(m){ return m.activo; });
+  var pendientes = _getOrdenesPendientes();
 
   if (pendientes.length === 0) {
     if (typeof showNotif === 'function') showNotif('No hay pedidos pendientes');
@@ -267,18 +312,15 @@ window.autoAsignar = function() {
     return;
   }
 
-  /* Índice de turno por zona para repartir equitativamente */
   var turnoZona = {};
+  var asignaciones = []; /* { ordenId, nombreMoto } */
 
   pendientes.forEach(function(orden) {
-    var zonaDistr = (ZONA_DISTRITO[orden.distrito.toUpperCase()] || '').toLowerCase();
+    var zonaDistr = (ZONA_DISTRITO[(orden.distrito||'').toUpperCase()] || '').toLowerCase();
 
-    /* Motorizados de esa zona */
     var candidatos = activos.filter(function(m){
       return m.zona && m.zona.toLowerCase().replace('/','') === zonaDistr.replace('/','');
     });
-
-    /* Si no hay de esa zona, usar todos */
     if (candidatos.length === 0) candidatos = activos;
 
     var key = zonaDistr || 'todos';
@@ -287,14 +329,26 @@ window.autoAsignar = function() {
     var motoAsignado = candidatos[turnoZona[key] % candidatos.length];
     turnoZona[key]++;
 
-    orden.motorizado = motoAsignado.nombre;
-    if (!orden.estado || orden.estado === 'reprogramado') orden.estado = 'en-proceso';
+    asignaciones.push({ ordenId: orden.id, nombreMoto: motoAsignado.nombre });
   });
 
-  _renderPoolPendientes();
-  _renderPoolAsignados();
-  _actualizarContadores();
-  if (typeof showNotif === 'function') showNotif(pendientes.length + ' pedidos autoasignados');
+  try {
+    await Promise.all(asignaciones.map(function(a) {
+      return fetch(API + '/ordenes/' + a.ordenId + '/asignar', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ motorizado: a.nombreMoto }),
+      });
+    }));
+
+    await _cargarDatosAsignacion();
+    _renderPoolPendientes();
+    _renderPoolAsignados();
+    _actualizarContadores();
+    if (typeof showNotif === 'function') showNotif(asignaciones.length + ' pedidos autoasignados');
+  } catch (err) {
+    if (typeof showNotif === 'function') showNotif('Error al autoasignar');
+  }
 };
 
 /* ════════════════════════════════════════════
@@ -302,21 +356,19 @@ window.autoAsignar = function() {
 ════════════════════════════════════════════ */
 window.abrirReasignar = function(ordenId) {
   _reasignandoOrdenId = ordenId;
-  var orden = ORDENES.find(function(o){ return o.id === ordenId; });
+  var orden = ORDENES_ASIG.find(function(o){ return o.id === ordenId; });
   if (!orden) return;
 
-  /* Rellenar lista de motorizados en el modal */
   var lista = document.getElementById('reasignar-lista');
   if (!lista) return;
 
   lista.innerHTML = '';
-  var activos = MOTORIZADOS.filter(function(m){
+  var activos = MOTORIZADOS_ASIG.filter(function(m){
     return m.activo && m.nombre.toUpperCase() !== (orden.motorizado||'').toUpperCase();
   });
 
   activos.forEach(function(m) {
-    /* Contar cuántas órdenes activas tiene ese motorizado */
-    var carga = ORDENES.filter(function(o){
+    var carga = ORDENES_ASIG.filter(function(o){
       return o.motorizado && o.motorizado.toUpperCase() === m.nombre.toUpperCase()
         && (o.estado === 'en-proceso' || o.estado === 'reprogramado');
     }).length;
@@ -330,7 +382,7 @@ window.abrirReasignar = function(ordenId) {
     fila.onmouseout  = function(){ this.style.background = ''; };
     fila.innerHTML =
       '<div style="display:flex;align-items:center;gap:10px">' +
-        '<div class="avatar ' + m.color + '" style="width:32px;height:32px;font-size:12px">' + m.iniciales + '</div>' +
+        '<div class="avatar ' + m.color_avatar + '" style="width:32px;height:32px;font-size:12px">' + m.iniciales + '</div>' +
         '<div>' +
           '<div style="font-size:13px;font-weight:600">' + m.nombre + '</div>' +
           '<div style="font-size:11px;color:var(--color-text-secondary)">' +
@@ -344,29 +396,36 @@ window.abrirReasignar = function(ordenId) {
     lista.appendChild(fila);
   });
 
-  /* Info de la orden */
   var info = document.getElementById('reasignar-orden-info');
   if (info) {
-    info.textContent = '#' + orden.id + ' · ' + orden.tienda + ' → ' + orden.distrito;
+    info.textContent = '#' + orden.codigo + ' · ' + orden.tienda + ' → ' + orden.distrito;
   }
 
   document.getElementById('modal-reasignar').style.display = 'flex';
 };
 
-window.confirmarReasignar = function(nuevoMotoNombre) {
-  var orden = ORDENES.find(function(o){ return o.id === _reasignandoOrdenId; });
+window.confirmarReasignar = async function(nuevoMotoNombre) {
+  var orden = ORDENES_ASIG.find(function(o){ return o.id === _reasignandoOrdenId; });
   if (!orden) return;
 
-  var anteriorMoto = orden.motorizado;
-  orden.motorizado = nuevoMotoNombre;
-  orden.estado     = 'en-proceso';
+  try {
+    var r = await fetch(API + '/ordenes/' + orden.id + '/asignar', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ motorizado: nuevoMotoNombre }),
+    });
+    if (!r.ok) throw new Error('No se pudo reasignar');
 
-  cerrarModalReasignar();
-  _renderPoolPendientes();
-  _renderPoolAsignados();
-  _actualizarContadores();
-  if (typeof showNotif === 'function') {
-    showNotif('#' + orden.id + ' reasignado a ' + nuevoMotoNombre);
+    cerrarModalReasignar();
+    await _cargarDatosAsignacion();
+    _renderPoolPendientes();
+    _renderPoolAsignados();
+    _actualizarContadores();
+    if (typeof showNotif === 'function') {
+      showNotif('#' + orden.codigo + ' reasignado a ' + nuevoMotoNombre);
+    }
+  } catch (err) {
+    if (typeof showNotif === 'function') showNotif('Error al reasignar el pedido');
   }
 };
 

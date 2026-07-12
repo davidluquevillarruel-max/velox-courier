@@ -1,0 +1,200 @@
+/* ============================================================
+   responsive.css — Adaptación móvil y tablet
+   Breakpoints:
+     · Tablet  : max-width 1024px
+     · Mobile  : max-width 768px
+     · Small   : max-width 480px
+   ============================================================ */
+
+/* ══════════════════════════════════════
+   BOTÓN HAMBURGUESA — solo visible en móvil
+══════════════════════════════════════ */
+.hamburger-btn {
+  display: none;
+  position: fixed;
+  top: 14px;
+  left: 14px;
+  z-index: 300;
+  background: var(--color-blue);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-md);
+  width: 40px;
+  height: 40px;
+  font-size: 20px;
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+  box-shadow: var(--shadow-md);
+  transition: background 0.15s;
+}
+.hamburger-btn:hover { background: var(--color-blue-dark, #1a56db); }
+
+/* Overlay oscuro detrás del sidebar en móvil */
+.sidebar-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.45);
+  z-index: 199;
+}
+.sidebar-overlay.visible { display: block; }
+
+/* ══════════════════════════════════════
+   TABLET  (≤ 1024px)
+══════════════════════════════════════ */
+@media (max-width: 1024px) {
+
+  .sidebar { width: 200px; }
+
+  .main { padding: 20px 18px; }
+
+  /* KPIs: 2 columnas */
+  .metrics { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+
+  /* Motorizados: 2 columnas */
+  .moto-grid { grid-template-columns: repeat(2, 1fr); }
+
+  /* Tabla con scroll horizontal */
+  .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+  /* Asignación: columna única */
+  .assign-layout { grid-template-columns: 1fr; }
+
+  /* Evidencias: columna única */
+  .evidencia-grid { grid-template-columns: 1fr; }
+
+}
+
+/* ══════════════════════════════════════
+   MÓVIL  (≤ 768px)
+══════════════════════════════════════ */
+@media (max-width: 768px) {
+
+  /* Mostrar hamburguesa */
+  .hamburger-btn { display: flex; }
+
+  /* Sidebar: fuera de pantalla por defecto, entra con clase .open */
+  .sidebar {
+    position: fixed;
+    top: 0; left: 0; bottom: 0;
+    width: 240px;
+    z-index: 200;
+    transform: translateX(-100%);
+    transition: transform 0.25s ease;
+    overflow-y: auto;
+  }
+  .sidebar.open { transform: translateX(0); }
+
+  /* Área principal ocupa todo el ancho */
+  .main {
+    padding: 70px 14px 20px; /* espacio arriba para el botón hamburguesa */
+    width: 100%;
+  }
+
+  /* KPIs: 2 columnas en móvil */
+  .metrics { grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 16px; }
+
+  /* KPI más compacto */
+  .metric { padding: 12px 14px; }
+  .metric-val { font-size: 20px; }
+  .metric-icon { width: 36px; height: 36px; font-size: 16px; }
+
+  /* Motorizados: 1 columna */
+  .moto-grid { grid-template-columns: 1fr; }
+
+  /* Tabla con scroll */
+  .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { min-width: 600px; }
+
+  /* Asignación: columna única */
+  .assign-layout { grid-template-columns: 1fr; }
+  .evidencia-grid { grid-template-columns: 1fr; }
+
+  /* Cards y modales */
+  .card { border-radius: var(--radius-md); }
+
+  /* Modal más ancho en móvil */
+  [style*="width:480px"],
+  [style*="width:500px"],
+  [style*="width:420px"],
+  [style*="width:440px"],
+  [style*="width:380px"] {
+    width: 95vw !important;
+    max-width: 95vw !important;
+  }
+
+  /* Títulos más pequeños */
+  .page-title { font-size: 18px; }
+  .page-sub   { font-size: 12px; margin-bottom: 14px; }
+
+  /* Botones en fila */
+  .btn { font-size: 12px; padding: 6px 10px; }
+
+  /* Filtros en columna */
+  .filters { flex-direction: column; align-items: stretch; }
+  .filters > * { width: 100% !important; }
+
+  /* Search box full width */
+  .search-box { width: 100% !important; }
+
+  /* Chips de tiendas más compactos */
+  .chip-tienda { font-size: 11px; padding: 4px 8px; }
+
+  /* Días tabs con scroll horizontal */
+  .dias-tabs {
+    overflow-x: auto;
+    flex-wrap: nowrap !important;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 4px;
+  }
+  .dia-tab { white-space: nowrap; flex-shrink: 0; }
+
+  /* Asignación items */
+  .assign-item { font-size: 12px; }
+
+}
+
+/* ══════════════════════════════════════
+   SMALL MOBILE  (≤ 480px)
+══════════════════════════════════════ */
+@media (max-width: 480px) {
+
+  /* KPIs: 1 columna en pantallas muy pequeñas */
+  .metrics { grid-template-columns: 1fr; }
+
+  .main { padding: 64px 10px 16px; }
+
+  /* Reducir font-size general */
+  body { font-size: 13px; }
+
+  .page-title { font-size: 16px; }
+
+  /* Tabla mínima */
+  table { font-size: 12px; }
+  th, td { padding: 8px 10px !important; }
+
+  /* Card head en columna */
+  .card-head {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 8px !important;
+  }
+
+  /* Resumen día: 2 columnas */
+  .resumen-dia { grid-template-columns: repeat(2, 1fr) !important; }
+
+}
+
+/* ══════════════════════════════════════
+   UTILIDADES RESPONSIVE
+══════════════════════════════════════ */
+
+/* Ocultar texto largo en móvil */
+@media (max-width: 768px) {
+  .hide-mobile { display: none !important; }
+}
+@media (min-width: 769px) {
+  .show-mobile { display: none !important; }
+  .hamburger-btn { display: none !important; }
+}

@@ -1,0 +1,61 @@
+<!-- ============================================================
+     pages/usuarios-tienda.html — Gestión de usuarios de tienda
+     Solo accesible para rol "admin" y "tienda" (solo lectura)
+     ============================================================ -->
+
+<div class="page-title">Usuarios Tienda</div>
+<div class="page-sub">Gestión de accesos de las tiendas clientes. Cada tienda puede tener su propio usuario de solo lectura.</div>
+
+<!-- Barra de acciones — solo admin -->
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+  <div style="font-size:13px;color:var(--color-text-secondary)" id="lbl-usuarios-tienda-modo"></div>
+  <button class="btn btn-primary btn-sm" id="btn-crear-usuarios-tienda" onclick="crearUsuariosTiendasMasivo()" style="display:none">
+    <i class="ti ti-users-plus"></i> Crear usuarios para todas las tiendas
+  </button>
+</div>
+
+<!-- Tabla -->
+<div class="card">
+  <div class="card-head">
+    <span class="card-title">Usuarios de tiendas</span>
+    <div style="display:flex;gap:8px;align-items:center">
+      <input type="text" id="buscar-usuario-tienda" class="search-box" placeholder="Buscar tienda..." style="width:200px" oninput="filtrarUsuariosTienda()" />
+    </div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Tienda</th>
+          <th>Correo de acceso</th>
+          <th>Estado</th>
+          <th>Último acceso</th>
+          <th>Acción</th>
+        </tr>
+      </thead>
+      <tbody id="tbody-usuarios-tienda"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- MODAL confirmar crear masivo -->
+<div id="modal-crear-masivo-overlay"
+     style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.35);z-index:1000;align-items:center;justify-content:center">
+  <div style="background:var(--color-bg-primary);border-radius:var(--radius-lg);padding:24px;width:440px;max-width:95vw;box-shadow:0 8px 32px rgba(0,0,0,0.18)">
+    <div style="font-size:15px;font-weight:500;margin-bottom:12px"><i class="ti ti-users-plus"></i> Crear usuarios masivo</div>
+    <div style="font-size:13px;color:var(--color-text-secondary);margin-bottom:12px">
+      Se crearán usuarios para todas las tiendas que aún no tienen acceso.<br><br>
+      <strong>Formato:</strong><br>
+      · Correo: <code style="background:var(--color-bg-secondary);padding:2px 6px;border-radius:4px">nombretienda@velox.pe</code><br>
+      · Contraseña: <code style="background:var(--color-bg-secondary);padding:2px 6px;border-radius:4px">NombreTiendaVelox2026!</code>
+    </div>
+    <div id="masivo-preview" style="max-height:200px;overflow-y:auto;font-size:12px;background:var(--color-bg-secondary);padding:10px;border-radius:var(--radius-md);margin-bottom:14px"></div>
+    <div id="masivo-error" style="display:none;color:#A32D2D;font-size:12px;padding:8px 12px;background:#FCEBEB;border-radius:var(--radius-md);margin-bottom:12px"></div>
+    <div style="display:flex;justify-content:flex-end;gap:8px">
+      <button class="btn btn-sm" onclick="cerrarModalMasivo()">Cancelar</button>
+      <button class="btn btn-primary btn-sm" id="btn-confirmar-masivo" onclick="confirmarCrearMasivo()">
+        <i class="ti ti-check"></i> Confirmar y crear
+      </button>
+    </div>
+  </div>
+</div>

@@ -58,18 +58,25 @@
   <div class="card">
     <div class="card-head">
       <span class="card-title">Registros por tienda</span>
-      <span style="font-size:12px;color:var(--color-text-secondary)">
-        Cada fila = un día de cobro · "Marcar pagado" actúa sobre ese día específico
-      </span>
+      <div style="display:flex;align-items:center;gap:8px">
+        <span style="font-size:12px;color:var(--color-text-secondary)">
+          Solo pendientes — "Marcar pagado" liquida ese día
+        </span>
+        <button id="btn-historial-tiendas" class="btn btn-sm" onclick="togglePagadosTiendas()">
+          <i class="ti ti-history"></i> Historial de pagados
+        </button>
+      </div>
     </div>
     <div class="table-wrap">
       <table>
         <thead>
           <tr>
             <th>Tienda / Ciclo</th>
-            <th>Fecha registro</th>
-            <th>Saldo del día</th>
-            <th>¿Pagado?</th>
+            <th>Fecha</th>
+            <th>Delivery cobrable</th>
+            <th>Cobrado</th>
+            <th>Saldo</th>
+            <th>Estado</th>
             <th>Acción</th>
             <th></th>
           </tr>
@@ -91,7 +98,7 @@
           <thead>
             <tr>
               <th>Código</th><th>Destinatario</th><th>Distrito</th><th>Estado</th>
-              <th>Costo delivery</th><th>Pagado</th><th>Saldo</th><th>Fecha</th>
+              <th>Costo delivery</th><th>Pagado</th><th>Saldo</th><th>Fecha</th><th></th>
             </tr>
           </thead>
           <tbody id="tbody-detalle-tienda-caja"></tbody>
@@ -157,12 +164,13 @@
 <div id="tab-motorizados" style="display:none">
 
   <div class="page-title" style="margin-bottom:4px">Saldos con motorizados</div>
-  <div class="page-sub">Verde = les debemos · Rojo = nos deben</div>
+  <div class="page-sub">Verde = Velox les debe · Rojo = nos deben</div>
 
+  <!-- KPIs dinámicos de motorizados -->
   <div class="metrics" style="grid-template-columns:repeat(3,1fr);margin-bottom:16px">
-    <div class="metric"><div class="metric-label">Total a pagar (les debemos)</div><div class="metric-val green">S/ 168.00</div></div>
-    <div class="metric"><div class="metric-label">Total a cobrar (nos deben)</div><div class="metric-val red">S/ 12.00</div></div>
-    <div class="metric"><div class="metric-label">Liquidaciones pendientes</div><div class="metric-val amber">4 días</div></div>
+    <div class="metric"><div class="metric-label">Total a pagar (Velox les debe)</div><div class="metric-val green" id="kpi-moto-pagar">—</div></div>
+    <div class="metric"><div class="metric-label">Total a cobrar (nos deben)</div><div class="metric-val red" id="kpi-moto-cobrar">—</div></div>
+    <div class="metric"><div class="metric-label">Días pendientes</div><div class="metric-val amber" id="kpi-moto-pendientes">—</div></div>
   </div>
 
   <div class="card">
@@ -182,14 +190,19 @@
     <div class="card">
       <div class="card-head">
         <span class="card-title" id="titulo-detalle-moto">Detalle</span>
-        <button class="btn btn-sm" onclick="cerrarDetalleMoto()"><i class="ti ti-x"></i> Cerrar</button>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button id="btn-historial-motos" class="btn btn-sm" onclick="togglePagadosMotosActual()">
+            <i class="ti ti-history"></i> Historial de pagados
+          </button>
+          <button class="btn btn-sm" onclick="cerrarDetalleMoto()"><i class="ti ti-x"></i> Cerrar</button>
+        </div>
       </div>
       <div class="table-wrap">
         <table>
           <thead>
             <tr>
-              <th>Fecha</th><th>Entregas</th><th>Puntos cobrados</th>
-              <th>Adelantos</th><th>Saldo del día</th><th>¿Pagado?</th><th>Acción</th>
+              <th>Fecha</th><th>Entregas</th><th>Pago moto</th>
+              <th>Cobrado</th><th>Saldo del día</th><th>Estado</th><th>Acción</th>
             </tr>
           </thead>
           <tbody id="tbody-detalle-moto-caja"></tbody>

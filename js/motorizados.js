@@ -8,6 +8,26 @@ var MOTORIZADOS = []; /* caché local */
 var _motoEditId      = null;
 var _motoElimId      = null;
 var _filtroFechaMoto = '';
+var _motoDetalleAbiertoId = null;
+
+/* Si la sesión es de un motorizado, solo debe ver su propio registro */
+function _motorizadosVisibles() {
+  var raw = localStorage.getItem('velox_usuario');
+  if (!raw) return MOTORIZADOS;
+  try {
+    var sesion = JSON.parse(raw);
+    if (sesion.rol === 'motorizado' && sesion.id_motorizado) {
+      return MOTORIZADOS.filter(function(m){ return m.id == sesion.id_motorizado; });
+    }
+  } catch(e) {}
+  return MOTORIZADOS;
+}
+
+function _esSesionMotorizado() {
+  var raw = localStorage.getItem('velox_usuario');
+  if (!raw) return false;
+  try { return JSON.parse(raw).rol === 'motorizado'; } catch(e) { return false; }
+}
 
 /* ════════════════════════════════════════════
    HELPERS
@@ -77,10 +97,22 @@ window.renderMotorizados = async function() {
   var grid = document.getElementById('moto-grid-content');
   if (!grid) return;
 
-  grid.innerHTML = MOTORIZADOS.map(function(m) {
+  var esMoto = _esSesionMotorizado();
+  var visibles = _motorizadosVisibles();
+
+  /* Ocultar botón "Agregar motorizado" si el rol es motorizado */
+  var btnAgregar = document.querySelector('[onclick="abrirModalMoto()"]');
+  if (btnAgregar && esMoto) btnAgregar.style.display = 'none';
+
+  grid.innerHTML = visibles.map(function(m) {
     var estadoBadge = m.activo
       ? '<span class="badge pendiente">Activo</span>'
       : '<span style="background:#F0F0F0;color:#777;padding:3px 9px;border-radius:20px;font-size:11px">Inactivo</span>';
+    var accionesEdicion = esMoto ? '' :
+        '<div style="display:flex;gap:4px">' +
+          '<button class="btn btn-sm" onclick="editarMoto(' + m.id + ')"><i class="ti ti-pencil"></i></button>' +
+          '<button class="btn btn-sm" onclick="confirmarEliminarMoto(' + m.id + ')" style="color:#A32D2D;border-color:#F09595"><i class="ti ti-trash"></i></button>' +
+        '</div>';
     return '<div class="moto-card">' +
       '<div class="moto-head">' +
         '<div class="avatar ' + m.color_avatar + '">' + m.iniciales + '</div>' +
@@ -95,12 +127,9 @@ window.renderMotorizados = async function() {
         'Ingreso: ' + (m.fecha_ingreso || '—') + ' &nbsp;·&nbsp; ' + estadoBadge +
       '</div>' +
       '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;gap:6px">' +
-        '<button class="btn btn-primary btn-sm" onclick="abrirDetalle(' + m.id + ')">' +
+        '<button class="btn btn-primary btn-sm" onclick="abrirDetalleMotoHistorial(' + m.id + ')">' +
           '<i class="ti ti-eye"></i> Ver detalle</button>' +
-        '<div style="display:flex;gap:4px">' +
-          '<button class="btn btn-sm" onclick="editarMoto(' + m.id + ')"><i class="ti ti-pencil"></i></button>' +
-          '<button class="btn btn-sm" onclick="confirmarEliminarMoto(' + m.id + ')" style="color:#A32D2D;border-color:#F09595"><i class="ti ti-trash"></i></button>' +
-        '</div>' +
+        accionesEdicion +
       '</div>' +
     '</div>';
   }).join('');
@@ -117,7 +146,7 @@ async function _renderTablaResumen() {
   if (lbl) lbl.textContent = fecha ? 'Mostrando: ' + _fechaDisplayM(fecha) : 'Mostrando: todos los días';
 
   /* Renderizar filas async */
-  var filas = await Promise.all(MOTORIZADOS.map(async function(m) {
+  var filas = await Promise.all(_motorizadosVisibles().map(async function(m) {
     var s = await _calcularStatsMoto(m.id, fecha);
     if (!s) {
       return '<tr>' +
@@ -155,18 +184,56 @@ async function _renderTablaResumen() {
 /* ════════════════════════════════════════════
    FILTRO DE FECHA
 ════════════════════════════════════════════ */
+function _fechaHaceDiasMoto(n) {
+  var d = new Date();
+  d.setDate(d.getDate() - n);
+  var mm = ('0'+(d.getMonth()+1)).slice(-2);
+  var dd = ('0'+d.getDate()).slice(-2);
+  return d.getFullYear() + '-' + mm + '-' + dd;
+}
+
+function _marcarBotonActivoMotos(tipo) {
+  var btnHoy  = document.getElementById('btn-hoy-motos');
+  var btnAyer = document.getElementById('btn-ayer-motos');
+  if (btnHoy)  btnHoy.classList.toggle('active', tipo === 'hoy');
+  if (btnAyer) btnAyer.classList.toggle('active', tipo === 'ayer');
+}
+
 window.aplicarFiltroMotos = function() {
   var inp = document.getElementById('filtro-fecha-motos');
   _filtroFechaMoto = inp ? inp.value : '';
+  _marcarBotonActivoMotos(null);
   _renderTablaResumen();
+  _refrescarPanelDetalleSiAbierto();
+};
+
+window.filtroRapidoMotos = function(tipo) {
+  var fecha = tipo === 'hoy' ? _fechaHaceDiasMoto(0) : _fechaHaceDiasMoto(1);
+  _filtroFechaMoto = fecha;
+  var inp = document.getElementById('filtro-fecha-motos');
+  if (inp) inp.value = fecha;
+  _marcarBotonActivoMotos(tipo);
+  _renderTablaResumen();
+  _refrescarPanelDetalleSiAbierto();
 };
 
 window.limpiarFiltroMotos = function() {
   _filtroFechaMoto = '';
   var inp = document.getElementById('filtro-fecha-motos');
   if (inp) inp.value = '';
+  _marcarBotonActivoMotos(null);
   _renderTablaResumen();
+  _refrescarPanelDetalleSiAbierto();
 };
+
+/* Si el panel de detalle de un motorizado está abierto, lo vuelve a
+   cargar con el filtro de fecha actual (para que no quede desactualizado) */
+function _refrescarPanelDetalleSiAbierto() {
+  var panel = document.getElementById('panel-detalle-moto');
+  if (panel && panel.style.display !== 'none' && _motoDetalleAbiertoId) {
+    abrirDetalleMotoHistorial(_motoDetalleAbiertoId);
+  }
+}
 
 /* ════════════════════════════════════════════
    DETALLE HISTORIAL INLINE
@@ -178,13 +245,16 @@ window.abrirDetalleMotoHistorial = async function(motoId) {
   var panel = document.getElementById('panel-detalle-moto');
   if (!panel) return;
 
+  _motoDetalleAbiertoId = motoId;
   panel.innerHTML = '<div style="padding:20px;text-align:center;color:var(--color-text-secondary)"><i class="ti ti-loader" style="font-size:24px"></i> Cargando...</div>';
   panel.style.display = 'block';
 
   var s = await _calcularStatsMoto(motoId, _filtroFechaMoto);
 
   if (!s) {
-    panel.innerHTML = '<div style="padding:20px;text-align:center;color:var(--color-text-tertiary)">Sin órdenes para ' + m.nombre + '</div>';
+    panel.innerHTML = '<div style="padding:20px;text-align:center;color:var(--color-text-tertiary)">' +
+      'Sin órdenes para ' + m.nombre + (_filtroFechaMoto ? ' el ' + _fechaDisplayM(_filtroFechaMoto) : '') +
+      '</div>';
     return;
   }
 
@@ -248,6 +318,41 @@ function _kpiCard(label, valor, color, icon) {
   '</div>';
 }
 
+function _linkWhatsApp(telefono, nombreDest) {
+  var limpio = telefono.replace(/[^0-9]/g, '');
+  if (limpio.length === 9) limpio = '51' + limpio;
+
+  var saludo = nombreDest && nombreDest.trim() && nombreDest.trim() !== '—'
+    ? 'Buenas tardes ' + nombreDest.trim() + ', le saludamos de Velox, para comentarle que estamos llegando a su ubicación en 10 minutos.'
+    : 'Buenas tardes, le saludamos de Velox, para comentarle que estamos llegando a su ubicación en 10 minutos.';
+
+  return 'https://wa.me/' + limpio + '?text=' + encodeURIComponent(saludo);
+}
+
+function _botonWhatsApp(telefono, nombreDest, telefono2) {
+  if (!telefono && !telefono2) {
+    return '<span style="color:var(--color-text-tertiary);font-size:11px">Sin teléfono</span>';
+  }
+
+  var html = '<div style="display:flex;flex-direction:column;gap:4px">';
+
+  if (telefono) {
+    html += '<a href="' + _linkWhatsApp(telefono, nombreDest) + '" target="_blank" rel="noopener" ' +
+      'style="display:inline-flex;align-items:center;gap:5px;background:#25D366;color:#fff;' +
+      'padding:5px 12px;border-radius:var(--radius-md);font-size:12px;font-weight:600;text-decoration:none">' +
+      '<i class="ti ti-brand-whatsapp"></i> WhatsApp</a>';
+  }
+  if (telefono2) {
+    html += '<a href="' + _linkWhatsApp(telefono2, nombreDest) + '" target="_blank" rel="noopener" ' +
+      'style="display:inline-flex;align-items:center;gap:5px;background:#25D366;color:#fff;' +
+      'padding:5px 12px;border-radius:var(--radius-md);font-size:11px;font-weight:600;text-decoration:none;opacity:0.85">' +
+      '<i class="ti ti-brand-whatsapp"></i> Adicional</a>';
+  }
+
+  html += '</div>';
+  return html;
+}
+
 function _renderTablaOrdenesDetalle(ordenes) {
   var badgeMap = {
     'entregado':    '<span class="badge entregado">Entregado</span>',
@@ -268,8 +373,8 @@ function _renderTablaOrdenesDetalle(ordenes) {
   /* Estados que SÍ generan cobro */
   var estadosConCobro = ['entregado', 'ausente'];
 
-  var cols = ['Código','Tienda','Destinatario','Distrito','Estado','Método',
-              'Delivery','Cobrado','Pago moto','Total moto','Especial','Fecha'];
+  var cols = ['Código','Tienda','Destinatario','','Distrito','Estado','Método',
+              'Delivery','Cobrado','Pago moto','Total moto','Especial','Fecha',''];
 
   return '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">' +
     '<thead><tr>' +
@@ -310,6 +415,7 @@ function _renderTablaOrdenesDetalle(ordenes) {
         '<td style="padding:8px 12px"><strong>#' + o.codigo + '</strong></td>' +
         '<td style="padding:8px 12px">' + o.tienda + '</td>' +
         '<td style="padding:8px 12px">' + (o.dest_nombre||'—') + '</td>' +
+        '<td style="padding:8px 12px">' + _botonWhatsApp(o.dest_telefono, o.dest_nombre, o.dest_telefono_2) + '</td>' +
         '<td style="padding:8px 12px">' + o.distrito + '</td>' +
         '<td style="padding:8px 12px">' + (badgeMap[o.estado]||o.estado) + '</td>' +
         '<td style="padding:8px 12px;font-size:11px">' + (metodoLabel[o.metodo_pago]||o.metodo_pago||'—') + '</td>' +
@@ -319,6 +425,7 @@ function _renderTablaOrdenesDetalle(ordenes) {
         '<td style="padding:8px 12px">' + totalMotoStr + '</td>' +
         '<td style="padding:8px 12px">' + especial + '</td>' +
         '<td style="padding:8px 12px;font-size:11px;color:var(--color-text-secondary)">' + _fechaDisplayM(o.fecha) + '</td>' +
+        '<td style="padding:8px 12px"><button class="btn btn-sm" onclick="abrirActualizarEstadoOrden(' + o.id + ')"><i class="ti ti-refresh"></i> Actualizar</button></td>' +
       '</tr>';
     }).join('') +
     '</tbody></table></div>';
@@ -327,6 +434,7 @@ function _renderTablaOrdenesDetalle(ordenes) {
 window.cerrarDetalleMotoHistorial = function() {
   var panel = document.getElementById('panel-detalle-moto');
   if (panel) { panel.style.display = 'none'; panel.innerHTML = ''; }
+  _motoDetalleAbiertoId = null;
 };
 
 /* ════════════════════════════════════════════
@@ -492,10 +600,14 @@ window.guardarMoto = async function() {
   var referencia = document.getElementById('f-moto-referencia').value.trim();
   var errEl      = document.getElementById('moto-modal-error');
 
-  if (!nombre) {
-    errEl.textContent = 'El nombre es obligatorio.';
-    errEl.style.display = 'block'; return;
-  }
+  var validaciones = [
+    validarTexto(nombre, { obligatorio: true, min: 2, max: 100, nombreCampo: 'El nombre del motorizado' }),
+    validarTelefonoObligatorio(telefono),
+    validarDNI(dni, { obligatorio: true }),
+    validarPlaca(placa),
+    validarTexto(referencia, { max: 200, nombreCampo: 'La referencia' }),
+  ];
+  if (!ejecutarValidaciones(validaciones, errEl)) return;
 
   var body = { nombre, telefono, zona, color, activo, dni, placa, referencia,
                iniciales: _initiales(nombre) };
@@ -533,7 +645,284 @@ window.ejecutarEliminarMoto = async function() {
   } catch(err) { console.error(err); }
 };
 
+window.abrirEliminarMotoFisico = function() {
+  var m = MOTORIZADOS.find(function(x){ return x.id == _motoElimId; });
+  if (!m) return;
+  var idGuardado = m.id, nombreGuardado = m.nombre;
+  cerrarConfirmMoto();
+  abrirConfirmarEliminacionFisica(nombreGuardado, API + '/motorizados/' + idGuardado + '/permanente', function() {
+    renderMotorizados();
+  });
+};
+
 window.initMotorizados = function() {
-  _filtroFechaMoto = '';
-  renderMotorizados();
+  /* Todos arrancan con "Hoy" por defecto */
+  _filtroFechaMoto = _fechaHaceDiasMoto(0);
+  renderMotorizados().then(function() {
+    var inp = document.getElementById('filtro-fecha-motos');
+    if (inp) inp.value = _filtroFechaMoto;
+    _marcarBotonActivoMotos('hoy');
+  });
+};
+
+/* ════════════════════════════════════════════
+   ACTUALIZAR ESTADO DE ORDEN (desde el detalle
+   de motorizado). Esto hace PATCH directo en la
+   tabla "ordenes" — el cambio se refleja en TODA
+   la app (Pedidos, Caja, Evidencias, Clientes)
+   porque todas leen de la misma BD en tiempo real.
+════════════════════════════════════════════ */
+var _ordenActualizarId = null;
+
+var _ESTADOS_ORDEN = [
+  { value: 'entregado',    label: 'Entregado' },
+  { value: 'no-entregado', label: 'No entregado' },
+  { value: 'ausente',      label: 'Ausente' },
+  { value: 'reprogramado', label: 'Reprogramado' },
+  { value: 'cancelado',    label: 'Cancelado' },
+  { value: 'cambio',       label: 'Cambio' },
+  { value: 'devolucion',   label: 'Devolución' },
+  { value: 'recojo',       label: 'Recojo' },
+  { value: 'en-proceso',   label: 'En proceso' },
+];
+
+var _METODOS_PAGO = [
+  { value: 'sin-cobro',   label: 'Sin cobro / Por definir' },
+  { value: 'yape',        label: 'Yape' },
+  { value: 'plin',        label: 'Plin' },
+  { value: 'pos',         label: 'POS' },
+  { value: 'efectivo',    label: 'Efectivo' },
+  { value: 'pago-tienda', label: 'Pago tienda' },
+];
+
+window.abrirActualizarEstadoOrden = async function(ordenId) {
+  _ordenActualizarId = ordenId;
+
+  var overlay = document.getElementById('orden-estado-modal-overlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'orden-estado-modal-overlay';
+    overlay.style.cssText = 'display:none;position:fixed;inset:0;background:rgba(0,0,0,0.35);z-index:1100;align-items:flex-start;justify-content:center;overflow-y:auto;padding:40px 0';
+    document.body.appendChild(overlay);
+  }
+
+  overlay.innerHTML = '<div style="background:var(--color-bg-primary);border-radius:var(--radius-lg);padding:24px;width:480px;max-width:95vw;text-align:center;color:var(--color-text-secondary)"><i class="ti ti-loader"></i> Cargando datos de la orden...</div>';
+  overlay.style.display = 'flex';
+
+  try {
+    var [rOrden, rTiendas, rDistritos] = await Promise.all([
+      fetch(API + '/ordenes/' + ordenId),
+      fetch(API + '/tiendas'),
+      fetch(API + '/tarifas'),
+    ]);
+    var orden     = await rOrden.json();
+    var tiendas   = await rTiendas.json();
+    var distritos = await rDistritos.json();
+
+    _renderModalActualizarOrden(orden, tiendas, distritos);
+  } catch (err) {
+    overlay.innerHTML = '<div style="background:var(--color-bg-primary);border-radius:var(--radius-lg);padding:24px;width:380px;text-align:center;color:#A32D2D">Error al cargar la orden.</div>';
+  }
+};
+
+function _renderModalActualizarOrden(orden, tiendas, distritos) {
+  var overlay = document.getElementById('orden-estado-modal-overlay');
+  if (!overlay) return;
+
+  overlay.innerHTML =
+    '<div style="background:var(--color-bg-primary);border-radius:var(--radius-lg);padding:24px;width:480px;max-width:95vw;box-shadow:0 8px 32px rgba(0,0,0,0.18);margin:auto">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px">' +
+        '<span style="font-size:15px;font-weight:500">Actualizar orden #' + orden.codigo + '</span>' +
+        '<button onclick="cerrarActualizarEstadoOrden()" style="background:none;border:none;cursor:pointer;font-size:18px;color:var(--color-text-secondary)"><i class="ti ti-x"></i></button>' +
+      '</div>' +
+      '<div style="display:flex;flex-direction:column;gap:14px">' +
+
+        '<div>' +
+          '<label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px">Tienda cliente</label>' +
+          '<select id="f-orden-tienda-update" class="filter-select" style="width:100%">' +
+            tiendas.map(function(t){
+              return '<option value="' + t.nombre + '"' + (t.nombre===orden.tienda?' selected':'') + '>' + t.nombre + '</option>';
+            }).join('') +
+          '</select>' +
+        '</div>' +
+
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">' +
+          '<div>' +
+            '<label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px">Nombre destinatario</label>' +
+            '<input id="f-orden-dest-update" class="search-box" style="width:100%" maxlength="100" value="' + (orden.dest_nombre||'') + '" />' +
+          '</div>' +
+          '<div>' +
+            '<label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px">Distrito</label>' +
+            '<select id="f-orden-distrito-update" class="filter-select" style="width:100%" onchange="onDistritoChangeUpdate()">' +
+              distritos.map(function(d){
+                return '<option value="' + d.distrito + '" data-precio="' + d.precio_delivery + '" data-pago-moto="' + (d.pago_motorizado||0) + '"' + (d.distrito===orden.distrito?' selected':'') + '>' + d.distrito + '</option>';
+              }).join('') +
+            '</select>' +
+          '</div>' +
+        '</div>' +
+
+        '<div>' +
+          '<label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px">Dirección de entrega</label>' +
+          '<input id="f-orden-direccion-update" class="search-box" style="width:100%" maxlength="200" value="' + (orden.dest_direccion||'') + '" />' +
+        '</div>' +
+
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">' +
+          '<div>' +
+            '<label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px">Teléfono</label>' +
+            '<input id="f-orden-telefono-update" class="search-box" style="width:100%" placeholder="Ej: 987654321" maxlength="9" inputmode="numeric" ' +
+              'oninput="this.value=this.value.replace(/[^0-9]/g,\'\')" value="' + (orden.dest_telefono||'') + '" />' +
+          '</div>' +
+          '<div>' +
+            '<label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px">Teléfono adicional</label>' +
+            '<input id="f-orden-telefono2-update" class="search-box" style="width:100%" placeholder="Si hay otro" maxlength="9" inputmode="numeric" ' +
+              'oninput="this.value=this.value.replace(/[^0-9]/g,\'\')" value="' + (orden.dest_telefono_2||'') + '" />' +
+          '</div>' +
+        '</div>' +
+
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">' +
+          '<div>' +
+            '<label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px">Estado</label>' +
+            '<select id="f-orden-estado-update" class="filter-select" style="width:100%">' +
+              _ESTADOS_ORDEN.map(function(e){
+                return '<option value="' + e.value + '"' + (e.value===orden.estado?' selected':'') + '>' + e.label + '</option>';
+              }).join('') +
+            '</select>' +
+          '</div>' +
+          '<div>' +
+            '<label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px">Método de pago</label>' +
+            '<select id="f-orden-metodo-update" class="filter-select" style="width:100%">' +
+              _METODOS_PAGO.map(function(m){
+                return '<option value="' + m.value + '"' + (m.value===(orden.metodo_pago||'sin-cobro')?' selected':'') + '>' + m.label + '</option>';
+              }).join('') +
+            '</select>' +
+          '</div>' +
+        '</div>' +
+
+        '<div style="font-size:12px;color:var(--color-text-secondary);font-weight:600;margin-top:4px">Montos (S/)</div>' +
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">' +
+          '<div>' +
+            '<label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px">Delivery base</label>' +
+            '<input id="f-orden-delivery-update" type="number" step="0.01" min="0" class="search-box" style="width:100%" value="' + (orden.delivery_base||0) + '" />' +
+          '</div>' +
+          '<div>' +
+            '<label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px">Adicional</label>' +
+            '<input id="f-orden-adicional-update" type="number" step="0.01" min="0" class="search-box" style="width:100%" value="' + (orden.monto_adicional||0) + '" />' +
+          '</div>' +
+        '</div>' +
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">' +
+          '<div>' +
+            '<label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px">Cobrado</label>' +
+            '<input id="f-orden-cobrado-update" type="number" step="0.01" min="0" class="search-box" style="width:100%" value="' + (orden.monto_cobrado||0) + '" />' +
+          '</div>' +
+          '<div>' +
+            '<label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px">Valor producto</label>' +
+            '<input id="f-orden-producto-update" type="number" step="0.01" min="0" class="search-box" style="width:100%" value="' + (orden.monto_producto||0) + '" />' +
+          '</div>' +
+        '</div>' +
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">' +
+          '<div>' +
+            '<label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px">Pago moto base</label>' +
+            '<input id="f-orden-pagomoto-update" type="number" step="0.01" min="0" class="search-box" style="width:100%" value="' + (orden.pago_moto_base||0) + '" />' +
+          '</div>' +
+          '<div>' +
+            '<label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px">Pago moto adicional</label>' +
+            '<input id="f-orden-pagomotoad-update" type="number" step="0.01" min="0" class="search-box" style="width:100%" value="' + (orden.pago_moto_adicional||0) + '" />' +
+          '</div>' +
+        '</div>' +
+
+        '<div>' +
+          '<label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px">Observaciones</label>' +
+          '<input id="f-orden-obs-update" class="search-box" style="width:100%" maxlength="300" value="' + (orden.observaciones||'') + '" />' +
+        '</div>' +
+
+        '<div id="orden-estado-error" style="display:none;color:#A32D2D;font-size:12px;padding:8px 12px;background:#FCEBEB;border-radius:var(--radius-md)"></div>' +
+      '</div>' +
+      '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:20px">' +
+        '<button class="btn btn-sm" onclick="cerrarActualizarEstadoOrden()">Cancelar</button>' +
+        '<button class="btn btn-primary btn-sm" onclick="guardarActualizarEstadoOrden()"><i class="ti ti-check"></i> Guardar</button>' +
+      '</div>' +
+    '</div>';
+}
+
+window.onDistritoChangeUpdate = function() {
+  var selDist   = document.getElementById('f-orden-distrito-update');
+  var fDeliv    = document.getElementById('f-orden-delivery-update');
+  var fPagoMoto = document.getElementById('f-orden-pagomoto-update');
+  if (!selDist) return;
+
+  var opcion    = selDist.options[selDist.selectedIndex];
+  var precio    = opcion ? opcion.getAttribute('data-precio')    : null;
+  var pagoMoto  = opcion ? opcion.getAttribute('data-pago-moto') : null;
+
+  if (precio   !== null && fDeliv)    fDeliv.value    = parseFloat(precio).toFixed(2);
+  if (pagoMoto !== null && fPagoMoto) fPagoMoto.value = parseFloat(pagoMoto).toFixed(2);
+};
+
+window.cerrarActualizarEstadoOrden = function() {
+  var overlay = document.getElementById('orden-estado-modal-overlay');
+  if (overlay) overlay.style.display = 'none';
+  _ordenActualizarId = null;
+};
+
+window.guardarActualizarEstadoOrden = async function() {
+  var tienda      = document.getElementById('f-orden-tienda-update').value;
+  var dest        = document.getElementById('f-orden-dest-update').value.trim();
+  var distrito    = document.getElementById('f-orden-distrito-update').value;
+  var direccion   = document.getElementById('f-orden-direccion-update').value.trim();
+  var telefono    = document.getElementById('f-orden-telefono-update').value.trim();
+  var telefono2   = document.getElementById('f-orden-telefono2-update').value.trim();
+  var estado      = document.getElementById('f-orden-estado-update').value;
+  var metodoPago  = document.getElementById('f-orden-metodo-update').value;
+  var delivery    = document.getElementById('f-orden-delivery-update').value;
+  var adicional   = document.getElementById('f-orden-adicional-update').value;
+  var cobrado     = document.getElementById('f-orden-cobrado-update').value;
+  var producto    = document.getElementById('f-orden-producto-update').value;
+  var pagoMoto    = document.getElementById('f-orden-pagomoto-update').value;
+  var pagoMotoAd  = document.getElementById('f-orden-pagomotoad-update').value;
+  var obs         = document.getElementById('f-orden-obs-update').value.trim();
+  var errEl       = document.getElementById('orden-estado-error');
+
+  var validaciones = [
+    validarTexto(dest, { obligatorio: true, min: 2, max: 100, nombreCampo: 'El nombre del destinatario' }),
+    validarTelefono(telefono),
+    validarTelefono(telefono2),
+    validarTexto(direccion, { obligatorio: true, min: 5, max: 200, nombreCampo: 'La dirección' }),
+    validarTexto(obs, { max: 300, nombreCampo: 'Las observaciones' }),
+  ];
+  if (!ejecutarValidaciones(validaciones, errEl)) return;
+
+  try {
+    var rCompleto = await fetch(API + '/ordenes/' + _ordenActualizarId + '/completo', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        tienda: tienda, dest: dest, distrito: distrito, direccion: direccion,
+        telefDest: telefono, telefDest2: telefono2,
+        delivery: delivery, montoAdicional: adicional, montoCobrado: cobrado, montoProducto: producto,
+        pagoMotoBase: pagoMoto, pagoMotoAdic: pagoMotoAd, obs: obs,
+      }),
+    });
+    if (!rCompleto.ok) {
+      var errData = await rCompleto.json().catch(function(){ return {}; });
+      throw new Error(errData.error || 'No se pudo actualizar la orden');
+    }
+
+    var rEstado = await fetch(API + '/ordenes/' + _ordenActualizarId + '/estado', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ estado: estado, metodoPago: metodoPago }),
+    });
+    if (!rEstado.ok) throw new Error('No se pudo actualizar el estado');
+
+    cerrarActualizarEstadoOrden();
+    if (typeof showNotif === 'function') showNotif('Orden actualizada correctamente');
+
+    /* Refrescar la vista actual, sea cual sea la página donde se abrió el modal */
+    if (typeof _renderTablaResumen === 'function') _renderTablaResumen();
+    if (typeof _motoDetalleAbiertoId !== 'undefined' && _motoDetalleAbiertoId) abrirDetalleMotoHistorial(_motoDetalleAbiertoId);
+    if (typeof renderPedidos === 'function') renderPedidos();
+
+  } catch (err) {
+    if (errEl) { errEl.textContent = err.message || 'Error al actualizar la orden.'; errEl.style.display = 'block'; }
+  }
 };

@@ -7,6 +7,8 @@ var API = '/api';
 var _cajaFiltroDesde = '';
 var _cajaFiltroHasta = '';
 var _EC = ['entregado', 'ausente'];
+var _mostrarPagadosTiendas = false;
+var _mostrarPagadosMotos   = false;
 
 function _fechaDisplayCaja(f) {
   if (!f) return '—';
@@ -30,7 +32,7 @@ window.cambiarTab = function(id, btn) {
   if (id === 'tiendas')     renderTiendasCaja();
 };
 
-/* ── Filtros ── */
+/* ── Filtros tiendas ── */
 window.aplicarFiltroTiendas = function() {
   _cajaFiltroDesde = document.getElementById('filtro-desde').value;
   _cajaFiltroHasta = document.getElementById('filtro-hasta').value;
@@ -45,13 +47,17 @@ window.limpiarFiltroTiendas = function() {
 
 /* ════════════════════════════════════════════
    TAB TIENDAS
-   Delivery cobrable − Cobrado = Saldo
-   + = tienda nos debe
-   − = nosotros le debemos
 ════════════════════════════════════════════ */
 window.renderTiendasCaja = async function() {
   var tbody = document.getElementById('tbody-tiendas-caja');
   if (!tbody) return;
+
+  var btnHistorial = document.getElementById('btn-historial-tiendas');
+  if (btnHistorial) {
+    btnHistorial.innerHTML = _mostrarPagadosTiendas
+      ? '<i class="ti ti-eye-off"></i> Ocultar pagados'
+      : '<i class="ti ti-history"></i> Historial de pagados';
+  }
 
   var url = API + '/caja/tiendas';
   var params = [];
@@ -61,12 +67,12 @@ window.renderTiendasCaja = async function() {
 
   try {
     var r    = await fetch(url);
-    var data = await r.json();
+    var todos = await r.json();
 
-    /* KPIs */
+    /* KPIs — calculados sobre todos los pendientes */
     var totalPorCobrar=0, totalPorDev=0, alDia=0, conSaldo=0;
     var resumenT = {};
-    data.forEach(function(f) {
+    todos.forEach(function(f) {
       var saldo = parseFloat(f.saldo_neto||0);
       if (!resumenT[f.tienda]) resumenT[f.tienda] = 0;
       if (!f.pagado) resumenT[f.tienda] += saldo;
@@ -82,6 +88,11 @@ window.renderTiendasCaja = async function() {
     set('kpi-devolver', 'S/ '+totalPorDev.toFixed(2));
     set('kpi-aldia',    alDia);
     set('kpi-consaldo', conSaldo);
+
+    /* Filtrar según toggle */
+    var data = _mostrarPagadosTiendas
+      ? todos.filter(function(f){ return f.pagado; })
+      : todos.filter(function(f){ return !f.pagado; });
 
     /* Agrupar por tienda */
     var porTienda = {};
@@ -111,11 +122,12 @@ window.renderTiendasCaja = async function() {
           estadoDeuda = '<span class="badge-pago-si">✓ Sin deuda</span>';
           accion = '—';
         } else if (f.pagado) {
-          estadoDeuda = '<span class="badge-pago-si">✓ Pagado</span>';
+          estadoDeuda = '<span class="badge-pago-si">✓ Pagado '+(f.fecha_pago?_fechaDisplayCaja(f.fecha_pago):'')+'</span>';
           accion = '<span style="font-size:12px;color:var(--color-text-tertiary)">Liquidado</span>';
         } else {
           estadoDeuda = '<span class="badge-pago-no">✗ Pendiente</span>';
-          accion = '<button class="btn-pagar" onclick="marcarTiendaPagada(\''+f.id+'\',\''+f.fecha+'\')">Marcar pagado</button>';
+          /* FIX: pasamos id_tienda y fecha del ciclo correctamente */
+          accion = '<button class="btn-pagar" onclick="marcarTiendaPagada('+f.id+',\''+f.fecha+'\')">Marcar pagado</button>';
         }
 
         var celdaTienda = i===0
@@ -136,17 +148,36 @@ window.renderTiendasCaja = async function() {
       });
     });
 
-    tbody.innerHTML = html || '<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--color-text-tertiary)">Sin registros para el período</td></tr>';
+    var msgVacio = _mostrarPagadosTiendas
+      ? 'No hay pagos registrados aún'
+      : 'No hay pendientes — todo al día ✓';
+
+    tbody.innerHTML = html || '<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--color-text-tertiary)">'+msgVacio+'</td></tr>';
 
   } catch(err) { console.error('Error caja tiendas:', err); }
 };
 
+window.togglePagadosTiendas = function() {
+  _mostrarPagadosTiendas = !_mostrarPagadosTiendas;
+  renderTiendasCaja();
+};
+
+/* FIX CLAVE: ahora manda { id_tienda, fecha } correctamente.
+   El parámetro idTienda viene de f.id que en el GET /caja/tiendas
+   es t.id (el ID real de la tienda). */
 window.marcarTiendaPagada = async function(idTienda, fecha) {
   try {
-    await fetch(API+'/caja/tiendas/pagar', {
-      method:'POST', headers:{'Content-Type':'application/json'},
+    var resp = await fetch(API+'/caja/tiendas/pagar', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ id_tienda: parseInt(idTienda), fecha: fecha }),
     });
+    var json = await resp.json();
+    if (!json.ok) {
+      console.error('Error al marcar pagado:', json.error);
+      if (typeof showNotif==='function') showNotif('Error: '+json.error);
+      return;
+    }
     renderTiendasCaja();
     if (typeof showNotif==='function') showNotif('Pago registrado · '+_fechaDisplayCaja(fecha));
   } catch(err) { console.error(err); }
@@ -191,8 +222,9 @@ window.verDetalleTiendaCaja = async function(nombreTienda) {
           (tieneCobro?(saldo>0?'S/ '+saldo.toFixed(2):saldo<0?'− S/ '+Math.abs(saldo).toFixed(2):'S/ 0.00'):'<span style="color:var(--color-text-tertiary)">S/ 0.00</span>')+
         '</td>' +
         '<td style="font-size:12px;color:var(--color-text-secondary)">'+_fechaDisplayCaja(o.fecha)+'</td>' +
+        '<td><button class="btn btn-sm" onclick="editarOrdenDesdeCaja('+o.id+')" title="Editar orden"><i class="ti ti-pencil"></i></button></td>' +
       '</tr>';
-    }).join('') || '<tr><td colspan="8" style="text-align:center;padding:20px;color:var(--color-text-tertiary)">Sin órdenes</td></tr>';
+    }).join('') || '<tr><td colspan="9" style="text-align:center;padding:20px;color:var(--color-text-tertiary)">Sin órdenes</td></tr>';
 
     var detalle = document.getElementById('detalle-tienda-caja');
     if (detalle) { detalle.style.display='block'; setTimeout(function(){ detalle.scrollIntoView({behavior:'smooth',block:'start'}); },50); }
@@ -204,7 +236,7 @@ window.cerrarDetalleTienda = function() {
 };
 
 /* ════════════════════════════════════════════
-   TAB LIQUIDEZ DIARIA — filtro de fechas
+   TAB LIQUIDEZ DIARIA
 ════════════════════════════════════════════ */
 window.limpiarFiltroLiquidez = function() {
   var d = document.getElementById('filtro-liquidez-desde');
@@ -214,13 +246,6 @@ window.limpiarFiltroLiquidez = function() {
   renderLiquidez();
 };
 
-/* ════════════════════════════════════════════
-   TAB LIQUIDEZ DIARIA
-   Bruto = delivery estados con cobro
-   Pago motos = pago_moto estados con cobro
-   Productos = monto_producto
-   Líquido = Bruto − Pago motos − Productos
-════════════════════════════════════════════ */
 window.renderLiquidez = async function() {
   var tbody = document.getElementById('tbody-liquidez');
   if (!tbody) return;
@@ -232,8 +257,18 @@ window.renderLiquidez = async function() {
     if (desde && desde.value) params.push('desde='+desde.value);
     if (hasta  && hasta.value)  params.push('hasta='+hasta.value);
     if (params.length) url += '?' + params.join('&');
+
     var r = await fetch(url);
     var data = await r.json();
+
+    if (!Array.isArray(data) || data.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--color-text-tertiary)">Sin datos para el período seleccionado</td></tr>';
+      var set2 = function(id,v){ var el=document.getElementById(id); if(el) el.textContent=v; };
+      set2('kpi-bruto','S/ 0.00'); set2('kpi-motos','S/ 0.00');
+      set2('kpi-devol','S/ 0.00'); set2('kpi-neto','S/ 0.00');
+      return;
+    }
+
     var totBruto=0, totMotos=0, totProd=0, totNeto=0, totPedidos=0;
 
     var rows = data.map(function(d) {
@@ -262,7 +297,7 @@ window.renderLiquidez = async function() {
       '<td style="color:var(--color-green);font-weight:700">S/ '+totNeto.toFixed(2)+'</td>' +
     '</tr>';
 
-    tbody.innerHTML = rows || '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--color-text-tertiary)">Sin datos</td></tr>';
+    tbody.innerHTML = rows;
 
     var set = function(id,v){ var el=document.getElementById(id); if(el) el.textContent=v; };
     set('kpi-bruto', 'S/ '+totBruto.toFixed(2));
@@ -274,9 +309,6 @@ window.renderLiquidez = async function() {
 
 /* ════════════════════════════════════════════
    TAB MOTORIZADOS
-   Cobrado − Pago moto = Saldo
-   + = motorizado debe a Velox
-   − = Velox le debe al motorizado
 ════════════════════════════════════════════ */
 window.renderMotosCaja = async function() {
   var tbody = document.getElementById('tbody-motos-caja');
@@ -284,6 +316,27 @@ window.renderMotosCaja = async function() {
   try {
     var r    = await fetch(API+'/caja/motorizados');
     var data = await r.json();
+
+    var totalAPagar   = 0;
+    var totalACobrar  = 0;
+    var diasPendientes = 0;
+
+    var porMotoKpi = {};
+    data.forEach(function(d) {
+      if (!porMotoKpi[d.motorizado]) porMotoKpi[d.motorizado] = 0;
+      var saldo = parseFloat(d.cobrado||0) - parseFloat(d.pago_moto||0);
+      if (!d.pagado) porMotoKpi[d.motorizado] += saldo;
+      if (!d.pagado && (parseFloat(d.pago_moto||0)>0 || Math.abs(saldo)>0)) diasPendientes++;
+    });
+    Object.values(porMotoKpi).forEach(function(s) {
+      if (s < 0) totalAPagar  += Math.abs(s);
+      if (s > 0) totalACobrar += s;
+    });
+
+    var set = function(id,v){ var el=document.getElementById(id); if(el) el.textContent=v; };
+    set('kpi-moto-pagar',     'S/ '+totalAPagar.toFixed(2));
+    set('kpi-moto-cobrar',    'S/ '+totalACobrar.toFixed(2));
+    set('kpi-moto-pendientes', diasPendientes + ' día(s)');
 
     var porMoto = {};
     data.forEach(function(d) {
@@ -293,39 +346,60 @@ window.renderMotosCaja = async function() {
 
     tbody.innerHTML = Object.keys(porMoto).sort().map(function(nombre) {
       var g         = porMoto[nombre];
-      var pagoTotal = g.dias.reduce(function(s,d){ return s+parseFloat(d.pago_moto||0); }, 0);
-      var cobTotal  = g.dias.reduce(function(s,d){ return s+parseFloat(d.cobrado||0); }, 0);
-      var saldo     = cobTotal - pagoTotal;
-      var pendientes= g.dias.filter(function(d){ return !d.pagado && (parseFloat(d.pago_moto||0)>0||parseFloat(d.cobrado||0)>0); }).length;
+      var pendientes= g.dias.filter(function(d){ return !d.pagado; }).length;
+      var saldoPend = 0;
+      g.dias.filter(function(d){ return !d.pagado; }).forEach(function(d){
+        saldoPend += parseFloat(d.cobrado||0) - parseFloat(d.pago_moto||0);
+      });
 
-      var saldoLabel = saldo > 0
-        ? '<span style="color:var(--color-green);font-weight:600">S/ '+saldo.toFixed(2)+' — debe a Velox</span>'
-        : saldo < 0
-        ? '<span style="color:var(--color-red-text);font-weight:600">S/ '+Math.abs(saldo).toFixed(2)+' — Velox le debe</span>'
+      var saldoLabel = saldoPend > 0
+        ? '<span style="color:var(--color-green);font-weight:600">S/ '+saldoPend.toFixed(2)+' — debe a Velox</span>'
+        : saldoPend < 0
+        ? '<span style="color:var(--color-red-text);font-weight:600">S/ '+Math.abs(saldoPend).toFixed(2)+' — Velox le debe</span>'
         : '<span style="color:var(--color-text-secondary)">S/ 0.00</span>';
 
       var estadoDeuda = pendientes > 0
         ? '<span class="badge-pago-no">✗ '+pendientes+' día(s) pendiente(s)</span>'
         : '<span class="badge-pago-si">✓ Al día</span>';
 
+      var pagoTotal = g.dias.reduce(function(s,d){ return s+parseFloat(d.pago_moto||0); }, 0);
+      var cobTotal  = g.dias.reduce(function(s,d){ return s+parseFloat(d.cobrado||0); }, 0);
+
       return '<tr>' +
         '<td><strong>'+nombre+'</strong></td>' +
         '<td>'+saldoLabel+'</td>' +
         '<td>'+estadoDeuda+'</td>' +
+        '<td><span style="font-size:12px;color:var(--color-text-secondary)">Pago moto: S/'+pagoTotal.toFixed(2)+' · Cobrado: S/'+cobTotal.toFixed(2)+'</span></td>' +
         '<td><button class="btn btn-sm btn-primary" onclick="verDetalleMotoCaja(\''+nombre+'\',\''+g.id+'\')"><i class="ti ti-eye"></i> Ver detalle</button></td>' +
       '</tr>';
-    }).join('') || '<tr><td colspan="4" style="text-align:center;padding:24px;color:var(--color-text-tertiary)">Sin datos</td></tr>';
+    }).join('') || '<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--color-text-tertiary)">Sin datos</td></tr>';
 
   } catch(err) { console.error('Error motos caja:', err); }
 };
 
+var _cajaDetalleMotoCurrent = { nombre: '', id: '' };
+
 window.verDetalleMotoCaja = async function(nombreMoto, idMoto) {
+  if (_cajaDetalleMotoCurrent.nombre !== nombreMoto) _mostrarPagadosMotos = false;
+  _cajaDetalleMotoCurrent = { nombre: nombreMoto, id: idMoto };
   var el = document.getElementById('titulo-detalle-moto');
   if (el) el.textContent = 'Detalle · '+nombreMoto;
+
+  var btnH = document.getElementById('btn-historial-motos');
+  if (btnH) {
+    btnH.innerHTML = _mostrarPagadosMotos
+      ? '<i class="ti ti-eye-off"></i> Ocultar pagados'
+      : '<i class="ti ti-history"></i> Historial de pagados';
+  }
+
   try {
     var r    = await fetch(API+'/caja/motorizados');
     var data = await r.json();
-    var diasMoto = data.filter(function(d){ return d.motorizado===nombreMoto; });
+    var todosMotoDias = data.filter(function(d){ return d.motorizado===nombreMoto; });
+
+    var diasMoto = _mostrarPagadosMotos
+      ? todosMotoDias.filter(function(d){ return d.pagado; })
+      : todosMotoDias.filter(function(d){ return !d.pagado; });
 
     var tbody = document.getElementById('tbody-detalle-moto-caja');
     if (!tbody) return;
@@ -344,7 +418,7 @@ window.verDetalleMotoCaja = async function(nombreMoto, idMoto) {
         estadoDeuda = '<span class="badge-pago-si">✓ Sin deuda</span>';
         accion = '—';
       } else if (d.pagado) {
-        estadoDeuda = '<span class="badge-pago-si">✓ Pagado</span>';
+        estadoDeuda = '<span class="badge-pago-si">✓ Pagado '+(d.fecha_pago?_fechaDisplayCaja(d.fecha_pago):'')+'</span>';
         accion = '<span style="font-size:12px;color:var(--color-text-tertiary)">Liquidado</span>';
       } else {
         estadoDeuda = '<span class="badge-pago-no">✗ Pendiente</span>';
@@ -360,20 +434,31 @@ window.verDetalleMotoCaja = async function(nombreMoto, idMoto) {
         '<td>'+estadoDeuda+'</td>' +
         '<td>'+accion+'</td>' +
       '</tr>';
-    }).join('') || '<tr><td colspan="7" style="text-align:center;padding:20px;color:var(--color-text-tertiary)">Sin datos</td></tr>';
+    }).join('') || '<tr><td colspan="7" style="text-align:center;padding:20px;color:var(--color-text-tertiary)">'+(_mostrarPagadosMotos?'Sin pagos registrados aún':'Sin pendientes — todo al día ✓')+'</td></tr>';
 
     var detalle = document.getElementById('detalle-moto-caja');
     if (detalle) { detalle.style.display='block'; setTimeout(function(){ detalle.scrollIntoView({behavior:'smooth',block:'start'}); },50); }
   } catch(err) { console.error(err); }
 };
 
+window.togglePagadosMotosActual = function() {
+  _mostrarPagadosMotos = !_mostrarPagadosMotos;
+  verDetalleMotoCaja(_cajaDetalleMotoCurrent.nombre, _cajaDetalleMotoCurrent.id);
+};
+
 window.marcarMotoDia = async function(idMoto, fecha) {
   try {
-    await fetch(API+'/caja/motorizados/pagar', {
+    var resp = await fetch(API+'/caja/motorizados/pagar', {
       method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ id_motorizado: parseInt(idMoto), fecha: fecha }),
     });
-    verDetalleMotoCaja(document.getElementById('titulo-detalle-moto').textContent.replace('Detalle · ',''));
+    var json = await resp.json();
+    if (!json.ok) {
+      if (typeof showNotif==='function') showNotif('Error: '+(json.error||'No se pudo marcar'));
+      return;
+    }
+    /* Refrescar detalle Y resumen de motorizados */
+    verDetalleMotoCaja(_cajaDetalleMotoCurrent.nombre, _cajaDetalleMotoCurrent.id);
     renderMotosCaja();
     if (typeof showNotif==='function') showNotif('Día liquidado · '+_fechaDisplayCaja(fecha));
   } catch(err) { console.error(err); }
@@ -387,9 +472,27 @@ window.cerrarDetalleMoto = function() {
 /* ── Init ── */
 window.initCaja = function() {
   _cajaFiltroDesde = ''; _cajaFiltroHasta = '';
+  _mostrarPagadosTiendas = false;
+  _mostrarPagadosMotos   = false;
   ['tiendas','liquidez','motorizados'].forEach(function(t){
     var el = document.getElementById('tab-'+t);
     if (el) el.style.display = t==='tiendas' ? 'block' : 'none';
   });
   renderTiendasCaja();
+};
+
+/* ── Editar orden desde Caja ── */
+window.editarOrdenDesdeCaja = async function(ordenId) {
+  /* Reutiliza el mismo modal que motorizados */
+  if (typeof abrirActualizarEstadoOrden === 'function') {
+    await abrirActualizarEstadoOrden(ordenId);
+    /* Al guardar, refrescar el detalle de caja */
+    var _origGuardar = window.guardarActualizarEstadoOrden;
+    window.guardarActualizarEstadoOrden = async function() {
+      await _origGuardar();
+      /* Refrescar la vista de caja activa */
+      if (typeof renderTiendasCaja === 'function') renderTiendasCaja();
+      if (typeof renderMotosCaja   === 'function') renderMotosCaja();
+    };
+  }
 };

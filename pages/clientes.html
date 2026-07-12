@@ -28,6 +28,8 @@
   <div class="card-head">
     <span class="card-title">Balance por tienda cliente</span>
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      <button class="btn btn-sm" id="btn-hoy-clientes" onclick="filtroRapidoClientes('hoy')">Hoy</button>
+      <button class="btn btn-sm" id="btn-ayer-clientes" onclick="filtroRapidoClientes('ayer')">Ayer</button>
       <div class="date-filter-wrap">
         <i class="ti ti-calendar"></i>
         <input type="date" id="filtro-fecha-clientes"
@@ -48,7 +50,8 @@
       <thead>
         <tr>
           <th>Tienda · Ciclo de pago</th>
-          <th>Contacto</th>
+          <th>Teléfono / Yape</th>
+          <th>WA</th>
           <th>Pedidos</th>
           <th>Entregados</th>
           <th>No entregados</th>
@@ -92,28 +95,28 @@
 
       <div>
         <label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px">Nombre de la tienda *</label>
-        <input id="f-tienda-nombre" class="search-box" style="width:100%" placeholder="Ej: Moda Perú SAC" />
+        <input id="f-tienda-nombre" class="search-box" style="width:100%" placeholder="Ej: Moda Perú SAC" maxlength="100" />
       </div>
 
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
         <div>
           <label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px">RUC * (11 dígitos)</label>
-          <input id="f-tienda-ruc" class="search-box" style="width:100%" placeholder="Ej: 20512345678" maxlength="11" />
+          <input id="f-tienda-ruc" class="search-box" style="width:100%" placeholder="Ej: 20512345678" maxlength="11" inputmode="numeric" oninput="this.value=this.value.replace(/[^0-9]/g,'')" />
         </div>
         <div>
           <label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px">Teléfono</label>
-          <input id="f-tienda-telefono" class="search-box" style="width:100%" placeholder="Ej: 01-234-5678" />
+          <input id="f-tienda-telefono" class="search-box" style="width:100%" placeholder="Ej: 987654321 (9 dígitos)" maxlength="9" inputmode="numeric" oninput="this.value=this.value.replace(/[^0-9]/g,'')" />
         </div>
       </div>
 
       <div>
         <label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px">Correo de contacto *</label>
-        <input id="f-tienda-contacto" class="search-box" style="width:100%" placeholder="Ej: ventas@mitienda.pe" type="email" />
+        <input id="f-tienda-contacto" class="search-box" style="width:100%" placeholder="Ej: ventas@gmail.com" type="email" maxlength="100" />
       </div>
 
       <div>
         <label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px">Dirección</label>
-        <input id="f-tienda-direccion" class="search-box" style="width:100%" placeholder="Ej: Av. Brasil 450, Jesús María" />
+        <input id="f-tienda-direccion" class="search-box" style="width:100%" placeholder="Ej: Av. Brasil 450, Jesús María" maxlength="200" />
       </div>
 
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
@@ -137,7 +140,7 @@
 
       <div>
         <label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px">Observaciones / notas internas</label>
-        <input id="f-tienda-obs" class="search-box" style="width:100%" placeholder="Ej: Paga los viernes, coordinar con Ana" />
+        <input id="f-tienda-obs" class="search-box" style="width:100%" placeholder="Ej: Paga los viernes, coordinar con Ana" maxlength="300" />
       </div>
 
       <!-- Aviso de sincronización -->
@@ -177,6 +180,11 @@
       <button class="btn btn-sm" onclick="cerrarConfirmTienda()">Cancelar</button>
       <button class="btn btn-danger btn-sm" onclick="ejecutarEliminarTienda()">
         <i class="ti ti-trash"></i> Eliminar
+      </button>
+    </div>
+    <div style="text-align:center;margin-top:14px;padding-top:12px;border-top:1px solid var(--color-border-tertiary)">
+      <button onclick="abrirEliminarTiendaFisico()" style="background:none;border:none;color:#A32D2D;font-size:11px;cursor:pointer;text-decoration:underline">
+        ¿Necesitas eliminarla permanentemente de la base de datos?
       </button>
     </div>
   </div>

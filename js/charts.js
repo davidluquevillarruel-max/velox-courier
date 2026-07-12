@@ -9,6 +9,13 @@ var _EC_EV  = ['entregado', 'ausente']; /* estados que generan cobro */
 /* Filtro de rango activo en evidencias */
 var _filtroEvidenciaDesde = '';
 var _filtroEvidenciaHasta = '';
+var _filtroEvidenciaMoto  = ''; /* nombre del motorizado si sesión es motorizado */
+
+function _obtenerSesionEv() {
+  var raw = localStorage.getItem('velox_usuario');
+  if (!raw) return null;
+  try { return JSON.parse(raw); } catch(e) { return null; }
+}
 
 /* Caché de datos cargados */
 var _evOrdenes    = [];
@@ -57,10 +64,12 @@ async function _cargarDatosEvidencias() {
 
 /* Filtrar órdenes según rango activo */
 function _ordenesFiltradas() {
-  if (!_filtroEvidenciaDesde && !_filtroEvidenciaHasta) return _evOrdenes;
   return _evOrdenes.filter(function(o) {
     if (_filtroEvidenciaDesde && o.fecha < _filtroEvidenciaDesde) return false;
     if (_filtroEvidenciaHasta && o.fecha > _filtroEvidenciaHasta) return false;
+    /* Si es sesión motorizado, solo sus órdenes */
+    if (_filtroEvidenciaMoto && o.motorizado &&
+        o.motorizado.trim().toUpperCase() !== _filtroEvidenciaMoto.trim().toUpperCase()) return false;
     return true;
   });
 }
@@ -291,13 +300,27 @@ function _renderEvidenciasCompleto() {
    INIT EVIDENCIAS — llamado desde navigation.js
 ════════════════════════════════════════════ */
 window.initEvidencias = async function() {
+  /* Detectar si es motorizado y filtrar solo sus órdenes */
+  var sesionEv = _obtenerSesionEv();
+  _filtroEvidenciaMoto = (sesionEv && sesionEv.rol === 'motorizado') ? sesionEv.nombre : '';
+
   /* Mostrar estado de carga */
   var tbM = document.getElementById('tbody-ev-motos');
   var tbT = document.getElementById('tbody-ev-tiendas');
   if (tbM) tbM.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:20px;color:var(--color-text-tertiary)"><i class="ti ti-loader"></i> Cargando...</td></tr>';
-  if (tbT) tbT.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:20px;color:var(--color-text-tertiary)"><i class="ti ti-loader"></i> Cargando...</td></tr>';
+  /* Si es motorizado, ocultar sección de tiendas */
+  var seccionTiendas = document.getElementById('seccion-ev-tiendas');
+  if (seccionTiendas) seccionTiendas.style.display = _filtroEvidenciaMoto ? 'none' : '';
 
   await _cargarDatosEvidencias();
+
+  /* Si es motorizado, filtrar _evMotos a solo él */
+  if (_filtroEvidenciaMoto) {
+    _evMotos = _evMotos.filter(function(m){
+      return m.nombre.trim().toUpperCase() === _filtroEvidenciaMoto.trim().toUpperCase();
+    });
+  }
+
   _renderEvidenciasCompleto();
 };
 

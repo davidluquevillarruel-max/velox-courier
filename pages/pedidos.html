@@ -11,6 +11,10 @@
 
   <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
 
+    <span style="font-size:13px;color:var(--color-text-secondary)">Período:</span>
+    <button class="btn btn-sm" id="btn-hoy-pedidos" onclick="filtroRapidoPedidos('hoy')">Hoy</button>
+    <button class="btn btn-sm" id="btn-ayer-pedidos" onclick="filtroRapidoPedidos('ayer')">Ayer</button>
+
     <!-- Filtro de fecha estilizado -->
     <div class="date-filter-wrap">
       <i class="ti ti-calendar"></i>
@@ -116,12 +120,14 @@
           <th>Código</th>
           <th>Tienda cliente</th>
           <th>Destinatario</th>
+          <th>Contacto</th>
           <th>Distrito</th>
           <th>Motorizado</th>
           <th>Estado</th>
           <th>Hora asig.</th>
           <th>Delivery</th>
           <th>Fecha</th>
+          <th></th>
         </tr>
       </thead>
       <tbody id="tbody-pedidos"></tbody>
@@ -173,18 +179,18 @@
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
         <div>
           <label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px;font-weight:500">Nombre destinatario *</label>
-          <input id="f-orden-dest" class="search-box" style="width:100%;border-radius:var(--radius-md);padding:8px 12px" placeholder="Ej: Ana Quispe" />
+          <input id="f-orden-dest" class="search-box" style="width:100%;border-radius:var(--radius-md);padding:8px 12px" placeholder="Ej: Ana Quispe" maxlength="100" />
         </div>
         <div>
           <label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px;font-weight:500">Teléfono</label>
-          <input id="f-orden-telef" class="search-box" style="width:100%;border-radius:var(--radius-md);padding:8px 12px" placeholder="Ej: 956-111-001" />
+          <input id="f-orden-telef" class="search-box" style="width:100%;border-radius:var(--radius-md);padding:8px 12px" placeholder="Ej: 956111001 (9 dígitos)" maxlength="9" inputmode="numeric" oninput="this.value=this.value.replace(/[^0-9]/g,'')" />
         </div>
       </div>
 
       <!-- Dirección -->
       <div>
         <label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px;font-weight:500">Dirección de entrega *</label>
-        <input id="f-orden-direccion" class="search-box" style="width:100%;border-radius:var(--radius-md);padding:8px 12px" placeholder="Ej: Av. Larco 450, Miraflores" />
+        <input id="f-orden-direccion" class="search-box" style="width:100%;border-radius:var(--radius-md);padding:8px 12px" placeholder="Ej: Av. Larco 450, Miraflores" maxlength="200" />
       </div>
 
       <!-- Distrito + Delivery -->

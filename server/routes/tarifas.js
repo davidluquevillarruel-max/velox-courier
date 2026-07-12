@@ -88,4 +88,28 @@ router.delete('/:id', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+/* DELETE /api/tarifas/:id/permanente — Eliminación física.
+   Solo permitida si el distrito no tiene órdenes asociadas. */
+router.delete('/:id/permanente', async (req, res) => {
+  try {
+    const pool = await getPool();
+
+    const check = await pool.request()
+      .input('id', sql.Int, req.params.id)
+      .query(`SELECT COUNT(*) AS total FROM ordenes WHERE id_distrito = @id`);
+
+    if (check.recordset[0].total > 0) {
+      return res.status(400).json({
+        error: `No se puede eliminar: este distrito tiene ${check.recordset[0].total} orden(es) registrada(s). Usa la opción de desactivar en su lugar.`
+      });
+    }
+
+    await pool.request()
+      .input('id', sql.Int, req.params.id)
+      .query(`DELETE FROM distritos WHERE id = @id`);
+
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 module.exports = router;

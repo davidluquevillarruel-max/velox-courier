@@ -29,6 +29,7 @@
   <link rel="stylesheet" href="css/tables.css" />
   <link rel="stylesheet" href="css/charts.css" />
   <link rel="stylesheet" href="css/detalle.css" />
+  <link rel="stylesheet" href="css/responsive.css" />
 </head>
 <body>
 
@@ -45,6 +46,14 @@
   })();
 </script>
 
+<!-- Botón hamburguesa (solo móvil) -->
+<button class="hamburger-btn" id="hamburger-btn" onclick="toggleSidebar()" aria-label="Menú">
+  <i class="ti ti-menu-2"></i>
+</button>
+
+<!-- Overlay oscuro -->
+<div class="sidebar-overlay" id="sidebar-overlay" onclick="cerrarSidebar()"></div>
+
 <div class="layout">
 
   <!-- ══════════════════════════════════════════
@@ -53,7 +62,7 @@
   <div class="sidebar">
     <div class="logo">
       <div class="logo-inner">
-        <i class="ti ti-truck-delivery logo-icon" aria-hidden="true"></i>
+        <img src="img/velox_logo.jpeg" alt="Velox" style="height:38px;width:auto;object-fit:contain;border-radius:4px" />
         <div>
           <div class="logo-name">VeloxCourierAdmin</div>
           <div class="logo-sub">Panel de gestión</div>
@@ -61,27 +70,33 @@
       </div>
     </div>
 
-    <nav class="nav">
-      <div class="nav-item active" onclick="showPage('pedidos')">
+    <nav class="nav" id="sidebar-nav">
+      <div class="nav-item active" id="nav-pedidos" onclick="showPage('pedidos')">
         <i class="ti ti-package" aria-hidden="true"></i> Todos los pedidos
       </div>
-      <div class="nav-item" onclick="showPage('motorizados')">
+      <div class="nav-item" id="nav-motorizados" onclick="showPage('motorizados')">
         <i class="ti ti-motorbike" aria-hidden="true"></i> Motorizados
       </div>
-      <div class="nav-item" onclick="showPage('clientes')">
+      <div class="nav-item" id="nav-clientes" onclick="showPage('clientes')">
         <i class="ti ti-building-store" aria-hidden="true"></i> Clientes / Tiendas
       </div>
-      <div class="nav-item" onclick="showPage('evidencias')">
+      <div class="nav-item" id="nav-evidencias" onclick="showPage('evidencias')">
         <i class="ti ti-chart-bar" aria-hidden="true"></i> Evidencias
       </div>
-      <div class="nav-item" onclick="showPage('tarifas')">
+      <div class="nav-item" id="nav-tarifas" onclick="showPage('tarifas')">
         <i class="ti ti-map-pin" aria-hidden="true"></i> Tarifas
       </div>
-      <div class="nav-item" onclick="showPage('caja')">
+      <div class="nav-item" id="nav-caja" onclick="showPage('caja')">
         <i class="ti ti-cash" aria-hidden="true"></i> Caja
       </div>
-      <div class="nav-item" onclick="showPage('asignacion')">
+      <div class="nav-item" id="nav-asignacion" onclick="showPage('asignacion')">
         <i class="ti ti-arrows-exchange" aria-hidden="true"></i> Asignación
+      </div>
+      <div class="nav-item" id="nav-usuarios" onclick="showPage('usuarios')">
+        <i class="ti ti-users" aria-hidden="true"></i> Usuarios
+      </div>
+      <div class="nav-item" id="nav-usuarios-tienda" onclick="showPage('usuarios-tienda')">
+        <i class="ti ti-user-check" aria-hidden="true"></i> Usuarios Tienda
       </div>
     </nav>
 
@@ -124,6 +139,7 @@
      asignacion → asignar, desasignar
      charts    → gráfico de barras
 ══════════════════════════════════════════ -->
+<script src="js/validators.js"></script>
 <script src="js/utils.js"></script>
 <script src="js/tarifas.js"></script>
 <script src="js/caja.js"></script>
@@ -134,6 +150,38 @@
 <script src="js/filters.js"></script>
 <script src="js/asignacion.js"></script>
 <script src="js/charts.js"></script>
+<script src="js/usuarios.js"></script>
+<script src="js/usuarios-tienda.js"></script>
 
+<script>
+function toggleSidebar() {
+  var sidebar = document.querySelector('.sidebar');
+  var overlay = document.getElementById('sidebar-overlay');
+  var btn     = document.getElementById('hamburger-btn');
+  if (sidebar.classList.contains('open')) {
+    cerrarSidebar();
+  } else {
+    sidebar.classList.add('open');
+    overlay.classList.add('visible');
+    btn.innerHTML = '<i class="ti ti-x"></i>';
+  }
+}
+function cerrarSidebar() {
+  var sidebar = document.querySelector('.sidebar');
+  var overlay = document.getElementById('sidebar-overlay');
+  var btn     = document.getElementById('hamburger-btn');
+  sidebar.classList.remove('open');
+  overlay.classList.remove('visible');
+  if (btn) btn.innerHTML = '<i class="ti ti-menu-2"></i>';
+}
+/* Cerrar sidebar al navegar en móvil */
+document.addEventListener('DOMContentLoaded', function() {
+  document.querySelectorAll('.nav-item').forEach(function(el) {
+    el.addEventListener('click', function() {
+      if (window.innerWidth <= 768) setTimeout(cerrarSidebar, 150);
+    });
+  });
+});
+</script>
 </body>
 </html>

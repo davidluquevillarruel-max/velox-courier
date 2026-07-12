@@ -343,3 +343,11 @@
   transition: opacity 0.15s;
 }
 .btn-pagar:hover { opacity: 0.85; }
+
+/* ── Botones de filtro rápido (Hoy/Ayer/etc) con estado activo ── */
+.btn.active {
+  background: var(--color-blue);
+  color: #fff;
+  border-color: var(--color-blue);
+  font-weight: 600;
+}

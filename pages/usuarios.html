@@ -1,0 +1,98 @@
+<!-- ============================================================
+     pages/usuarios.html — Gestión de usuarios del sistema
+     Solo accesible para rol "admin"
+     ============================================================ -->
+
+<div class="page-title">Usuarios</div>
+<div class="page-sub">Gestión de accesos al sistema. Cada motorizado puede tener su propio usuario.</div>
+
+<!-- Barra de acciones -->
+<div style="display:flex;justify-content:flex-end;margin-bottom:16px">
+  <button class="btn btn-primary btn-sm" onclick="abrirModalUsuario()">
+    <i class="ti ti-user-plus"></i> Agregar usuario
+  </button>
+</div>
+
+<!-- Tabla de usuarios -->
+<div class="card">
+  <div class="card-head"><span class="card-title">Usuarios del sistema</span></div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Nombre</th>
+          <th>Correo</th>
+          <th>Rol</th>
+          <th>Vinculado a</th>
+          <th>Último acceso</th>
+          <th>Estado</th>
+          <th>Acción</th>
+        </tr>
+      </thead>
+      <tbody id="tbody-usuarios"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════
+     MODAL — Agregar usuario
+════════════════════════════════════════════ -->
+<div id="usuario-modal-overlay"
+     style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.35);z-index:1000;align-items:center;justify-content:center">
+  <div style="background:var(--color-bg-primary);border-radius:var(--radius-lg);padding:24px;width:420px;max-width:95vw;box-shadow:0 8px 32px rgba(0,0,0,0.18)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px">
+      <span style="font-size:15px;font-weight:500">Agregar usuario</span>
+      <button onclick="cerrarModalUsuario()" style="background:none;border:none;cursor:pointer;font-size:18px;color:var(--color-text-secondary)"><i class="ti ti-x"></i></button>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <div>
+        <label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px">Nombre completo</label>
+        <input id="f-usuario-nombre" class="search-box" style="width:100%" placeholder="Ej: Carlos Ramírez" maxlength="100" />
+      </div>
+
+      <div>
+        <label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px">Correo (debe terminar en @velox.pe)</label>
+        <div style="display:flex;align-items:center;gap:0">
+          <input id="f-usuario-email-prefijo" class="search-box" style="width:100%;border-radius:var(--radius-md) 0 0 var(--radius-md)" placeholder="nombre" maxlength="50" />
+          <span style="background:var(--color-bg-secondary);border:1px solid var(--color-border-secondary);border-left:none;padding:8px 12px;border-radius:0 var(--radius-md) var(--radius-md) 0;font-size:13px;color:var(--color-text-secondary);white-space:nowrap">@velox.pe</span>
+        </div>
+      </div>
+
+      <div>
+        <label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px">Rol</label>
+        <select id="f-usuario-rol" class="filter-select" style="width:100%" onchange="onCambioRolUsuario()">
+          <option value="motorizado">Motorizado</option>
+          <option value="admin">Administrador</option>
+          <option value="operador">Operador</option>
+          <option value="visor">Visor</option>
+        </select>
+      </div>
+
+      <div id="wrap-vincular-motorizado">
+        <label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px">Vincular usuario con</label>
+        <select id="f-usuario-motorizado" class="filter-select" style="width:100%">
+          <option value="">Cargando motorizados libres...</option>
+        </select>
+        <div id="sin-motorizados-libres" style="display:none;font-size:11px;color:var(--color-amber-text);margin-top:4px">
+          No hay motorizados libres. Primero agrégalo en la página "Motorizados".
+        </div>
+      </div>
+
+      <div>
+        <label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px">Contraseña</label>
+        <input id="f-usuario-password" type="password" class="search-box" style="width:100%" placeholder="Mínimo 8 caracteres" />
+        <div style="font-size:11px;color:var(--color-text-tertiary);margin-top:4px">
+          Debe incluir mayúscula, minúscula, número y un símbolo (ej: !)
+        </div>
+      </div>
+
+      <div id="usuario-modal-error" style="display:none;color:#A32D2D;font-size:12px;padding:8px 12px;background:#FCEBEB;border-radius:var(--radius-md)"></div>
+    </div>
+
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:20px">
+      <button class="btn btn-sm" onclick="cerrarModalUsuario()">Cancelar</button>
+      <button class="btn btn-primary btn-sm" onclick="guardarUsuario()"><i class="ti ti-check"></i> Crear usuario</button>
+    </div>
+  </div>
+</div>

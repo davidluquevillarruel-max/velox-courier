@@ -168,6 +168,16 @@ window.confirmarEliminar = async function() {
   } catch(err) { console.error(err); }
 };
 
+window.abrirEliminarTarifaFisico = function() {
+  var t = TARIFAS.find(function(x){ return x.id == _eliminarId; });
+  if (!t) return;
+  var idGuardado = t.id, nombreGuardado = t.distrito;
+  cerrarConfirm();
+  abrirConfirmarEliminacionFisica(nombreGuardado, API + '/tarifas/' + idGuardado + '/permanente', function() {
+    _cargarTarifas().then(renderTablaTarifas);
+  });
+};
+
 window.descargarTarifas = function() {
   var datos = _datosFiltrados();
   var csv = 'Distrito,Zona,Delivery,Pago Moto,Margen\n';

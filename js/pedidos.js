@@ -129,7 +129,7 @@ window.renderPedidos = async function() {
 
   if (ordenes.length === 0) {
     tbody.innerHTML =
-      '<tr><td colspan="9" style="padding:0;border:none">' +
+      '<tr><td colspan="11" style="padding:0;border:none">' +
         '<div class="empty-state">' +
           '<div class="empty-state-icon"><i class="ti ti-clipboard-list"></i></div>' +
           '<div class="empty-state-title">Sin órdenes para esta fecha</div>' +
@@ -154,12 +154,14 @@ window.renderPedidos = async function() {
       '<td><strong>#' + o.codigo + '</strong></td>' +
       '<td>' + o.tienda + especial + '</td>' +
       '<td>' + (o.dest_nombre || '—') + '</td>' +
+      '<td>' + (typeof _botonWhatsApp === 'function' ? _botonWhatsApp(o.dest_telefono, o.dest_nombre, o.dest_telefono_2) : (o.dest_telefono || '—')) + '</td>' +
       '<td>' + o.distrito + '</td>' +
       '<td>' + (o.motorizado || '<span style="color:var(--color-text-tertiary)">Sin asignar</span>') + '</td>' +
       '<td>' + _badgeEstado(o.estado) + '</td>' +
       '<td>' + (o.hora_asignacion || '—') + '</td>' +
       '<td>' + deliveryHTML + '</td>' +
       '<td style="font-size:12px;color:var(--color-text-secondary)">' + _fechaDisplay(o.fecha) + '</td>' +
+      '<td><button class="btn btn-sm" onclick="abrirActualizarEstadoOrden(' + o.id + ')"><i class="ti ti-refresh"></i> Actualizar</button></td>' +
     '</tr>';
   }).join('');
 };
@@ -170,6 +172,7 @@ window.renderPedidos = async function() {
 window.aplicarFiltroPedidos = function() {
   var inp = document.getElementById('filtro-fecha-pedidos');
   _filtroFecha = inp ? inp.value : '';
+  _marcarBotonActivoPedidos(null);
   renderPedidos();
 };
 
@@ -177,8 +180,33 @@ window.limpiarFiltroPedidos = function() {
   _filtroFecha = '';
   var inp = document.getElementById('filtro-fecha-pedidos');
   if (inp) inp.value = '';
+  _marcarBotonActivoPedidos(null);
   renderPedidos();
 };
+
+function _marcarBotonActivoPedidos(tipo) {
+  var btnHoy  = document.getElementById('btn-hoy-pedidos');
+  var btnAyer = document.getElementById('btn-ayer-pedidos');
+  if (btnHoy)  btnHoy.classList.toggle('active', tipo === 'hoy');
+  if (btnAyer) btnAyer.classList.toggle('active', tipo === 'ayer');
+}
+
+window.filtroRapidoPedidos = function(tipo) {
+  var fecha = tipo === 'hoy' ? _hoy() : _hoyMenos1();
+  _filtroFecha = fecha;
+  var inp = document.getElementById('filtro-fecha-pedidos');
+  if (inp) inp.value = fecha;
+  _marcarBotonActivoPedidos(tipo);
+  renderPedidos();
+};
+
+function _hoyMenos1() {
+  var d = new Date();
+  d.setDate(d.getDate() - 1);
+  var mm = ('0'+(d.getMonth()+1)).slice(-2);
+  var dd = ('0'+d.getDate()).slice(-2);
+  return d.getFullYear() + '-' + mm + '-' + dd;
+}
 
 /* ════════════════════════════════════════════
    MODAL — AGREGAR ORDEN
@@ -231,16 +259,17 @@ window.abrirModalOrden = function() {
 };
 
 window.onDistritoChange = function() {
-  /* Autocompletar delivery desde catálogo de tarifas */
+  /* Autocompletar delivery Y pago moto desde catálogo de tarifas */
   fetch(API + '/tarifas').then(function(r){ return r.json(); }).then(function(tarifas) {
-    var selDist = document.getElementById('f-orden-distrito');
-    var fDeliv  = document.getElementById('f-orden-delivery');
+    var selDist   = document.getElementById('f-orden-distrito');
+    var fDeliv    = document.getElementById('f-orden-delivery');
     if (!selDist || !fDeliv) return;
     var t = tarifas.find(function(x){ return x.distrito === selDist.value; });
     if (t) {
       fDeliv.value = t.precio_delivery;
       var hint = document.getElementById('delivery-hint');
-      if (hint) hint.textContent = 'Tarifa del tarifario: S/ ' + parseFloat(t.precio_delivery).toFixed(2);
+      if (hint) hint.textContent = 'Tarifa: delivery S/ ' + parseFloat(t.precio_delivery).toFixed(2) +
+        (t.pago_motorizado ? ' · moto S/ ' + parseFloat(t.pago_motorizado).toFixed(2) : '');
     }
   });
 };
@@ -269,6 +298,14 @@ window.guardarOrden = async function() {
     errEl.style.display = 'block';
     return;
   }
+
+  var validaciones = [
+    validarTexto(dest, { obligatorio: true, min: 2, max: 100, nombreCampo: 'El nombre del destinatario' }),
+    validarTelefonoObligatorio(telef),
+    validarTexto(direccion, { obligatorio: true, min: 5, max: 200, nombreCampo: 'La dirección' }),
+    validarTexto(obs, { max: 300, nombreCampo: 'Las observaciones' }),
+  ];
+  if (!ejecutarValidaciones(validaciones, errEl)) return;
 
   try {
     var r = await fetch(API + '/ordenes', {
@@ -317,5 +354,6 @@ window.initPedidos = async function() {
   _filtroFecha = _hoy();
   var inp = document.getElementById('filtro-fecha-pedidos');
   if (inp) inp.value = _filtroFecha;
+  _marcarBotonActivoPedidos('hoy');
   await renderPedidos();
 };

@@ -1,70 +1,97 @@
 /* ============================================================
-   routes/tiendas.js — con endpoint /resumen agregado
+   routes/tiendas.js — con endpoint /resumen
+   Protegido: requiere sesión. Escritura solo para gestores.
+   Rol tienda: ve/consulta únicamente su propia tienda.
    ============================================================ */
 const express = require('express');
 const router  = express.Router();
 const { getPool, sql } = require('../db');
+const { requireAuth, requireRol } = require('../middleware/auth');
+
+router.use(requireAuth);
+const GESTORES = ['admin', 'operador'];
+
+/* Una tienda solo puede consultar su propia tienda */
+function tiendaAutorizada(usuario, idTiendaPedida) {
+  if (usuario.rol !== 'tienda') return true;
+  return usuario.id_tienda === parseInt(idTiendaPedida, 10);
+}
 
 /* GET /api/tiendas */
 router.get('/', async (req, res) => {
   try {
-    const pool   = await getPool();
-    const result = await pool.request().query(`
+    const pool    = await getPool();
+    const request = pool.request();
+
+    let filtro = '';
+    if (req.usuario.rol === 'tienda') {
+      request.input('yo', sql.Int, req.usuario.id_tienda || -1);
+      filtro = 'WHERE id = @yo';
+    }
+
+    const result = await request.query(`
       SELECT id, nombre, ruc, contacto, telefono, yape, direccion,
              ciclo_pago, activa, observaciones,
              CONVERT(varchar,creado_en,23) AS creado_en
       FROM tiendas
+      ${filtro}
       ORDER BY nombre
     `);
     res.json(result.recordset);
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) {
+    console.error('GET /tiendas:', err.message);
+    res.status(500).json({ error: 'Error al listar tiendas' });
+  }
 });
 
-/* GET /api/tiendas/resumen?fecha=YYYY-MM-DD
-   FIX: devuelve stats de TODAS las tiendas en una sola query
-   Si no hay fecha, devuelve el acumulado total */
+/* GET /api/tiendas/resumen?fecha=YYYY-MM-DD */
 router.get('/resumen', async (req, res) => {
   try {
-    const pool  = await getPool();
-    const fecha = req.query.fecha;
+    const pool    = await getPool();
+    const fecha   = req.query.fecha;
     const request = pool.request();
-    let filtroFecha = '';
+
+    let filtroFecha  = '';
+    let filtroTienda = '';
     if (fecha) {
       request.input('fecha', sql.Date, fecha);
       filtroFecha = 'AND o.fecha = @fecha';
     }
+    if (req.usuario.rol === 'tienda') {
+      request.input('yo', sql.Int, req.usuario.id_tienda || -1);
+      filtroTienda = 'WHERE t.id = @yo';
+    }
 
     const result = await request.query(`
       SELECT
-        t.id                                                              AS id_tienda,
-        COUNT(o.id)                                                       AS total,
-        SUM(CASE WHEN o.estado = 'entregado'    THEN 1 ELSE 0 END)       AS entregados,
-        SUM(CASE WHEN o.estado = 'no-entregado' THEN 1 ELSE 0 END)       AS no_entregados,
-        SUM(CASE WHEN o.estado = 'reprogramado' THEN 1 ELSE 0 END)       AS reprogramados,
-        SUM(CASE WHEN o.estado = 'ausente'      THEN 1 ELSE 0 END)       AS ausentes,
-        /* Por cobrar = delivery que la tienda nos debe (delivery > cobrado) */
+        t.id AS id_tienda,
+        COUNT(o.id) AS total,
+        SUM(CASE WHEN o.estado = 'entregado'    THEN 1 ELSE 0 END) AS entregados,
+        SUM(CASE WHEN o.estado = 'no-entregado' THEN 1 ELSE 0 END) AS no_entregados,
+        SUM(CASE WHEN o.estado = 'reprogramado' THEN 1 ELSE 0 END) AS reprogramados,
+        SUM(CASE WHEN o.estado = 'ausente'      THEN 1 ELSE 0 END) AS ausentes,
         SUM(CASE WHEN o.estado IN ('entregado','ausente')
                       AND (o.delivery_base + o.monto_adicional) > o.monto_cobrado
                  THEN (o.delivery_base + o.monto_adicional) - o.monto_cobrado
-                 ELSE 0 END)                                              AS por_cobrar,
-        /* Por devolver = exceso que cobró el motorizado y hay que devolver */
+                 ELSE 0 END) AS por_cobrar,
         SUM(CASE WHEN o.estado IN ('entregado','ausente')
                       AND o.monto_cobrado > (o.delivery_base + o.monto_adicional)
                  THEN o.monto_cobrado - (o.delivery_base + o.monto_adicional)
-                 ELSE 0 END)                                              AS por_devolver
+                 ELSE 0 END) AS por_devolver
       FROM tiendas t
       LEFT JOIN ordenes o ON o.id_tienda = t.id ${filtroFecha}
+      ${filtroTienda}
       GROUP BY t.id
     `);
     res.json(result.recordset);
   } catch (err) {
-    console.error('GET /tiendas/resumen:', err);
-    res.status(500).json({ error: err.message });
+    console.error('GET /tiendas/resumen:', err.message);
+    res.status(500).json({ error: 'Error al generar el resumen' });
   }
 });
 
-/* POST /api/tiendas */
-router.post('/', async (req, res) => {
+/* POST /api/tiendas — solo gestores */
+router.post('/', requireRol(...GESTORES), async (req, res) => {
   try {
     const pool = await getPool();
     const t    = req.body;
@@ -84,11 +111,14 @@ router.post('/', async (req, res) => {
         SELECT SCOPE_IDENTITY() AS id;
       `);
     res.status(201).json({ id: r.recordset[0].id });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) {
+    console.error('POST /tiendas:', err.message);
+    res.status(500).json({ error: 'Error al crear la tienda' });
+  }
 });
 
-/* PUT /api/tiendas/:id */
-router.put('/:id', async (req, res) => {
+/* PUT /api/tiendas/:id — solo gestores */
+router.put('/:id', requireRol(...GESTORES), async (req, res) => {
   try {
     const pool = await getPool();
     const t    = req.body;
@@ -111,22 +141,28 @@ router.put('/:id', async (req, res) => {
         WHERE id=@id
       `);
     res.json({ ok: true });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) {
+    console.error('PUT /tiendas/:id:', err.message);
+    res.status(500).json({ error: 'Error al actualizar la tienda' });
+  }
 });
 
-/* DELETE /api/tiendas/:id */
-router.delete('/:id', async (req, res) => {
+/* DELETE /api/tiendas/:id — solo gestores */
+router.delete('/:id', requireRol(...GESTORES), async (req, res) => {
   try {
     const pool = await getPool();
     await pool.request()
       .input('id', sql.Int, req.params.id)
       .query(`UPDATE tiendas SET activa = 0 WHERE id = @id`);
     res.json({ ok: true });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) {
+    console.error('DELETE /tiendas/:id:', err.message);
+    res.status(500).json({ error: 'Error al desactivar la tienda' });
+  }
 });
 
-/* DELETE /api/tiendas/:id/permanente */
-router.delete('/:id/permanente', async (req, res) => {
+/* DELETE /api/tiendas/:id/permanente — solo admin */
+router.delete('/:id/permanente', requireRol('admin'), async (req, res) => {
   try {
     const pool = await getPool();
     const check = await pool.request()
@@ -141,12 +177,19 @@ router.delete('/:id/permanente', async (req, res) => {
       .input('id', sql.Int, req.params.id)
       .query(`DELETE FROM tiendas WHERE id = @id`);
     res.json({ ok: true });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) {
+    console.error('DELETE /tiendas/:id/permanente:', err.message);
+    res.status(500).json({ error: 'Error al eliminar la tienda' });
+  }
 });
 
-/* GET /api/tiendas/:id/ordenes */
+/* GET /api/tiendas/:id/ordenes — respeta el alcance del rol tienda */
 router.get('/:id/ordenes', async (req, res) => {
   try {
+    if (!tiendaAutorizada(req.usuario, req.params.id)) {
+      return res.status(403).json({ error: 'No puedes ver las órdenes de otra tienda' });
+    }
+
     const pool  = await getPool();
     const fecha = req.query.fecha;
     let query = `
@@ -166,7 +209,10 @@ router.get('/:id/ordenes', async (req, res) => {
     if (fecha) request.input('fecha', sql.Date, fecha);
     const result = await request.query(query);
     res.json(result.recordset);
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) {
+    console.error('GET /tiendas/:id/ordenes:', err.message);
+    res.status(500).json({ error: 'Error al listar las órdenes de la tienda' });
+  }
 });
 
 module.exports = router;

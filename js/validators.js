@@ -172,16 +172,19 @@ function validarEmailVelox(valor, opciones) {
   return { ok: true };
 }
 
+
 /* ════════════════════════════════════════════
-   ELIMINACIÓN FÍSICA — modal reutilizable
-   Pide la clave de seguridad antes de ejecutar
-   un DELETE permanente contra la BD.
+   ELIMINACIÓN FÍSICA (permanente)
+   La autorización REAL la hace el servidor: los endpoints
+   /permanente exigen rol admin (requireRol('admin')).
+   Aquí ya no hay clave — sería un secreto expuesto en el
+   navegador. En su lugar se pide confirmar escribiendo el
+   nombre del registro, para evitar borrados accidentales.
 ════════════════════════════════════════════ */
-var _CLAVE_ELIMINACION = 'AlexVelox2026!';
 var _eliminarFisicoCallback = null;
 
 function abrirConfirmarEliminacionFisica(nombreItem, urlDelete, onExito) {
-  _eliminarFisicoCallback = { urlDelete: urlDelete, onExito: onExito };
+  _eliminarFisicoCallback = { urlDelete: urlDelete, onExito: onExito, nombre: nombreItem };
 
   var overlay = document.getElementById('elim-fisica-modal-overlay');
   if (!overlay) {
@@ -207,8 +210,8 @@ function abrirConfirmarEliminacionFisica(nombreItem, urlDelete, onExito) {
         'Esto no es lo mismo que desactivar — el registro desaparecerá por completo.' +
       '</div>' +
       '<div>' +
-        '<label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px">Clave de seguridad</label>' +
-        '<input id="elim-fisica-clave" type="password" class="search-box" style="width:100%" placeholder="Ingresa la clave de eliminación" />' +
+        '<label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px">Para confirmar, escribe: <strong>' + nombreItem + '</strong></label>' +
+        '<input id="elim-fisica-clave" type="text" class="search-box" style="width:100%" placeholder="Escribe el nombre para confirmar" autocomplete="off" />' +
       '</div>' +
       '<div id="elim-fisica-error" style="display:none;color:#A32D2D;font-size:12px;padding:8px 12px;background:#FCEBEB;border-radius:var(--radius-md);margin-top:10px"></div>' +
       '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:18px">' +
@@ -237,18 +240,24 @@ function cerrarConfirmarEliminacionFisica() {
 }
 
 async function ejecutarEliminacionFisica() {
-  var clave = document.getElementById('elim-fisica-clave').value;
+  var confirmacion = document.getElementById('elim-fisica-clave').value.trim();
   var errEl = document.getElementById('elim-fisica-error');
 
-  if (clave !== _CLAVE_ELIMINACION) {
-    errEl.textContent = 'Clave incorrecta. No se realizó ninguna eliminación.';
+  if (!_eliminarFisicoCallback) return;
+
+  /* Confirmación por nombre: evita clics accidentales.
+     La seguridad real (que seas admin) la valida el servidor. */
+  if (confirmacion !== _eliminarFisicoCallback.nombre) {
+    errEl.textContent = 'El nombre no coincide. No se realizó ninguna eliminación.';
     errEl.style.display = 'block';
     return;
   }
-  if (!_eliminarFisicoCallback) return;
 
   try {
-    var r = await fetch(_eliminarFisicoCallback.urlDelete, { method: 'DELETE' });
+    var r = await fetch(_eliminarFisicoCallback.urlDelete, {
+      method: 'DELETE',
+      credentials: 'include'
+    });
     var data = await r.json().catch(function(){ return {}; });
 
     if (!r.ok) {

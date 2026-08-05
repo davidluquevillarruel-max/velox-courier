@@ -191,7 +191,10 @@ function _mostrarUsuarioSesion() {
   } catch (e) { /* sesión inválida */ }
 }
 
-window.cerrarSesion = function() {
+window.cerrarSesion = async function() {
+  try {
+    await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
+  } catch (e) { /* aunque falle, salimos igual */ }
   localStorage.removeItem('velox_usuario');
   window.location.href = 'login.html';
 };

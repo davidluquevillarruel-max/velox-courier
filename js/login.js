@@ -1,14 +1,23 @@
 /* ============================================================
-   login.js — Lógica de inicio de sesión
+   login.js — Lógica de inicio de sesión (sesión por cookie httpOnly)
    ============================================================ */
 var API = '/api';
 
-/* Si ya hay sesión guardada, ir directo al sistema */
+/* Si ya hay una cookie de sesión válida, ir directo al sistema.
+   Se pregunta al servidor: localStorage por sí solo ya no basta,
+   porque la cookie es la única fuente de verdad. */
 (function() {
-  var sesion = localStorage.getItem('velox_usuario');
-  if (sesion) {
-    window.location.href = 'index.html';
-  }
+  fetch(API + '/auth/me', { credentials: 'include' })
+    .then(function(r) { return r.ok ? r.json() : null; })
+    .then(function(data) {
+      if (data && data.ok) {
+        localStorage.setItem('velox_usuario', JSON.stringify(data.usuario));
+        window.location.href = 'index.html';
+      } else {
+        localStorage.removeItem('velox_usuario');
+      }
+    })
+    .catch(function() { /* sin conexión: quedarse en login */ });
 })();
 
 window.hacerLogin = async function() {
@@ -32,11 +41,12 @@ window.hacerLogin = async function() {
     var r = await fetch(API + '/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',                 // ← permite recibir la cookie de sesión
       body: JSON.stringify({ email: email, password: password }),
     });
     var data = await r.json();
 
-    if (!data.ok) {
+    if (!r.ok || !data.ok) {
       errorBox.textContent = data.error || 'Usuario o contraseña incorrectos.';
       errorBox.style.display = 'block';
       btn.disabled = false;
@@ -44,7 +54,8 @@ window.hacerLogin = async function() {
       return;
     }
 
-    /* Guardar sesión localmente */
+    /* Guardar datos del usuario solo para pintar el menú por rol.
+       La autorización real la hace el servidor con la cookie. */
     localStorage.setItem('velox_usuario', JSON.stringify(data.usuario));
     window.location.href = 'index.html';
 

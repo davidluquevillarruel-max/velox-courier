@@ -1,11 +1,17 @@
 /* ============================================================
    routes/motorizados.js
+   Protegido: requiere sesión. Escritura solo para gestores.
+   Un motorizado solo consulta sus propias órdenes.
    ============================================================ */
 const express = require('express');
 const router  = express.Router();
 const { getPool, sql } = require('../db');
+const { requireAuth, requireRol } = require('../middleware/auth');
 
-/* GET /api/motorizados */
+router.use(requireAuth);
+const GESTORES = ['admin', 'operador'];
+
+/* GET /api/motorizados — cualquier usuario autenticado puede leer el catálogo */
 router.get('/', async (req, res) => {
   try {
     const pool   = await getPool();
@@ -19,11 +25,14 @@ router.get('/', async (req, res) => {
       ORDER BY m.nombre
     `);
     res.json(result.recordset);
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) {
+    console.error('GET /motorizados:', err.message);
+    res.status(500).json({ error: 'Error al listar motorizados' });
+  }
 });
 
-/* POST /api/motorizados */
-router.post('/', async (req, res) => {
+/* POST /api/motorizados — solo gestores */
+router.post('/', requireRol(...GESTORES), async (req, res) => {
   try {
     const pool = await getPool();
     const m    = req.body;
@@ -51,11 +60,14 @@ router.post('/', async (req, res) => {
         SELECT SCOPE_IDENTITY() AS id;
       `);
     res.status(201).json({ id: r.recordset[0].id });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) {
+    console.error('POST /motorizados:', err.message);
+    res.status(500).json({ error: 'Error al crear el motorizado' });
+  }
 });
 
-/* PUT /api/motorizados/:id */
-router.put('/:id', async (req, res) => {
+/* PUT /api/motorizados/:id — solo gestores */
+router.put('/:id', requireRol(...GESTORES), async (req, res) => {
   try {
     const pool = await getPool();
     const m    = req.body;
@@ -86,22 +98,28 @@ router.put('/:id', async (req, res) => {
         WHERE id=@id
       `);
     res.json({ ok: true });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) {
+    console.error('PUT /motorizados/:id:', err.message);
+    res.status(500).json({ error: 'Error al actualizar el motorizado' });
+  }
 });
 
-/* DELETE /api/motorizados/:id */
-router.delete('/:id', async (req, res) => {
+/* DELETE /api/motorizados/:id — solo gestores */
+router.delete('/:id', requireRol(...GESTORES), async (req, res) => {
   try {
     const pool = await getPool();
     await pool.request()
       .input('id', sql.Int, req.params.id)
       .query(`UPDATE motorizados SET activo = 0 WHERE id = @id`);
     res.json({ ok: true });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) {
+    console.error('DELETE /motorizados/:id:', err.message);
+    res.status(500).json({ error: 'Error al desactivar el motorizado' });
+  }
 });
 
-/* DELETE /api/motorizados/:id/permanente */
-router.delete('/:id/permanente', async (req, res) => {
+/* DELETE /api/motorizados/:id/permanente — solo admin */
+router.delete('/:id/permanente', requireRol('admin'), async (req, res) => {
   try {
     const pool = await getPool();
     const checkOrdenes = await pool.request()
@@ -124,12 +142,20 @@ router.delete('/:id/permanente', async (req, res) => {
       .input('id', sql.Int, req.params.id)
       .query(`DELETE FROM motorizados WHERE id = @id`);
     res.json({ ok: true });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) {
+    console.error('DELETE /motorizados/:id/permanente:', err.message);
+    res.status(500).json({ error: 'Error al eliminar el motorizado' });
+  }
 });
 
-/* GET /api/motorizados/:id/ordenes */
+/* GET /api/motorizados/:id/ordenes — motorizado solo ve las suyas */
 router.get('/:id/ordenes', async (req, res) => {
   try {
+    if (req.usuario.rol === 'motorizado' &&
+        req.usuario.id_motorizado !== parseInt(req.params.id, 10)) {
+      return res.status(403).json({ error: 'No puedes ver las órdenes de otro motorizado' });
+    }
+
     const pool  = await getPool();
     const fecha = req.query.fecha;
     let query = `
@@ -149,7 +175,10 @@ router.get('/:id/ordenes', async (req, res) => {
     if (fecha) request.input('fecha', sql.Date, fecha);
     const result = await request.query(query);
     res.json(result.recordset);
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) {
+    console.error('GET /motorizados/:id/ordenes:', err.message);
+    res.status(500).json({ error: 'Error al listar las órdenes del motorizado' });
+  }
 });
 
 module.exports = router;

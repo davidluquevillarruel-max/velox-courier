@@ -1,9 +1,14 @@
 /* ============================================================
    routes/tarifas.js
+   Protegido: lectura para autenticados, escritura solo gestores.
    ============================================================ */
 const express = require('express');
 const router  = express.Router();
 const { getPool, sql } = require('../db');
+const { requireAuth, requireRol } = require('../middleware/auth');
+
+router.use(requireAuth);
+const GESTORES = ['admin', 'operador'];
 
 /* GET /api/tarifas */
 router.get('/', async (req, res) => {
@@ -11,7 +16,10 @@ router.get('/', async (req, res) => {
     const pool   = await getPool();
     const result = await pool.request().query(`SELECT * FROM v_tarifario ORDER BY zona, distrito`);
     res.json(result.recordset);
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) {
+    console.error('GET /tarifas:', err.message);
+    res.status(500).json({ error: 'Error al listar tarifas' });
+  }
 });
 
 /* GET /api/tarifas/zonas */
@@ -20,11 +28,14 @@ router.get('/zonas', async (req, res) => {
     const pool   = await getPool();
     const result = await pool.request().query(`SELECT id, nombre FROM zonas WHERE activa=1 ORDER BY nombre`);
     res.json(result.recordset);
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) {
+    console.error('GET /tarifas/zonas:', err.message);
+    res.status(500).json({ error: 'Error al listar zonas' });
+  }
 });
 
-/* POST /api/tarifas */
-router.post('/', async (req, res) => {
+/* POST /api/tarifas — solo gestores */
+router.post('/', requireRol(...GESTORES), async (req, res) => {
   try {
     const pool = await getPool();
     const d    = req.body;
@@ -35,10 +46,10 @@ router.post('/', async (req, res) => {
     if (!z.recordset.length) return res.status(400).json({ error: `Zona no encontrada: ${d.zona}` });
 
     const r = await pool.request()
-      .input('nombre',   sql.NVarChar, d.distrito)
-      .input('id_zona',  sql.Int,      z.recordset[0].id)
-      .input('delivery', sql.Decimal,  parseFloat(d.delivery) || 0)
-      .input('moto',     sql.Decimal,  parseFloat(d.moto) || 0)
+      .input('nombre',   sql.NVarChar,      d.distrito)
+      .input('id_zona',  sql.Int,           z.recordset[0].id)
+      .input('delivery', sql.Decimal(10,2), parseFloat(d.delivery) || 0)
+      .input('moto',     sql.Decimal(10,2), parseFloat(d.moto) || 0)
       .query(`
         INSERT INTO distritos (nombre, id_zona, precio_delivery, pago_motorizado)
         VALUES (@nombre, @id_zona, @delivery, @moto);
@@ -46,11 +57,14 @@ router.post('/', async (req, res) => {
       `);
 
     res.status(201).json({ id: r.recordset[0].id });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) {
+    console.error('POST /tarifas:', err.message);
+    res.status(500).json({ error: 'Error al crear la tarifa' });
+  }
 });
 
-/* PUT /api/tarifas/:id */
-router.put('/:id', async (req, res) => {
+/* PUT /api/tarifas/:id — solo gestores */
+router.put('/:id', requireRol(...GESTORES), async (req, res) => {
   try {
     const pool = await getPool();
     const d    = req.body;
@@ -61,11 +75,11 @@ router.put('/:id', async (req, res) => {
     if (!z.recordset.length) return res.status(400).json({ error: `Zona no encontrada: ${d.zona}` });
 
     await pool.request()
-      .input('id',       sql.Int,      req.params.id)
-      .input('nombre',   sql.NVarChar, d.distrito)
-      .input('id_zona',  sql.Int,      z.recordset[0].id)
-      .input('delivery', sql.Decimal,  parseFloat(d.delivery) || 0)
-      .input('moto',     sql.Decimal,  parseFloat(d.moto) || 0)
+      .input('id',       sql.Int,           req.params.id)
+      .input('nombre',   sql.NVarChar,      d.distrito)
+      .input('id_zona',  sql.Int,           z.recordset[0].id)
+      .input('delivery', sql.Decimal(10,2), parseFloat(d.delivery) || 0)
+      .input('moto',     sql.Decimal(10,2), parseFloat(d.moto) || 0)
       .query(`
         UPDATE distritos
         SET nombre=@nombre, id_zona=@id_zona,
@@ -74,23 +88,28 @@ router.put('/:id', async (req, res) => {
       `);
 
     res.json({ ok: true });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) {
+    console.error('PUT /tarifas/:id:', err.message);
+    res.status(500).json({ error: 'Error al actualizar la tarifa' });
+  }
 });
 
-/* DELETE /api/tarifas/:id */
-router.delete('/:id', async (req, res) => {
+/* DELETE /api/tarifas/:id — solo gestores */
+router.delete('/:id', requireRol(...GESTORES), async (req, res) => {
   try {
     const pool = await getPool();
     await pool.request()
       .input('id', sql.Int, req.params.id)
       .query(`UPDATE distritos SET activo = 0 WHERE id = @id`);
     res.json({ ok: true });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) {
+    console.error('DELETE /tarifas/:id:', err.message);
+    res.status(500).json({ error: 'Error al desactivar la tarifa' });
+  }
 });
 
-/* DELETE /api/tarifas/:id/permanente — Eliminación física.
-   Solo permitida si el distrito no tiene órdenes asociadas. */
-router.delete('/:id/permanente', async (req, res) => {
+/* DELETE /api/tarifas/:id/permanente — solo admin */
+router.delete('/:id/permanente', requireRol('admin'), async (req, res) => {
   try {
     const pool = await getPool();
 
@@ -109,7 +128,10 @@ router.delete('/:id/permanente', async (req, res) => {
       .query(`DELETE FROM distritos WHERE id = @id`);
 
     res.json({ ok: true });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) {
+    console.error('DELETE /tarifas/:id/permanente:', err.message);
+    res.status(500).json({ error: 'Error al eliminar la tarifa' });
+  }
 });
 
 module.exports = router;

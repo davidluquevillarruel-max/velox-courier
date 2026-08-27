@@ -196,7 +196,7 @@ router.get('/:id/ordenes', async (req, res) => {
       SELECT o.id, o.codigo, CONVERT(varchar,o.fecha,23) AS fecha,
              d.nombre AS distrito, m.nombre AS motorizado,
              o.dest_nombre, o.estado, o.metodo_pago,
-             o.delivery_total, o.monto_cobrado, o.monto_producto,
+             o.delivery_total, o.monto_adicional, o.monto_cobrado, o.monto_producto,
              o.pago_moto_total, o.producto_especial
       FROM ordenes o
       JOIN distritos d ON d.id = o.id_distrito

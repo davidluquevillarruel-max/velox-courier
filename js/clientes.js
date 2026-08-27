@@ -421,9 +421,15 @@ window.renderDetalleTienda = async function(tiendaId) {
         };
         var tieneCobro = _ec.includes(o.estado);
         var delivery   = tieneCobro ? parseFloat(o.delivery_total||0) : 0;
+        var adicional  = tieneCobro ? parseFloat(o.monto_adicional||0) : 0;
         var cobrado    = tieneCobro ? parseFloat(o.monto_cobrado||0)  : 0;
         var saldoO     = delivery - cobrado;
-        var dStr = tieneCobro ? 'S/ '+delivery.toFixed(2) : '<span style="color:var(--color-text-tertiary)">S/ 0.00</span>';
+        var dStr = tieneCobro
+          ? 'S/ '+delivery.toFixed(2) +
+            (adicional > 0
+              ? ' <span style="font-size:10px;color:var(--color-amber-text);background:var(--color-amber-bg);padding:1px 5px;border-radius:8px">+S/'+adicional.toFixed(2)+'</span>'
+              : '')
+          : '<span style="color:var(--color-text-tertiary)">S/ 0.00</span>';
         var cStr = tieneCobro ? 'S/ '+cobrado.toFixed(2)  : '<span style="color:var(--color-text-tertiary)">S/ 0.00</span>';
         var sStr = tieneCobro
           ? (saldoO>0 ? '<span class="balance-pos">S/ '+saldoO.toFixed(2)+'</span>'

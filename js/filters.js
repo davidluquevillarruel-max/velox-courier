@@ -1,36 +1,39 @@
 /* ============================================================
-   filters.js — Búsqueda y filtro de tablas
-   CourierAdmin · Sistema de gestión interna
+   filters.js — Filtros combinados de la tabla de pedidos
+   Los 4 filtros (texto, tienda, motorizado, estado) se aplican
+   juntos ("Y"): cada uno recorta sobre lo que dejaron los demás,
+   en vez de pisarse entre sí.
    ============================================================ */
 
 /**
- * Filtra las filas de una tabla por texto libre.
- * Se enlaza al evento oninput del input de búsqueda.
- * @param {HTMLInputElement} inp - El campo de búsqueda
- * @param {string} tableId - ID del elemento <table>
+ * Filtra las filas de #tabla-pedidos-main combinando todos los
+ * campos de filtro activos. Se llama desde cada input/select de
+ * filtro (ver pages/pedidos.html) y también después de repintar
+ * la tabla (ver renderPedidos en js/pedidos.js), para que el
+ * filtro no se pierda al refrescar.
  */
-function filterTable(inp, tableId) {
-  const value = inp.value.toLowerCase().trim();
-  const rows = document.querySelectorAll('#' + tableId + ' tbody tr');
+function filtrarTablaPedidos() {
+  var elTexto  = document.getElementById('f-buscar-pedidos');
+  var elTienda = document.getElementById('f-filtro-tienda-pedidos');
+  var elMoto   = document.getElementById('f-filtro-motorizado-pedidos');
+  var elEstado = document.getElementById('f-filtro-estado-pedidos');
 
-  rows.forEach(row => {
-    const match = row.textContent.toLowerCase().includes(value);
-    row.style.display = match ? '' : 'none';
-  });
-}
+  var texto      = elTexto  ? elTexto.value.toLowerCase().trim() : '';
+  var tienda     = elTienda ? elTienda.value.trim() : '';
+  var motorizado = elMoto   ? elMoto.value.trim()   : '';
+  var estado     = elEstado ? elEstado.value : '';
 
-/**
- * Filtra las filas de una tabla por estado (badge).
- * Se enlaza al evento onchange del select de estado.
- * @param {HTMLSelectElement} sel - El select de filtro
- * @param {string} tableId - ID del elemento <table>
- */
-function filterByStatus(sel, tableId) {
-  const value = sel.value.toLowerCase().trim();
-  const rows = document.querySelectorAll('#' + tableId + ' tbody tr');
+  var rows = document.querySelectorAll('#tabla-pedidos-main tbody tr');
 
-  rows.forEach(row => {
-    const match = !value || row.textContent.toLowerCase().includes(value);
-    row.style.display = match ? '' : 'none';
+  rows.forEach(function(row) {
+    var celdas = row.querySelectorAll('td');
+    if (celdas.length < 7) { row.style.display = ''; return; } /* fila de "sin órdenes" */
+
+    var matchTexto  = !texto      || row.textContent.toLowerCase().includes(texto);
+    var matchTienda = !tienda     || celdas[1].textContent.trim() === tienda;
+    var matchMoto   = !motorizado || celdas[5].textContent.trim() === motorizado;
+    var matchEstado = !estado     || celdas[6].textContent.trim() === estado;
+
+    row.style.display = (matchTexto && matchTienda && matchMoto && matchEstado) ? '' : 'none';
   });
 }

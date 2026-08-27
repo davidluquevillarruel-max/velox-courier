@@ -92,12 +92,22 @@
       <!-- Buscador con ícono lupa -->
       <div class="search-wrap">
         <i class="ti ti-search search-icon"></i>
-        <input class="search-box" placeholder="Buscar pedido, cliente..."
-               oninput="filterTable(this,'tabla-pedidos-main')" />
+        <input id="f-buscar-pedidos" class="search-box" placeholder="Buscar pedido, cliente..."
+               oninput="filtrarTablaPedidos()" />
+      </div>
+
+      <!-- Filtro por tienda cliente -->
+      <div style="min-width:180px">
+        <input id="f-filtro-tienda-pedidos" class="search-box" style="width:100%" placeholder="Filtrar por tienda..." />
+      </div>
+
+      <!-- Filtro por motorizado -->
+      <div style="min-width:180px">
+        <input id="f-filtro-motorizado-pedidos" class="search-box" style="width:100%" placeholder="Filtrar por motorizado..." />
       </div>
 
       <!-- Filtro de estado -->
-      <select class="filter-select" onchange="filterByStatus(this,'tabla-pedidos-main')"
+      <select id="f-filtro-estado-pedidos" class="filter-select" onchange="filtrarTablaPedidos()"
               style="min-width:160px">
         <option value="">Todos los estados</option>
         <option value="Entregado">Entregado</option>
@@ -126,6 +136,7 @@
           <th>Estado</th>
           <th>Hora asig.</th>
           <th>Delivery</th>
+          <th>Pago moto</th>
           <th>Fecha</th>
           <th></th>
         </tr>
@@ -172,7 +183,7 @@
         <label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px;font-weight:500">
           Tienda cliente * <span style="color:var(--color-text-tertiary);font-weight:400">(lista de clientes registrados)</span>
         </label>
-        <select id="f-orden-tienda" class="filter-select" style="width:100%;border-radius:var(--radius-md);padding:8px 32px 8px 12px"></select>
+        <input id="f-orden-tienda" class="search-box" style="width:100%;border-radius:var(--radius-md);padding:8px 12px" placeholder="Escribe para buscar tienda..." />
       </div>
 
       <!-- Destinatario + Teléfono -->
@@ -189,7 +200,7 @@
 
       <!-- Dirección -->
       <div>
-        <label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px;font-weight:500">Dirección de entrega *</label>
+        <label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px;font-weight:500">Dirección de entrega</label>
         <input id="f-orden-direccion" class="search-box" style="width:100%;border-radius:var(--radius-md);padding:8px 12px" placeholder="Ej: Av. Larco 450, Miraflores" maxlength="200" />
       </div>
 
@@ -199,8 +210,7 @@
           <label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px;font-weight:500">
             Distrito * <span style="color:var(--color-text-tertiary);font-weight:400">(lista de distritos)</span>
           </label>
-          <select id="f-orden-distrito" class="filter-select" style="width:100%;border-radius:var(--radius-md);padding:8px 32px 8px 12px"
-                  onchange="onDistritoChange()"></select>
+          <input id="f-orden-distrito" class="search-box" style="width:100%;border-radius:var(--radius-md);padding:8px 12px" placeholder="Escribe para buscar distrito..." />
         </div>
         <div>
           <label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px;font-weight:500">Costo delivery (S/)</label>
@@ -213,9 +223,9 @@
       <!-- Motorizado -->
       <div>
         <label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px;font-weight:500">
-          Motorizado asignado * <span style="color:var(--color-text-tertiary);font-weight:400">(motorizados activos)</span>
+          Motorizado asignado <span style="color:var(--color-text-tertiary);font-weight:400">(opcional — motorizados activos)</span>
         </label>
-        <select id="f-orden-motorizado" class="filter-select" style="width:100%;border-radius:var(--radius-md);padding:8px 32px 8px 12px"></select>
+        <input id="f-orden-motorizado" class="search-box" style="width:100%;border-radius:var(--radius-md);padding:8px 12px" placeholder="Escribe para buscar motorizado..." />
       </div>
 
       <!-- Estado -->

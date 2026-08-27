@@ -43,6 +43,7 @@ var ZONA_DISTRITO = {
 var ORDENES_ASIG     = [];
 var MOTORIZADOS_ASIG = [];
 var _reasignandoOrdenId = null;
+var _comboMotoAsig = null; /* combobox buscable de js/combobox.js */
 
 async function _cargarDatosAsignacion() {
   try {
@@ -66,14 +67,14 @@ window.initAsignacion = async function() {
   if (pool) pool.innerHTML = '<div style="padding:24px;text-align:center;color:var(--color-text-tertiary);font-size:13px"><i class="ti ti-loader"></i> Cargando...</div>';
 
   await _cargarDatosAsignacion();
-  _poblarSelectMotorizados();
+  _initComboMotoAsig();
 
-  /* Si es motorizado, pre-seleccionar su nombre y bloquear el select */
+  /* Si es motorizado, pre-seleccionar su nombre y bloquear el campo */
   var sesion = _obtenerSesionAsig();
   if (sesion && sesion.rol === 'motorizado' && sesion.nombre) {
     var sel = document.getElementById('moto-select');
     if (sel) {
-      sel.value    = sesion.nombre;
+      if (_comboMotoAsig) _comboMotoAsig.setValor(sesion.nombre);
       sel.disabled = true; /* no puede cambiar a otro motorizado */
     }
   }
@@ -130,20 +131,17 @@ function _badgeEstadoAsig(estado) {
 }
 
 /* ════════════════════════════════════════════
-   RENDER — SELECT DE MOTORIZADOS
+   COMBOBOX BUSCABLE — SELECTOR DE MOTORIZADO
 ════════════════════════════════════════════ */
-function _poblarSelectMotorizados() {
-  var sel = document.getElementById('moto-select');
-  if (!sel) return;
-  var valorActual = sel.value;
-  sel.innerHTML = '<option value="">Seleccionar motorizado...</option>';
-  MOTORIZADOS_ASIG.filter(function(m){ return m.activo; }).forEach(function(m) {
-    var opt = document.createElement('option');
-    opt.value       = m.nombre;
-    opt.textContent = m.nombre + (m.zona ? ' — ' + m.zona : '');
-    sel.appendChild(opt);
+function _initComboMotoAsig() {
+  _comboMotoAsig = initComboBuscable('moto-select', function() {
+    return MOTORIZADOS_ASIG.filter(function(m){ return m.activo; }).map(function(m) {
+      return { value: m.nombre, label: m.nombre + (m.zona ? ' — ' + m.zona : '') };
+    });
+  }, function() {
+    _renderPoolAsignados();
+    _actualizarContadores();
   });
-  if (valorActual) sel.value = valorActual;
 }
 
 /* ════════════════════════════════════════════
@@ -447,9 +445,3 @@ function _actualizarContadores() {
   if (elLib)  elLib.textContent  = pendientes;
   if (elAsig) elAsig.textContent = asignadas;
 }
-
-/* Cuando cambia el motorizado seleccionado */
-window.onMotoSelectChange = function() {
-  _renderPoolAsignados();
-  _actualizarContadores();
-};

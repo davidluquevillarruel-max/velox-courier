@@ -4,6 +4,8 @@
    ============================================================ */
 
 var _USUARIOS_CACHE = [];
+var _MOTOS_LIBRES_CACHE = [];
+var _comboMotoUsuario = null; /* combobox buscable de js/combobox.js */
 
 var _ROLES_LABEL = {
   admin:      'Administrador',
@@ -17,6 +19,11 @@ var _ROLES_LABEL = {
 ════════════════════════════════════════════ */
 window.initUsuarios = function() {
   _renderTablaUsuarios();
+  _comboMotoUsuario = initComboBuscable('f-usuario-motorizado', function() {
+    return _MOTOS_LIBRES_CACHE.map(function(m) {
+      return { value: String(m.id), label: m.nombre };
+    });
+  });
 };
 
 /* ════════════════════════════════════════════
@@ -131,28 +138,21 @@ window.onCambioRolUsuario = function() {
 };
 
 async function _cargarMotorizadosLibres() {
-  var sel = document.getElementById('f-usuario-motorizado');
+  var input = document.getElementById('f-usuario-motorizado');
   var avisoSinLibres = document.getElementById('sin-motorizados-libres');
-  sel.innerHTML = '<option value="">Cargando...</option>';
+  if (_comboMotoUsuario) _comboMotoUsuario.limpiar();
+  if (input) input.placeholder = 'Cargando...';
 
   try {
     var r = await fetch(API + '/auth/motorizados-libres');
-    var libres = await r.json();
-
-    if (libres.length === 0) {
-      sel.innerHTML = '<option value="">No hay motorizados libres</option>';
-      if (avisoSinLibres) avisoSinLibres.style.display = 'block';
-      return;
-    }
-
-    if (avisoSinLibres) avisoSinLibres.style.display = 'none';
-    sel.innerHTML = '<option value="">Seleccionar motorizado...</option>' +
-      libres.map(function(m) {
-        return '<option value="' + m.id + '">' + m.nombre + '</option>';
-      }).join('');
+    _MOTOS_LIBRES_CACHE = await r.json();
   } catch (err) {
-    sel.innerHTML = '<option value="">Error al cargar</option>';
+    _MOTOS_LIBRES_CACHE = [];
   }
+
+  var hayLibres = _MOTOS_LIBRES_CACHE.length > 0;
+  if (avisoSinLibres) avisoSinLibres.style.display = hayLibres ? 'none' : 'block';
+  if (input) input.placeholder = hayLibres ? 'Escribe para buscar motorizado...' : 'No hay motorizados libres';
 }
 
 window.guardarUsuario = async function() {

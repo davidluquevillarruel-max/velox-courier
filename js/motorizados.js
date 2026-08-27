@@ -353,7 +353,11 @@ function _botonWhatsApp(telefono, nombreDest, telefono2) {
   return html;
 }
 
+/* Órdenes en estos estados ya están cerradas: no tiene sentido reasignarlas */
+var _ESTADOS_NO_REASIGNABLES = ['entregado', 'cancelado'];
+
 function _renderTablaOrdenesDetalle(ordenes) {
+  var esMoto = _esSesionMotorizado(); /* un motorizado no puede reasignar (el backend tampoco lo permite) */
   var badgeMap = {
     'entregado':    '<span class="badge entregado">Entregado</span>',
     'no-entregado': '<span class="badge no-entregado">No entregado</span>',
@@ -376,7 +380,7 @@ function _renderTablaOrdenesDetalle(ordenes) {
   var cols = ['Código','Tienda','Destinatario','','Distrito','Estado','Método',
               'Delivery','Cobrado','Pago moto','Total moto','Especial','Fecha',''];
 
-  return '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">' +
+  return '<div class="table-wrap"><table style="width:100%;border-collapse:collapse;font-size:12px">' +
     '<thead><tr>' +
     cols.map(function(h){
       return '<th style="background:var(--color-bg-secondary);padding:9px 12px;text-align:left;' +
@@ -425,11 +429,103 @@ function _renderTablaOrdenesDetalle(ordenes) {
         '<td style="padding:8px 12px">' + totalMotoStr + '</td>' +
         '<td style="padding:8px 12px">' + especial + '</td>' +
         '<td style="padding:8px 12px;font-size:11px;color:var(--color-text-secondary)">' + _fechaDisplayM(o.fecha) + '</td>' +
-        '<td style="padding:8px 12px"><button class="btn btn-sm" onclick="abrirActualizarEstadoOrden(' + o.id + ')"><i class="ti ti-refresh"></i> Actualizar</button></td>' +
+        '<td style="padding:8px 12px"><div style="display:flex;gap:4px;flex-wrap:wrap">' +
+          '<button class="btn btn-sm" onclick="abrirActualizarEstadoOrden(' + o.id + ')"><i class="ti ti-refresh"></i> Actualizar</button>' +
+          (!esMoto && !_ESTADOS_NO_REASIGNABLES.includes(o.estado)
+            ? '<button class="btn btn-sm" style="color:var(--color-amber-text);border-color:#fcd34d" ' +
+              'onclick="abrirReasignarDetalle(' + o.id + ')" title="Reasignar a otro motorizado">' +
+              '<i class="ti ti-arrows-exchange"></i> Reasignar</button>'
+            : '') +
+        '</div></td>' +
       '</tr>';
     }).join('') +
     '</tbody></table></div>';
 }
+
+/* ════════════════════════════════════════════
+   MODAL — REASIGNAR ORDEN A OTRO MOTORIZADO
+   Se abre desde el botón "Reasignar" del historial
+   de un motorizado. Hace el mismo PATCH que usa la
+   página "Asignación" (PATCH /ordenes/:id/asignar).
+════════════════════════════════════════════ */
+var _reasignandoOrdenIdDet = null;
+
+window.abrirReasignarDetalle = async function(ordenId) {
+  _reasignandoOrdenIdDet = ordenId;
+
+  var overlay = document.getElementById('modal-reasignar-det');
+  var lista   = document.getElementById('reasignar-det-lista');
+  var info    = document.getElementById('reasignar-det-info');
+  if (!overlay || !lista || !info) return;
+
+  info.textContent = 'Cargando...';
+  lista.innerHTML = '';
+  overlay.style.display = 'flex';
+
+  try {
+    var r = await fetch(API + '/ordenes/' + ordenId);
+    var orden = await r.json();
+    if (!r.ok) throw new Error(orden.error || 'No se pudo cargar la orden');
+
+    info.textContent = '#' + orden.codigo + ' · ' + orden.tienda + ' → ' + orden.distrito;
+
+    var activos = MOTORIZADOS.filter(function(m) {
+      return m.activo && m.id != _motoDetalleAbiertoId;
+    });
+
+    if (activos.length === 0) {
+      lista.innerHTML = '<div style="padding:12px;text-align:center;color:var(--color-text-tertiary);font-size:13px">' +
+        'No hay otros motorizados activos</div>';
+      return;
+    }
+
+    lista.innerHTML = activos.map(function(m) {
+      return '<div style="display:flex;align-items:center;justify-content:space-between;' +
+        'padding:10px 12px;border-radius:var(--radius-md);border:1px solid var(--color-border-tertiary);margin-bottom:6px">' +
+        '<div style="display:flex;align-items:center;gap:10px">' +
+          '<div class="avatar ' + m.color_avatar + '" style="width:32px;height:32px;font-size:12px">' + m.iniciales + '</div>' +
+          '<div style="font-size:13px;font-weight:600">' + m.nombre +
+            (m.zona ? ' <span style="font-weight:400;color:var(--color-text-secondary)">· ' + m.zona + '</span>' : '') +
+          '</div>' +
+        '</div>' +
+        '<button class="btn btn-primary btn-sm" onclick="confirmarReasignarDetalle(\'' + m.nombre.replace(/'/g, "\\'") + '\')">' +
+          '<i class="ti ti-check"></i> Seleccionar</button>' +
+      '</div>';
+    }).join('');
+  } catch (err) {
+    info.textContent = '';
+    lista.innerHTML = '<div style="padding:12px;text-align:center;color:#A32D2D;font-size:13px">Error al cargar la orden</div>';
+  }
+};
+
+window.cerrarModalReasignarDetalle = function() {
+  var overlay = document.getElementById('modal-reasignar-det');
+  if (overlay) overlay.style.display = 'none';
+  _reasignandoOrdenIdDet = null;
+};
+
+window.confirmarReasignarDetalle = async function(nuevoMotoNombre) {
+  if (!_reasignandoOrdenIdDet) return;
+
+  try {
+    var r = await fetch(API + '/ordenes/' + _reasignandoOrdenIdDet + '/asignar', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ motorizado: nuevoMotoNombre }),
+    });
+    if (!r.ok) throw new Error('No se pudo reasignar');
+
+    var motoOrigen = _motoDetalleAbiertoId;
+    cerrarModalReasignarDetalle();
+    if (typeof showNotif === 'function') showNotif('Orden reasignada a ' + nuevoMotoNombre);
+
+    /* La orden ya no es de este motorizado: refrescar su historial y el resumen */
+    if (motoOrigen) abrirDetalleMotoHistorial(motoOrigen);
+    if (typeof _renderTablaResumen === 'function') _renderTablaResumen();
+  } catch (err) {
+    if (typeof showNotif === 'function') showNotif('Error al reasignar el pedido');
+  }
+};
 
 window.cerrarDetalleMotoHistorial = function() {
   var panel = document.getElementById('panel-detalle-moto');
@@ -710,22 +806,24 @@ window.abrirActualizarEstadoOrden = async function(ordenId) {
   overlay.style.display = 'flex';
 
   try {
-    var [rOrden, rTiendas, rDistritos] = await Promise.all([
+    var [rOrden, rTiendas, rDistritos, rMotos] = await Promise.all([
       fetch(API + '/ordenes/' + ordenId),
       fetch(API + '/tiendas'),
       fetch(API + '/tarifas'),
+      fetch(API + '/motorizados'),
     ]);
-    var orden     = await rOrden.json();
-    var tiendas   = await rTiendas.json();
-    var distritos = await rDistritos.json();
+    var orden       = await rOrden.json();
+    var tiendas     = await rTiendas.json();
+    var distritos   = await rDistritos.json();
+    var motorizados = await rMotos.json();
 
-    _renderModalActualizarOrden(orden, tiendas, distritos);
+    _renderModalActualizarOrden(orden, tiendas, distritos, motorizados);
   } catch (err) {
     overlay.innerHTML = '<div style="background:var(--color-bg-primary);border-radius:var(--radius-lg);padding:24px;width:380px;text-align:center;color:#A32D2D">Error al cargar la orden.</div>';
   }
 };
 
-function _renderModalActualizarOrden(orden, tiendas, distritos) {
+function _renderModalActualizarOrden(orden, tiendas, distritos, motorizados) {
   var overlay = document.getElementById('orden-estado-modal-overlay');
   if (!overlay) return;
 
@@ -739,11 +837,12 @@ function _renderModalActualizarOrden(orden, tiendas, distritos) {
 
         '<div>' +
           '<label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px">Tienda cliente</label>' +
-          '<select id="f-orden-tienda-update" class="filter-select" style="width:100%">' +
-            tiendas.map(function(t){
-              return '<option value="' + t.nombre + '"' + (t.nombre===orden.tienda?' selected':'') + '>' + t.nombre + '</option>';
-            }).join('') +
-          '</select>' +
+          '<input id="f-orden-tienda-update" class="search-box" style="width:100%" placeholder="Escribe para buscar tienda..." value="' + (orden.tienda||'').replace(/"/g,'&quot;') + '" />' +
+        '</div>' +
+
+        '<div>' +
+          '<label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px">Motorizado asignado <span style="font-weight:400;color:var(--color-text-tertiary)">(opcional)</span></label>' +
+          '<input id="f-orden-motorizado-update" class="search-box" style="width:100%" placeholder="Escribe para buscar motorizado..." value="' + (orden.motorizado||'').replace(/"/g,'&quot;') + '" />' +
         '</div>' +
 
         '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">' +
@@ -753,11 +852,7 @@ function _renderModalActualizarOrden(orden, tiendas, distritos) {
           '</div>' +
           '<div>' +
             '<label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px">Distrito</label>' +
-            '<select id="f-orden-distrito-update" class="filter-select" style="width:100%" onchange="onDistritoChangeUpdate()">' +
-              distritos.map(function(d){
-                return '<option value="' + d.distrito + '" data-precio="' + d.precio_delivery + '" data-pago-moto="' + (d.pago_motorizado||0) + '"' + (d.distrito===orden.distrito?' selected':'') + '>' + d.distrito + '</option>';
-              }).join('') +
-            '</select>' +
+            '<input id="f-orden-distrito-update" class="search-box" style="width:100%" placeholder="Escribe para buscar distrito..." value="' + (orden.distrito||'').replace(/"/g,'&quot;') + '" />' +
           '</div>' +
         '</div>' +
 
@@ -842,20 +937,39 @@ function _renderModalActualizarOrden(orden, tiendas, distritos) {
         '<button class="btn btn-primary btn-sm" onclick="guardarActualizarEstadoOrden()"><i class="ti ti-check"></i> Guardar</button>' +
       '</div>' +
     '</div>';
+
+  /* El modal se reconstruye entero cada vez que se abre, así que los
+     comboboxes se inician de nuevo en cada apertura (ver js/combobox.js) */
+  _distritosCatalogoUpdate = distritos;
+
+  initComboBuscable('f-orden-tienda-update', function() {
+    return tiendas.map(function(t) { return { value: t.nombre, label: t.nombre }; });
+  });
+
+  initComboBuscable('f-orden-motorizado-update', function() {
+    return motorizados.filter(function(m){ return m.activo; }).map(function(m) {
+      return { value: m.nombre, label: m.nombre + (m.zona ? ' — ' + m.zona : '') };
+    });
+  });
+
+  initComboBuscable('f-orden-distrito-update', function() {
+    return distritos.map(function(d) { return { value: d.distrito, label: d.distrito }; });
+  }, function(valor) { onDistritoChangeUpdate(valor); });
 }
 
-window.onDistritoChangeUpdate = function() {
-  var selDist   = document.getElementById('f-orden-distrito-update');
+/* Catálogo de distritos vigente para el combobox del modal "Actualizar
+   orden" — se refresca cada vez que _renderModalActualizarOrden corre */
+var _distritosCatalogoUpdate = [];
+
+window.onDistritoChangeUpdate = function(distritoSeleccionado) {
   var fDeliv    = document.getElementById('f-orden-delivery-update');
   var fPagoMoto = document.getElementById('f-orden-pagomoto-update');
-  if (!selDist) return;
 
-  var opcion    = selDist.options[selDist.selectedIndex];
-  var precio    = opcion ? opcion.getAttribute('data-precio')    : null;
-  var pagoMoto  = opcion ? opcion.getAttribute('data-pago-moto') : null;
+  var d = _distritosCatalogoUpdate.find(function(x) { return x.distrito === distritoSeleccionado; });
+  if (!d) return;
 
-  if (precio   !== null && fDeliv)    fDeliv.value    = parseFloat(precio).toFixed(2);
-  if (pagoMoto !== null && fPagoMoto) fPagoMoto.value = parseFloat(pagoMoto).toFixed(2);
+  if (fDeliv)    fDeliv.value    = parseFloat(d.precio_delivery).toFixed(2);
+  if (fPagoMoto) fPagoMoto.value = parseFloat(d.pago_motorizado || 0).toFixed(2);
 };
 
 window.cerrarActualizarEstadoOrden = function() {
@@ -868,6 +982,7 @@ window.guardarActualizarEstadoOrden = async function() {
   var tienda      = document.getElementById('f-orden-tienda-update').value;
   var dest        = document.getElementById('f-orden-dest-update').value.trim();
   var distrito    = document.getElementById('f-orden-distrito-update').value;
+  var motorizado  = document.getElementById('f-orden-motorizado-update').value;
   var direccion   = document.getElementById('f-orden-direccion-update').value.trim();
   var telefono    = document.getElementById('f-orden-telefono-update').value.trim();
   var telefono2   = document.getElementById('f-orden-telefono2-update').value.trim();
@@ -882,11 +997,17 @@ window.guardarActualizarEstadoOrden = async function() {
   var obs         = document.getElementById('f-orden-obs-update').value.trim();
   var errEl       = document.getElementById('orden-estado-error');
 
+  if (!tienda || !distrito) {
+    errEl.textContent = 'Tienda y distrito son obligatorios: elige uno de la lista.';
+    errEl.style.display = 'block';
+    return;
+  }
+
   var validaciones = [
     validarTexto(dest, { obligatorio: true, min: 2, max: 100, nombreCampo: 'El nombre del destinatario' }),
     validarTelefono(telefono),
     validarTelefono(telefono2),
-    validarTexto(direccion, { obligatorio: true, min: 5, max: 200, nombreCampo: 'La dirección' }),
+    validarTexto(direccion, { min: 5, max: 200, nombreCampo: 'La dirección' }),
     validarTexto(obs, { max: 300, nombreCampo: 'Las observaciones' }),
   ];
   if (!ejecutarValidaciones(validaciones, errEl)) return;
@@ -907,6 +1028,13 @@ window.guardarActualizarEstadoOrden = async function() {
       throw new Error(errData.error || 'No se pudo actualizar la orden');
     }
 
+    var rAsignar = await fetch(API + '/ordenes/' + _ordenActualizarId + '/asignar', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ motorizado: motorizado || null }),
+    });
+    if (!rAsignar.ok) throw new Error('No se pudo actualizar el motorizado asignado');
+
     var rEstado = await fetch(API + '/ordenes/' + _ordenActualizarId + '/estado', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -917,10 +1045,12 @@ window.guardarActualizarEstadoOrden = async function() {
     cerrarActualizarEstadoOrden();
     if (typeof showNotif === 'function') showNotif('Orden actualizada correctamente');
 
-    /* Refrescar la vista actual, sea cual sea la página donde se abrió el modal */
+    /* Refrescar la vista actual, sea cual sea la página donde se abrió el modal.
+       Cada función ya se cuida sola si su página no está en pantalla. */
     if (typeof _renderTablaResumen === 'function') _renderTablaResumen();
     if (typeof _motoDetalleAbiertoId !== 'undefined' && _motoDetalleAbiertoId) abrirDetalleMotoHistorial(_motoDetalleAbiertoId);
     if (typeof renderPedidos === 'function') renderPedidos();
+    if (typeof _refrescarCajaActual === 'function') _refrescarCajaActual();
 
   } catch (err) {
     if (errEl) { errEl.textContent = err.message || 'Error al actualizar la orden.'; errEl.style.display = 'block'; }

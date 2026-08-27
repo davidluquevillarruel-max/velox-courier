@@ -13,6 +13,12 @@ var CATALOGO_DISTRITOS   = [];
 var _filtroFecha  = '';
 var _ordenesCache = []; /* caché local del día activo */
 
+/* Comboboxes buscables del modal "Agregar orden" (js/combobox.js).
+   Se inicializan una sola vez por carga de página en initPedidos(). */
+var _comboTienda     = null;
+var _comboDistrito   = null;
+var _comboMotorizado = null;
+
 /* ════════════════════════════════════════════
    HELPERS
 ════════════════════════════════════════════ */
@@ -129,41 +135,51 @@ window.renderPedidos = async function() {
 
   if (ordenes.length === 0) {
     tbody.innerHTML =
-      '<tr><td colspan="11" style="padding:0;border:none">' +
+      '<tr><td colspan="12" style="padding:0;border:none">' +
         '<div class="empty-state">' +
           '<div class="empty-state-icon"><i class="ti ti-clipboard-list"></i></div>' +
           '<div class="empty-state-title">Sin órdenes para esta fecha</div>' +
           '<div class="empty-state-sub">No se encontraron órdenes con los filtros seleccionados.</div>' +
         '</div>' +
       '</td></tr>';
-    return;
+  } else {
+    tbody.innerHTML = ordenes.map(function(o) {
+      var especial = o.producto_especial
+        ? '<span title="Producto especial" style="color:var(--color-amber);margin-left:4px"><i class="ti ti-package-import"></i></span>'
+        : '';
+      var delivery = parseFloat(o.delivery_total || 0);
+      var adicional = parseFloat(o.monto_adicional || 0);
+      var deliveryHTML = 'S/ ' + delivery.toFixed(2) +
+        (adicional > 0
+          ? ' <span style="font-size:10px;color:var(--color-amber-text);background:var(--color-amber-bg);padding:1px 5px;border-radius:8px">+S/' + adicional.toFixed(2) + '</span>'
+          : '');
+
+      var pagoMoto = parseFloat(o.pago_moto_total || 0);
+      var pagoMotoAdicional = parseFloat(o.pago_moto_adicional || 0);
+      var pagoMotoHTML = 'S/ ' + pagoMoto.toFixed(2) +
+        (pagoMotoAdicional > 0
+          ? ' <span style="font-size:10px;color:var(--color-amber-text);background:var(--color-amber-bg);padding:1px 5px;border-radius:8px">+S/' + pagoMotoAdicional.toFixed(2) + '</span>'
+          : '');
+
+      return '<tr>' +
+        '<td><strong>#' + o.codigo + '</strong></td>' +
+        '<td>' + o.tienda + especial + '</td>' +
+        '<td>' + (o.dest_nombre || '—') + '</td>' +
+        '<td>' + (typeof _botonWhatsApp === 'function' ? _botonWhatsApp(o.dest_telefono, o.dest_nombre, o.dest_telefono_2) : (o.dest_telefono || '—')) + '</td>' +
+        '<td>' + o.distrito + '</td>' +
+        '<td>' + (o.motorizado || '<span style="color:var(--color-text-tertiary)">Sin asignar</span>') + '</td>' +
+        '<td>' + _badgeEstado(o.estado) + '</td>' +
+        '<td>' + (o.hora_asignacion || '—') + '</td>' +
+        '<td>' + deliveryHTML + '</td>' +
+        '<td>' + pagoMotoHTML + '</td>' +
+        '<td style="font-size:12px;color:var(--color-text-secondary)">' + _fechaDisplay(o.fecha) + '</td>' +
+        '<td><button class="btn btn-sm" onclick="abrirActualizarEstadoOrden(' + o.id + ')"><i class="ti ti-refresh"></i> Actualizar</button></td>' +
+      '</tr>';
+    }).join('');
   }
 
-  tbody.innerHTML = ordenes.map(function(o) {
-    var especial = o.producto_especial
-      ? '<span title="Producto especial" style="color:var(--color-amber);margin-left:4px"><i class="ti ti-package-import"></i></span>'
-      : '';
-    var delivery = parseFloat(o.delivery_total || 0);
-    var adicional = parseFloat(o.monto_adicional || 0);
-    var deliveryHTML = 'S/ ' + delivery.toFixed(2) +
-      (adicional > 0
-        ? ' <span style="font-size:10px;color:var(--color-amber-text);background:var(--color-amber-bg);padding:1px 5px;border-radius:8px">+S/' + adicional.toFixed(2) + '</span>'
-        : '');
-
-    return '<tr>' +
-      '<td><strong>#' + o.codigo + '</strong></td>' +
-      '<td>' + o.tienda + especial + '</td>' +
-      '<td>' + (o.dest_nombre || '—') + '</td>' +
-      '<td>' + (typeof _botonWhatsApp === 'function' ? _botonWhatsApp(o.dest_telefono, o.dest_nombre, o.dest_telefono_2) : (o.dest_telefono || '—')) + '</td>' +
-      '<td>' + o.distrito + '</td>' +
-      '<td>' + (o.motorizado || '<span style="color:var(--color-text-tertiary)">Sin asignar</span>') + '</td>' +
-      '<td>' + _badgeEstado(o.estado) + '</td>' +
-      '<td>' + (o.hora_asignacion || '—') + '</td>' +
-      '<td>' + deliveryHTML + '</td>' +
-      '<td style="font-size:12px;color:var(--color-text-secondary)">' + _fechaDisplay(o.fecha) + '</td>' +
-      '<td><button class="btn btn-sm" onclick="abrirActualizarEstadoOrden(' + o.id + ')"><i class="ti ti-refresh"></i> Actualizar</button></td>' +
-    '</tr>';
-  }).join('');
+  /* Reaplicar los filtros de texto/tienda/motorizado/estado tras repintar */
+  if (typeof filtrarTablaPedidos === 'function') filtrarTablaPedidos();
 };
 
 /* ════════════════════════════════════════════
@@ -211,37 +227,36 @@ function _hoyMenos1() {
 /* ════════════════════════════════════════════
    MODAL — AGREGAR ORDEN
 ════════════════════════════════════════════ */
+/* Crea los comboboxes buscables (una sola vez; ver _initCombosOrden) */
+function _initCombosOrden() {
+  _comboTienda = initComboBuscable('f-orden-tienda', function() {
+    return CATALOGO_TIENDAS.map(function(t) {
+      return { value: t.nombre, label: t.nombre };
+    });
+  });
+
+  _comboMotorizado = initComboBuscable('f-orden-motorizado', function() {
+    return CATALOGO_MOTORIZADOS.map(function(m) {
+      return { value: m.nombre, label: m.nombre + (m.zona ? ' — ' + m.zona : '') };
+    });
+  });
+
+  _comboDistrito = initComboBuscable('f-orden-distrito', function() {
+    return CATALOGO_DISTRITOS.map(function(d) {
+      return { value: d, label: d };
+    });
+  }, function() { onDistritoChange(); });
+}
+
 window.abrirModalOrden = function() {
   var fFecha = document.getElementById('f-orden-fecha');
   if (fFecha) fFecha.value = _hoy();
 
-  /* Tiendas */
-  var selTienda = document.getElementById('f-orden-tienda');
-  if (selTienda) {
-    selTienda.innerHTML = '<option value="">Seleccionar tienda...</option>' +
-      CATALOGO_TIENDAS.map(function(t){
-        return '<option value="' + t.nombre + '">' + t.nombre + '</option>';
-      }).join('');
-  }
-
-  /* Motorizados */
-  var selMoto = document.getElementById('f-orden-motorizado');
-  if (selMoto) {
-    selMoto.innerHTML = '<option value="">Seleccionar motorizado...</option>' +
-      CATALOGO_MOTORIZADOS.map(function(m){
-        return '<option value="' + m.nombre + '">' + m.nombre +
-          (m.zona ? ' — ' + m.zona : '') + '</option>';
-      }).join('');
-  }
-
-  /* Distritos */
-  var selDist = document.getElementById('f-orden-distrito');
-  if (selDist) {
-    selDist.innerHTML = '<option value="">Seleccionar distrito...</option>' +
-      CATALOGO_DISTRITOS.map(function(d){
-        return '<option value="' + d + '">' + d + '</option>';
-      }).join('');
-  }
+  if (_comboTienda)     _comboTienda.limpiar();
+  if (_comboMotorizado) _comboMotorizado.limpiar();
+  if (_comboDistrito)   _comboDistrito.limpiar();
+  var hint = document.getElementById('delivery-hint');
+  if (hint) hint.textContent = '';
 
   ['f-orden-dest','f-orden-telef','f-orden-direccion','f-orden-obs','f-orden-delivery'].forEach(function(id){
     var el = document.getElementById(id); if (el) el.value = '';
@@ -293,16 +308,16 @@ window.guardarOrden = async function() {
   var obs        = document.getElementById('f-orden-obs').value.trim();
   var errEl      = document.getElementById('orden-modal-error');
 
-  if (!fecha || !tienda || !dest || !direccion || !distrito) {
-    errEl.textContent = 'Fecha, tienda, destinatario, dirección y distrito son obligatorios.';
+  if (!fecha || !tienda || !dest || !distrito) {
+    errEl.textContent = 'Fecha, tienda, destinatario y distrito son obligatorios.';
     errEl.style.display = 'block';
     return;
   }
 
   var validaciones = [
     validarTexto(dest, { obligatorio: true, min: 2, max: 100, nombreCampo: 'El nombre del destinatario' }),
-    validarTelefonoObligatorio(telef),
-    validarTexto(direccion, { obligatorio: true, min: 5, max: 200, nombreCampo: 'La dirección' }),
+    validarTelefono(telef),
+    validarTexto(direccion, { min: 5, max: 200, nombreCampo: 'La dirección' }),
     validarTexto(obs, { max: 300, nombreCampo: 'Las observaciones' }),
   ];
   if (!ejecutarValidaciones(validaciones, errEl)) return;
@@ -355,5 +370,21 @@ window.initPedidos = async function() {
   var inp = document.getElementById('filtro-fecha-pedidos');
   if (inp) inp.value = _filtroFecha;
   _marcarBotonActivoPedidos('hoy');
+  _initCombosOrden();
+  _initFiltrosPedidosTabla();
   await renderPedidos();
 };
+
+/* Comboboxes buscables de la barra de filtros de la tabla (no confundir
+   con los del modal "Agregar orden" — ver _initCombosOrden) */
+function _initFiltrosPedidosTabla() {
+  initComboBuscable('f-filtro-tienda-pedidos', function() {
+    return CATALOGO_TIENDAS.map(function(t) { return { value: t.nombre, label: t.nombre }; });
+  }, function() { filtrarTablaPedidos(); });
+
+  initComboBuscable('f-filtro-motorizado-pedidos', function() {
+    return CATALOGO_MOTORIZADOS.map(function(m) {
+      return { value: m.nombre, label: m.nombre + (m.zona ? ' — ' + m.zona : '') };
+    });
+  }, function() { filtrarTablaPedidos(); });
+}

@@ -198,3 +198,32 @@
   .show-mobile { display: none !important; }
   .hamburger-btn { display: none !important; }
 }
+
+/* ══════════════════════════════════════
+   PRIMERA COLUMNA FIJA — todas las tablas
+   Al scrollear horizontalmente en móvil, la primera
+   columna (código, nombre, tienda, etc.) queda pegada
+   a la izquierda para no perder de vista a qué fila
+   corresponde lo que se ve más a la derecha.
+   Aplica a cualquier tabla envuelta en .table-wrap.
+══════════════════════════════════════ */
+.table-wrap table th:first-child,
+.table-wrap table td:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  box-shadow: 2px 0 4px rgba(0,0,0,0.06);
+}
+
+.table-wrap table thead th:first-child {
+  background: var(--color-bg-secondary);
+  z-index: 2;
+}
+
+.table-wrap table tbody td:first-child {
+  background: var(--color-bg-primary);
+}
+
+.table-wrap table tbody tr:hover td:first-child {
+  background: var(--color-bg-secondary);
+}

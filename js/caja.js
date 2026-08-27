@@ -183,7 +183,10 @@ window.marcarTiendaPagada = async function(idTienda, fecha) {
   } catch(err) { console.error(err); }
 };
 
+var _cajaDetalleTiendaCurrent = '';
+
 window.verDetalleTiendaCaja = async function(nombreTienda) {
+  _cajaDetalleTiendaCurrent = nombreTienda;
   var el = document.getElementById('titulo-detalle-tienda');
   if (el) el.textContent = 'Detalle · ' + nombreTienda;
   try {
@@ -207,10 +210,16 @@ window.verDetalleTiendaCaja = async function(nombreTienda) {
     tbody.innerHTML = ordenes.map(function(o) {
       var tieneCobro = _EC.includes(o.estado);
       var delivery   = tieneCobro ? parseFloat(o.delivery_total||0) : 0;
+      var adicional  = tieneCobro ? parseFloat(o.monto_adicional||0) : 0;
       var cobrado    = tieneCobro ? parseFloat(o.monto_cobrado||0)  : 0;
       var saldo      = delivery - cobrado;
       var saldoClass = saldo>0?'balance-pos':saldo<0?'balance-neg':'balance-zero';
-      var dStr = tieneCobro ? 'S/ '+delivery.toFixed(2) : '<span style="color:var(--color-text-tertiary)">S/ 0.00</span>';
+      var dStr = tieneCobro
+        ? 'S/ '+delivery.toFixed(2) +
+          (adicional > 0
+            ? ' <span style="font-size:10px;color:var(--color-amber-text);background:var(--color-amber-bg);padding:1px 5px;border-radius:8px">+S/'+adicional.toFixed(2)+'</span>'
+            : '')
+        : '<span style="color:var(--color-text-tertiary)">S/ 0.00</span>';
       var cStr = tieneCobro ? 'S/ '+cobrado.toFixed(2)  : '<span style="color:var(--color-text-tertiary)">S/ 0.00</span>';
       return '<tr>' +
         '<td><strong>#'+o.codigo+'</strong></td>' +
@@ -233,6 +242,7 @@ window.verDetalleTiendaCaja = async function(nombreTienda) {
 
 window.cerrarDetalleTienda = function() {
   var el=document.getElementById('detalle-tienda-caja'); if(el) el.style.display='none';
+  _cajaDetalleTiendaCurrent = '';
 };
 
 /* ════════════════════════════════════════════
@@ -482,17 +492,33 @@ window.initCaja = function() {
 };
 
 /* ── Editar orden desde Caja ── */
-window.editarOrdenDesdeCaja = async function(ordenId) {
-  /* Reutiliza el mismo modal que motorizados */
+window.editarOrdenDesdeCaja = function(ordenId) {
+  /* Reutiliza el mismo modal que motorizados. El refresco de caja al
+     guardar ya lo hace guardarActualizarEstadoOrden() por su cuenta
+     (ver _refrescarCajaActual más abajo), así que acá no hace falta
+     envolver nada. */
   if (typeof abrirActualizarEstadoOrden === 'function') {
-    await abrirActualizarEstadoOrden(ordenId);
-    /* Al guardar, refrescar el detalle de caja */
-    var _origGuardar = window.guardarActualizarEstadoOrden;
-    window.guardarActualizarEstadoOrden = async function() {
-      await _origGuardar();
-      /* Refrescar la vista de caja activa */
-      if (typeof renderTiendasCaja === 'function') renderTiendasCaja();
-      if (typeof renderMotosCaja   === 'function') renderMotosCaja();
-    };
+    abrirActualizarEstadoOrden(ordenId);
+  }
+};
+
+/* ── Refresca todo lo que dependa de órdenes dentro de Caja ──
+   Se llama desde guardarActualizarEstadoOrden() (js/motorizados.js)
+   cada vez que se guarda una orden, sin importar desde qué página se
+   abrió el modal. Si Caja no está en pantalla, los guards de cada
+   render (if (!tbody) return) hacen que esto no haga nada. */
+window._refrescarCajaActual = function() {
+  if (typeof renderTiendasCaja === 'function') renderTiendasCaja();
+  if (typeof renderMotosCaja   === 'function') renderMotosCaja();
+  if (typeof renderLiquidez    === 'function') renderLiquidez();
+
+  var panelTienda = document.getElementById('detalle-tienda-caja');
+  if (panelTienda && panelTienda.style.display === 'block' && _cajaDetalleTiendaCurrent) {
+    verDetalleTiendaCaja(_cajaDetalleTiendaCurrent);
+  }
+
+  var panelMoto = document.getElementById('detalle-moto-caja');
+  if (panelMoto && panelMoto.style.display === 'block' && _cajaDetalleMotoCurrent.nombre) {
+    verDetalleMotoCaja(_cajaDetalleMotoCurrent.nombre, _cajaDetalleMotoCurrent.id);
   }
 };

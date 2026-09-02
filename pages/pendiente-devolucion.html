@@ -1,0 +1,64 @@
+<!-- ============================================================
+     pages/pendiente-devolucion.html — Pendiente devolución
+     Muestra las mismas órdenes que "Todos los pedidos" (misma base
+     de datos), filtradas a las que necesitan confirmar que el
+     motorizado devolvió el producto, o que tienen una condición
+     especial (Cambio/Recojo/Escoge talla). La lógica de filtrado y
+     el armado de cada fila vienen de js/pedidos.js y
+     js/motorizados.js — no se duplican acá.
+     ============================================================ -->
+
+<div class="page-title">Pendiente devolución</div>
+<div class="page-sub">Órdenes con devolución por confirmar o con condición especial — se actualiza junto con "Todos los pedidos"</div>
+
+<div class="card">
+  <div class="card-head">
+    <span class="card-title">Listado</span>
+    <div class="filters">
+
+      <!-- Buscador con ícono lupa -->
+      <div class="search-wrap">
+        <i class="ti ti-search search-icon"></i>
+        <input id="f-buscar-pendiente-devolucion" class="search-box" placeholder="Buscar pedido, cliente..."
+               oninput="filtrarTablaPendienteDevolucion()" />
+      </div>
+
+      <!-- Filtro por tienda cliente -->
+      <div style="min-width:180px">
+        <input id="f-filtro-tienda-pendiente-devolucion" class="search-box" style="width:100%" placeholder="Filtrar por tienda..." />
+      </div>
+
+      <!-- Filtro por motorizado -->
+      <div style="min-width:180px">
+        <input id="f-filtro-motorizado-pendiente-devolucion" class="search-box" style="width:100%" placeholder="Filtrar por motorizado..." />
+      </div>
+
+      <span style="font-size:12px;color:var(--color-text-secondary)" id="total-pendiente-devolucion"></span>
+
+    </div>
+  </div>
+  <div class="table-wrap">
+    <table id="tabla-pendiente-devolucion">
+      <thead>
+        <tr>
+          <th>Código</th>
+          <th>Tienda cliente</th>
+          <th>Destinatario</th>
+          <th>Contacto</th>
+          <th>Distrito</th>
+          <th>Motorizado</th>
+          <th>Estado</th>
+          <th>Condición especial</th>
+          <th>Devuelto</th>
+          <th>Sub-estado</th>
+          <th>Hora asig.</th>
+          <th>Delivery</th>
+          <th>Pago moto</th>
+          <th>Fecha</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="tbody-pendiente-devolucion"></tbody>
+    </table>
+  </div>
+</div>

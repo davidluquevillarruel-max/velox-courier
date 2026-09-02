@@ -28,6 +28,10 @@
     <span style="font-size:13px;font-weight:500;color:var(--color-text-secondary)">
       <i class="ti ti-calendar"></i> Filtrar por período:
     </span>
+    <button class="btn btn-sm" id="btn-semana-tiendas" onclick="filtroRapidoTiendas('semana')">Por semana</button>
+    <button class="btn btn-sm" id="btn-semana-pasada-tiendas" onclick="filtroRapidoTiendas('semana-pasada')">Semana pasada</button>
+    <button class="btn btn-sm" id="btn-mes-tiendas" onclick="filtroRapidoTiendas('mes')">Por mes</button>
+    <button class="btn btn-sm" id="btn-mes-pasado-tiendas" onclick="filtroRapidoTiendas('mes-pasado')">Mes pasado</button>
     <div style="display:flex;align-items:center;gap:6px">
       <label style="font-size:12px;color:var(--color-text-secondary)">Desde</label>
       <input type="date" id="filtro-desde" class="filter-select" style="font-size:13px" />
@@ -119,14 +123,18 @@
 
   <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;flex-wrap:wrap">
     <span style="font-size:13px;color:var(--color-text-secondary)">Filtrar por período:</span>
+    <button class="btn btn-sm" id="btn-semana-liquidez" onclick="filtroRapidoLiquidez('semana')">Por semana</button>
+    <button class="btn btn-sm" id="btn-semana-pasada-liquidez" onclick="filtroRapidoLiquidez('semana-pasada')">Semana pasada</button>
+    <button class="btn btn-sm" id="btn-mes-liquidez" onclick="filtroRapidoLiquidez('mes')">Por mes</button>
+    <button class="btn btn-sm" id="btn-mes-pasado-liquidez" onclick="filtroRapidoLiquidez('mes-pasado')">Mes pasado</button>
     <div class="date-filter-wrap">
       <i class="ti ti-calendar"></i>
-      <input type="date" id="filtro-liquidez-desde" onchange="renderLiquidez()" />
+      <input type="date" id="filtro-liquidez-desde" onchange="aplicarFiltroLiquidezManual()" />
     </div>
     <span style="font-size:13px;color:var(--color-text-secondary)">hasta</span>
     <div class="date-filter-wrap">
       <i class="ti ti-calendar"></i>
-      <input type="date" id="filtro-liquidez-hasta" onchange="renderLiquidez()" />
+      <input type="date" id="filtro-liquidez-hasta" onchange="aplicarFiltroLiquidezManual()" />
     </div>
     <button class="btn btn-sm" onclick="limpiarFiltroLiquidez()">
       <i class="ti ti-adjustments-horizontal"></i> Ver todos
@@ -156,6 +164,8 @@
     </div>
   </div>
 
+  <div id="balance-periodo-liquidez"></div>
+
 </div>
 
 <!-- ══════════════════════════════════════════
@@ -165,6 +175,27 @@
 
   <div class="page-title" style="margin-bottom:4px">Saldos con motorizados</div>
   <div class="page-sub">Verde = Velox les debe · Rojo = nos deben</div>
+
+  <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+    <span style="font-size:13px;color:var(--color-text-secondary)">Filtrar por período:</span>
+    <button class="btn btn-sm" id="btn-semana-motos" onclick="filtroRapidoMotos('semana')">Por semana</button>
+    <button class="btn btn-sm" id="btn-semana-pasada-motos" onclick="filtroRapidoMotos('semana-pasada')">Semana pasada</button>
+    <button class="btn btn-sm" id="btn-mes-motos" onclick="filtroRapidoMotos('mes')">Por mes</button>
+    <button class="btn btn-sm" id="btn-mes-pasado-motos" onclick="filtroRapidoMotos('mes-pasado')">Mes pasado</button>
+    <div class="date-filter-wrap">
+      <i class="ti ti-calendar"></i>
+      <input type="date" id="filtro-motos-desde" onchange="aplicarFiltroMotos()" />
+    </div>
+    <span style="font-size:13px;color:var(--color-text-secondary)">hasta</span>
+    <div class="date-filter-wrap">
+      <i class="ti ti-calendar"></i>
+      <input type="date" id="filtro-motos-hasta" onchange="aplicarFiltroMotos()" />
+    </div>
+    <button class="btn btn-sm" onclick="limpiarFiltroMotos()">
+      <i class="ti ti-adjustments-horizontal"></i> Ver todos
+    </button>
+    <span style="font-size:12px;color:var(--color-text-tertiary)">Sin filtro = todos los registros</span>
+  </div>
 
   <!-- KPIs dinámicos de motorizados -->
   <div class="metrics" style="grid-template-columns:repeat(3,1fr);margin-bottom:16px">

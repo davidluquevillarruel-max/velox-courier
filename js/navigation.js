@@ -41,6 +41,8 @@ function showPage(id) {
       container.style.opacity = '1';
 
       if (id === 'pedidos')          initPedidos();
+      if (id === 'pendiente-devolucion') initPendienteDevolucion();
+      if (id === 'devolucion-tienda') initDevolucionTienda();
       if (id === 'clientes')         initClientes();
       if (id === 'evidencias')       initEvidencias();
       if (id === 'tarifas')          initTarifas();
@@ -90,6 +92,7 @@ function abrirDetalleTienda(tiendaId) {
       container.innerHTML = html;
       container.style.transition = 'opacity 0.15s';
       container.style.opacity = '1';
+      if (typeof _resetFiltroDetalleTienda === 'function') _resetFiltroDetalleTienda();
       if (typeof renderDetalleTienda === 'function') renderDetalleTienda(tiendaId);
     })
     .catch(function(err) {
@@ -139,7 +142,7 @@ function _aplicarPermisosPorRol() {
 
   if (sesion.rol === 'motorizado') {
     /* Motorizado: ocultar todo menos lo suyo */
-    ['nav-pedidos','nav-clientes','nav-tarifas','nav-caja'].forEach(function(navId) {
+    ['nav-pedidos','nav-pendiente-devolucion','nav-devolucion-tienda','nav-clientes','nav-tarifas','nav-caja'].forEach(function(navId) {
       var el = document.getElementById(navId); if (el) el.style.display = 'none';
     });
     ['nav-motorizados','nav-evidencias','nav-asignacion','nav-usuarios'].forEach(function(navId) {
@@ -150,7 +153,7 @@ function _aplicarPermisosPorRol() {
 
   } else if (sesion.rol === 'tienda') {
     /* Tienda: solo ve Clientes, Evidencias y Usuarios Tienda */
-    ['nav-pedidos','nav-motorizados','nav-tarifas','nav-caja',
+    ['nav-pedidos','nav-pendiente-devolucion','nav-devolucion-tienda','nav-motorizados','nav-tarifas','nav-caja',
      'nav-asignacion','nav-usuarios'].forEach(function(navId) {
       var el = document.getElementById(navId); if (el) el.style.display = 'none';
     });

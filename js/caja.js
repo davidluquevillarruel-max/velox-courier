@@ -6,6 +6,8 @@
 var API = '/api';
 var _cajaFiltroDesde = '';
 var _cajaFiltroHasta = '';
+var _motoFiltroDesde = '';
+var _motoFiltroHasta = '';
 var _EC = ['entregado', 'ausente'];
 var _mostrarPagadosTiendas = false;
 var _mostrarPagadosMotos   = false;
@@ -15,6 +17,69 @@ function _fechaDisplayCaja(f) {
   var p = (f.substring?f:String(f)).substring(0,10).split('-');
   var meses = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
   return p[2]+' '+meses[parseInt(p[1])-1]+' '+p[0];
+}
+
+/* ── Rangos rápidos (mismo cálculo que en Clientes: semana lunes-sábado) ── */
+function _formatFechaCaja(d) {
+  var mm = ('0'+(d.getMonth()+1)).slice(-2);
+  var dd = ('0'+d.getDate()).slice(-2);
+  return d.getFullYear() + '-' + mm + '-' + dd;
+}
+
+function _lunesDeSemanaCaja(d) {
+  var dia = d.getDay(); /* 0=domingo,1=lunes,...,6=sábado */
+  var offset = dia === 0 ? -6 : 1 - dia;
+  var lunes = new Date(d);
+  lunes.setDate(d.getDate() + offset);
+  return lunes;
+}
+
+function _rangoSemanaActualCaja() {
+  var hoy = new Date();
+  var lunes = _lunesDeSemanaCaja(hoy);
+  var sabado = new Date(lunes);
+  sabado.setDate(lunes.getDate() + 5);
+  var fin = hoy > sabado ? sabado : hoy;
+  return { desde: _formatFechaCaja(lunes), hasta: _formatFechaCaja(fin) };
+}
+
+function _rangoSemanaPasadaCaja() {
+  var hoy = new Date();
+  var lunesEsta = _lunesDeSemanaCaja(hoy);
+  var lunesPasada = new Date(lunesEsta);
+  lunesPasada.setDate(lunesEsta.getDate() - 7);
+  var sabadoPasada = new Date(lunesPasada);
+  sabadoPasada.setDate(lunesPasada.getDate() + 5);
+  return { desde: _formatFechaCaja(lunesPasada), hasta: _formatFechaCaja(sabadoPasada) };
+}
+
+function _rangoMesActualCaja() {
+  var hoy = new Date();
+  var inicio = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+  return { desde: _formatFechaCaja(inicio), hasta: _formatFechaCaja(hoy) };
+}
+
+function _rangoMesPasadoCaja() {
+  var hoy = new Date();
+  var inicio = new Date(hoy.getFullYear(), hoy.getMonth() - 1, 1);
+  var fin    = new Date(hoy.getFullYear(), hoy.getMonth(), 0); /* día 0 = último día del mes anterior */
+  return { desde: _formatFechaCaja(inicio), hasta: _formatFechaCaja(fin) };
+}
+
+function _rangoPorTipoCaja(tipo) {
+  if (tipo === 'semana')             return _rangoSemanaActualCaja();
+  if (tipo === 'semana-pasada')      return _rangoSemanaPasadaCaja();
+  if (tipo === 'mes')                return _rangoMesActualCaja();
+  if (tipo === 'mes-pasado')         return _rangoMesPasadoCaja();
+  return null;
+}
+
+/* prefijo: 'tiendas' | 'liquidez' | 'motos' — ids esperados: btn-<tipo>-<prefijo> */
+function _marcarBotonActivoCaja(prefijo, tipo) {
+  ['semana','semana-pasada','mes','mes-pasado'].forEach(function(t) {
+    var el = document.getElementById('btn-'+t+'-'+prefijo);
+    if (el) el.classList.toggle('active', tipo === t);
+  });
 }
 
 /* ── Tabs ── */
@@ -36,12 +101,26 @@ window.cambiarTab = function(id, btn) {
 window.aplicarFiltroTiendas = function() {
   _cajaFiltroDesde = document.getElementById('filtro-desde').value;
   _cajaFiltroHasta = document.getElementById('filtro-hasta').value;
+  _marcarBotonActivoCaja('tiendas', null);
   renderTiendasCaja();
 };
 window.limpiarFiltroTiendas = function() {
   _cajaFiltroDesde = ''; _cajaFiltroHasta = '';
   document.getElementById('filtro-desde').value = '';
   document.getElementById('filtro-hasta').value = '';
+  _marcarBotonActivoCaja('tiendas', null);
+  renderTiendasCaja();
+};
+window.filtroRapidoTiendas = function(tipo) {
+  var rango = _rangoPorTipoCaja(tipo);
+  if (!rango) return;
+  _cajaFiltroDesde = rango.desde;
+  _cajaFiltroHasta = rango.hasta;
+  var inpD = document.getElementById('filtro-desde');
+  var inpH = document.getElementById('filtro-hasta');
+  if (inpD) inpD.value = rango.desde;
+  if (inpH) inpH.value = rango.hasta;
+  _marcarBotonActivoCaja('tiendas', tipo);
   renderTiendasCaja();
 };
 
@@ -253,7 +332,66 @@ window.limpiarFiltroLiquidez = function() {
   var h = document.getElementById('filtro-liquidez-hasta');
   if (d) d.value = '';
   if (h) h.value = '';
+  _marcarBotonActivoCaja('liquidez', null);
   renderLiquidez();
+};
+
+window.aplicarFiltroLiquidezManual = function() {
+  _marcarBotonActivoCaja('liquidez', null);
+  renderLiquidez();
+};
+
+window.filtroRapidoLiquidez = function(tipo) {
+  var rango = _rangoPorTipoCaja(tipo);
+  if (!rango) return;
+  var inpD = document.getElementById('filtro-liquidez-desde');
+  var inpH = document.getElementById('filtro-liquidez-hasta');
+  if (inpD) inpD.value = rango.desde;
+  if (inpH) inpH.value = rango.hasta;
+  _marcarBotonActivoCaja('liquidez', tipo);
+  renderLiquidez();
+};
+
+/* Caja real (ya liquidado) + Caja teórica (si todo se liquidara, sin deudas).
+   Se llama con el mismo desde/hasta que ya está aplicado en Liquidez. */
+window._renderBalancePeriodoLiquidez = async function(params, bruto, motos) {
+  var el = document.getElementById('balance-periodo-liquidez');
+  if (!el) return;
+
+  var teorica = bruto - motos;
+  var real = { neto_tiendas: 0, neto_motorizados: 0, neto_prepago: 0, caja_real: 0 };
+  try {
+    var urlReal = API + '/caja/real' + (params.length ? '?' + params.join('&') : '');
+    var rReal = await fetch(urlReal);
+    real = await rReal.json();
+  } catch (e) { console.error('Error caja real:', e); }
+
+  var claseSigno = function(v){ return v >= 0 ? 'green' : 'red'; };
+
+  el.innerHTML =
+    '<div class="card" style="margin-top:16px">' +
+      '<div class="card-head"><span class="card-title">Caja real (ya liquidado)</span></div>' +
+      '<div class="metrics" style="grid-template-columns:repeat(4,1fr)">' +
+        '<div class="metric"><div class="metric-label">Prepagos recibidos</div><div class="metric-val ' + claseSigno(real.neto_prepago) + '">S/ ' + real.neto_prepago.toFixed(2) + '</div></div>' +
+        '<div class="metric"><div class="metric-label">Neto con tiendas</div><div class="metric-val ' + claseSigno(real.neto_tiendas) + '">S/ ' + real.neto_tiendas.toFixed(2) + '</div></div>' +
+        '<div class="metric"><div class="metric-label">Neto con motorizados</div><div class="metric-val ' + claseSigno(real.neto_motorizados) + '">S/ ' + real.neto_motorizados.toFixed(2) + '</div></div>' +
+        '<div class="metric"><div class="metric-label">Caja real total</div><div class="metric-val ' + claseSigno(real.caja_real) + '">S/ ' + real.caja_real.toFixed(2) + '</div></div>' +
+      '</div>' +
+      '<div style="font-size:12px;color:var(--color-text-tertiary);padding:0 16px 14px">' +
+        'Prepagos: lo que las tiendas ya pagaron en oficina antes de salir a ruta. Tiendas/Motorizados: solo lo ya marcado "pagado" — cambia en cuanto liquidás algo.' +
+      '</div>' +
+    '</div>' +
+    '<div class="card" style="margin-top:16px">' +
+      '<div class="card-head"><span class="card-title">Caja teórica (si todo se liquidara hoy, sin deudas)</span></div>' +
+      '<div class="metrics" style="grid-template-columns:repeat(3,1fr)">' +
+        '<div class="metric"><div class="metric-label">Delivery bruto</div><div class="metric-val blue">S/ ' + bruto.toFixed(2) + '</div></div>' +
+        '<div class="metric"><div class="metric-label">Pago motorizados</div><div class="metric-val amber">S/ ' + motos.toFixed(2) + '</div></div>' +
+        '<div class="metric"><div class="metric-label">Ganancia teórica</div><div class="metric-val ' + claseSigno(teorica) + '">S/ ' + teorica.toFixed(2) + '</div></div>' +
+      '</div>' +
+      '<div style="font-size:12px;color:var(--color-text-tertiary);padding:0 16px 14px">' +
+        'Ganancia si todas las tiendas y motorizados quedaran al día — el techo teórico del período.' +
+      '</div>' +
+    '</div>';
 };
 
 window.renderLiquidez = async function() {
@@ -276,6 +414,7 @@ window.renderLiquidez = async function() {
       var set2 = function(id,v){ var el=document.getElementById(id); if(el) el.textContent=v; };
       set2('kpi-bruto','S/ 0.00'); set2('kpi-motos','S/ 0.00');
       set2('kpi-devol','S/ 0.00'); set2('kpi-neto','S/ 0.00');
+      _renderBalancePeriodoLiquidez(params, 0, 0);
       return;
     }
 
@@ -314,17 +453,58 @@ window.renderLiquidez = async function() {
     set('kpi-motos', 'S/ '+totMotos.toFixed(2));
     set('kpi-devol', 'S/ '+totProd.toFixed(2));
     set('kpi-neto',  'S/ '+totNeto.toFixed(2));
+
+    _renderBalancePeriodoLiquidez(params, totBruto, totMotos);
   } catch(err) { console.error('Error liquidez:', err); }
 };
 
 /* ════════════════════════════════════════════
    TAB MOTORIZADOS
 ════════════════════════════════════════════ */
+window.filtroRapidoMotos = function(tipo) {
+  var rango = _rangoPorTipoCaja(tipo);
+  if (!rango) return;
+  _motoFiltroDesde = rango.desde;
+  _motoFiltroHasta = rango.hasta;
+  var inpD = document.getElementById('filtro-motos-desde');
+  var inpH = document.getElementById('filtro-motos-hasta');
+  if (inpD) inpD.value = rango.desde;
+  if (inpH) inpH.value = rango.hasta;
+  _marcarBotonActivoCaja('motos', tipo);
+  renderMotosCaja();
+};
+
+window.aplicarFiltroMotos = function() {
+  var inpD = document.getElementById('filtro-motos-desde');
+  var inpH = document.getElementById('filtro-motos-hasta');
+  _motoFiltroDesde = inpD ? inpD.value : '';
+  _motoFiltroHasta = inpH ? inpH.value : '';
+  _marcarBotonActivoCaja('motos', null);
+  renderMotosCaja();
+};
+
+window.limpiarFiltroMotos = function() {
+  _motoFiltroDesde = '';
+  _motoFiltroHasta = '';
+  var inpD = document.getElementById('filtro-motos-desde');
+  var inpH = document.getElementById('filtro-motos-hasta');
+  if (inpD) inpD.value = '';
+  if (inpH) inpH.value = '';
+  _marcarBotonActivoCaja('motos', null);
+  renderMotosCaja();
+};
+
 window.renderMotosCaja = async function() {
   var tbody = document.getElementById('tbody-motos-caja');
   if (!tbody) return;
   try {
-    var r    = await fetch(API+'/caja/motorizados');
+    var url = API+'/caja/motorizados';
+    var params = [];
+    if (_motoFiltroDesde) params.push('desde='+_motoFiltroDesde);
+    if (_motoFiltroHasta) params.push('hasta='+_motoFiltroHasta);
+    if (params.length) url += '?' + params.join('&');
+
+    var r    = await fetch(url);
     var data = await r.json();
 
     var totalAPagar   = 0;
@@ -482,6 +662,7 @@ window.cerrarDetalleMoto = function() {
 /* ── Init ── */
 window.initCaja = function() {
   _cajaFiltroDesde = ''; _cajaFiltroHasta = '';
+  _motoFiltroDesde = ''; _motoFiltroHasta = '';
   _mostrarPagadosTiendas = false;
   _mostrarPagadosMotos   = false;
   ['tiendas','liquidez','motorizados'].forEach(function(t){

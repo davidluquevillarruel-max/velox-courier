@@ -312,6 +312,12 @@ window.initEvidencias = async function() {
   var seccionTiendas = document.getElementById('seccion-ev-tiendas');
   if (seccionTiendas) seccionTiendas.style.display = _filtroEvidenciaMoto ? 'none' : '';
 
+  /* Si es tienda, ocultar rendimiento por motorizado — no le corresponde
+     ver el desempeño interno de los motorizados */
+  var esTienda = sesionEv && sesionEv.rol === 'tienda';
+  var seccionMotos = document.getElementById('seccion-ev-motos');
+  if (seccionMotos) seccionMotos.style.display = esTienda ? 'none' : '';
+
   await _cargarDatosEvidencias();
 
   /* Si es motorizado, filtrar _evMotos a solo él */

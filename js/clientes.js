@@ -5,8 +5,15 @@ var API = '/api';
 var TIENDAS_REGISTRO = [];
 var _tiendaEditId = null;
 var _tiendaElimId = null;
-var _filtroFechaClientes = '';
+var _filtroDesdeClientes = '';
+var _filtroHastaClientes = '';
 var _filtroTiendaClientes = '';
+
+/* ── Filtro de período dentro del detalle de una tienda (agrupado) ── */
+var _filtroDesdeDetalle    = '';
+var _filtroHastaDetalle    = '';
+var _tipoFiltroDetalle     = ''; /* '', 'semana', 'semana-pasada', 'mes', 'mes-pasado' */
+var _tiendaIdDetalleActual = null;
 
 function _fechaDisplayCli(yyyymmdd) {
   if (!yyyymmdd) return '—';
@@ -57,9 +64,15 @@ async function _calcularStatsTienda(idTienda, fecha) {
 /* ── Render principal ── */
 window.renderClientes = async function() {
   await _cargarTiendas();
-  var fecha = _filtroFechaClientes;
+  var desde = _filtroDesdeClientes;
+  var hasta = _filtroHastaClientes;
+  var hayFiltro = !!(desde && hasta);
   var lbl = document.getElementById('lbl-fecha-clientes');
-  if (lbl) lbl.textContent = fecha ? 'Mostrando: ' + _fechaDisplayCli(fecha) : 'Mostrando: todos los días';
+  if (lbl) {
+    lbl.textContent = !hayFiltro ? 'Mostrando: todos los días'
+      : desde === hasta ? 'Mostrando: ' + _fechaDisplayCli(desde)
+      : 'Mostrando: ' + _fechaDisplayCli(desde) + ' al ' + _fechaDisplayCli(hasta);
+  }
 
   var tbody = document.getElementById('tbody-clientes');
   if (!tbody) return;
@@ -81,7 +94,7 @@ window.renderClientes = async function() {
   /* Cargar resumen de todas las tiendas en UNA sola query */
   var resumenMap = {};
   try {
-    var urlRes  = API + '/tiendas/resumen' + (fecha ? '?fecha=' + fecha : '');
+    var urlRes  = API + '/tiendas/resumen' + (hayFiltro ? '?desde=' + desde + '&hasta=' + hasta : '');
     var rRes    = await fetch(urlRes);
     var resData = await rRes.json();
     resData.forEach(function(d){ resumenMap[d.id_tienda] = d; });
@@ -89,8 +102,8 @@ window.renderClientes = async function() {
 
   var filas = _listaT.map(function(t) {
     var s = resumenMap[t.id];
-    /* Si hay filtro de fecha y la tienda no tiene órdenes ese día, no mostrarla */
-    if (fecha && (!s || parseInt(s.total||0) === 0)) return null;
+    /* Si hay filtro de fecha y la tienda no tiene órdenes en ese rango, no mostrarla */
+    if (hayFiltro && (!s || parseInt(s.total||0) === 0)) return null;
     var porCobrar   = s ? parseFloat(s.por_cobrar||0)   : 0;
     var porDevolver = s ? parseFloat(s.por_devolver||0) : 0;
     var pedidos     = s ? parseInt(s.total||0)          : 0;
@@ -153,7 +166,7 @@ window.renderClientes = async function() {
   /* ── Chips de tiendas (solo si hay filtro de fecha) ── */
   var chipsContainer = document.getElementById('tiendas-chips-clientes');
   if (chipsContainer) {
-    if (fecha && filas.length > 0) {
+    if (hayFiltro && filas.length > 0) {
       var chips = '<div style="display:flex;flex-wrap:wrap;gap:6px;padding:0 16px 14px">';
       chips += '<button class="chip-tienda' + (_filtroTiendaClientes===''?' active':'') + '" onclick="filtrarPorTiendaClientes(\'\')">Todos</button>';
       filas.forEach(function(f) {
@@ -170,7 +183,7 @@ window.renderClientes = async function() {
 
   /* ── Filtrar por tienda seleccionada (si aplica) ── */
   var filasVisibles = filas;
-  if (fecha && _filtroTiendaClientes) {
+  if (hayFiltro && _filtroTiendaClientes) {
     filasVisibles = filas.filter(function(f){ return f.nombre === _filtroTiendaClientes; });
   }
 
@@ -200,18 +213,28 @@ window.filtrarPorTiendaClientes = function(nombre) {
 };
 
 window.aplicarFiltroClientes = function() {
-  var inp = document.getElementById('filtro-fecha-clientes');
-  _filtroFechaClientes = inp ? inp.value : '';
+  var inpD = document.getElementById('filtro-fecha-clientes-desde');
+  var inpH = document.getElementById('filtro-fecha-clientes-hasta');
+  var desde = inpD ? inpD.value : '';
+  var hasta = inpH ? inpH.value : '';
+  /* Si solo llenó uno de los dos, usarlo como día único */
+  if (desde && !hasta) hasta = desde;
+  if (hasta && !desde) desde = hasta;
+  _filtroDesdeClientes = desde;
+  _filtroHastaClientes = hasta;
   _filtroTiendaClientes = '';
   _marcarBotonActivoClientes(null);
   renderClientes();
 };
 
 window.limpiarFiltroClientes = function() {
-  _filtroFechaClientes = '';
+  _filtroDesdeClientes = '';
+  _filtroHastaClientes = '';
   _filtroTiendaClientes = '';
-  var inp = document.getElementById('filtro-fecha-clientes');
-  if (inp) inp.value = '';
+  var inpD = document.getElementById('filtro-fecha-clientes-desde');
+  var inpH = document.getElementById('filtro-fecha-clientes-hasta');
+  if (inpD) inpD.value = '';
+  if (inpH) inpH.value = '';
   var chipsContainer = document.getElementById('tiendas-chips-clientes');
   if (chipsContainer) chipsContainer.innerHTML = '';
   _marcarBotonActivoClientes(null);
@@ -219,38 +242,219 @@ window.limpiarFiltroClientes = function() {
 };
 
 function _hoyCli() {
-  var d = new Date();
-  var mm = ('0'+(d.getMonth()+1)).slice(-2);
-  var dd = ('0'+d.getDate()).slice(-2);
-  return d.getFullYear() + '-' + mm + '-' + dd;
+  return _formatFechaCli(new Date());
 }
 
 function _ayerCli() {
   var d = new Date();
   d.setDate(d.getDate() - 1);
+  return _formatFechaCli(d);
+}
+
+function _formatFechaCli(d) {
   var mm = ('0'+(d.getMonth()+1)).slice(-2);
   var dd = ('0'+d.getDate()).slice(-2);
   return d.getFullYear() + '-' + mm + '-' + dd;
 }
 
+/* Lunes de la semana (lunes-sábado) que contiene la fecha "d" */
+function _lunesDeSemanaCli(d) {
+  var dia = d.getDay(); /* 0=domingo,1=lunes,...,6=sábado */
+  var offset = dia === 0 ? -6 : 1 - dia;
+  var lunes = new Date(d);
+  lunes.setDate(d.getDate() + offset);
+  return lunes;
+}
+
+/* Lunes de esta semana → hoy, tope sábado */
+function _rangoSemanaActualCli() {
+  var hoy = new Date();
+  var lunes = _lunesDeSemanaCli(hoy);
+  var sabado = new Date(lunes);
+  sabado.setDate(lunes.getDate() + 5);
+  var fin = hoy > sabado ? sabado : hoy;
+  return { desde: _formatFechaCli(lunes), hasta: _formatFechaCli(fin) };
+}
+
+/* Semana pasada completa (lunes a sábado) */
+function _rangoSemanaPasadaCli() {
+  var hoy = new Date();
+  var lunesEsta = _lunesDeSemanaCli(hoy);
+  var lunesPasada = new Date(lunesEsta);
+  lunesPasada.setDate(lunesEsta.getDate() - 7);
+  var sabadoPasada = new Date(lunesPasada);
+  sabadoPasada.setDate(lunesPasada.getDate() + 5);
+  return { desde: _formatFechaCli(lunesPasada), hasta: _formatFechaCli(sabadoPasada) };
+}
+
+/* Día 1 de este mes → hoy */
+function _rangoMesActualCli() {
+  var hoy = new Date();
+  var inicio = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+  return { desde: _formatFechaCli(inicio), hasta: _formatFechaCli(hoy) };
+}
+
+/* Mes pasado completo */
+function _rangoMesPasadoCli() {
+  var hoy = new Date();
+  var inicio = new Date(hoy.getFullYear(), hoy.getMonth() - 1, 1);
+  var fin    = new Date(hoy.getFullYear(), hoy.getMonth(), 0); /* día 0 = último día del mes anterior */
+  return { desde: _formatFechaCli(inicio), hasta: _formatFechaCli(fin) };
+}
+
 function _marcarBotonActivoClientes(tipo) {
-  var btnHoy  = document.getElementById('btn-hoy-clientes');
-  var btnAyer = document.getElementById('btn-ayer-clientes');
-  if (btnHoy)  btnHoy.classList.toggle('active', tipo === 'hoy');
-  if (btnAyer) btnAyer.classList.toggle('active', tipo === 'ayer');
+  var ids = {
+    hoy: 'btn-hoy-clientes', ayer: 'btn-ayer-clientes',
+    semana: 'btn-semana-clientes', 'semana-pasada': 'btn-semana-pasada-clientes',
+    mes: 'btn-mes-clientes', 'mes-pasado': 'btn-mes-pasado-clientes'
+  };
+  Object.keys(ids).forEach(function(k) {
+    var el = document.getElementById(ids[k]);
+    if (el) el.classList.toggle('active', tipo === k);
+  });
 }
 
 window.filtroRapidoClientes = function(tipo) {
-  var fecha = tipo === 'hoy' ? _hoyCli() : _ayerCli();
-  _filtroFechaClientes = fecha;
+  var rango;
+  if (tipo === 'hoy')             rango = { desde: _hoyCli(),  hasta: _hoyCli()  };
+  else if (tipo === 'ayer')       rango = { desde: _ayerCli(), hasta: _ayerCli() };
+  else if (tipo === 'semana')         rango = _rangoSemanaActualCli();
+  else if (tipo === 'semana-pasada')  rango = _rangoSemanaPasadaCli();
+  else if (tipo === 'mes')            rango = _rangoMesActualCli();
+  else if (tipo === 'mes-pasado')     rango = _rangoMesPasadoCli();
+  else return;
+
+  _filtroDesdeClientes = rango.desde;
+  _filtroHastaClientes = rango.hasta;
   _filtroTiendaClientes = '';
-  var inp = document.getElementById('filtro-fecha-clientes');
-  if (inp) inp.value = fecha;
+  var inpD = document.getElementById('filtro-fecha-clientes-desde');
+  var inpH = document.getElementById('filtro-fecha-clientes-hasta');
+  if (inpD) inpD.value = rango.desde;
+  if (inpH) inpH.value = rango.hasta;
   _marcarBotonActivoClientes(tipo);
   renderClientes();
 };
 
 /* ── Detalle tienda ── */
+
+/* Filtro por período dentro del detalle (agrupa todo el rango en una sola vista,
+   en vez de una tab por día — usa los mismos rangos que la página principal) */
+window.filtroRapidoDetalle = function(tipo) {
+  var rango;
+  if (tipo === 'semana')             rango = _rangoSemanaActualCli();
+  else if (tipo === 'semana-pasada') rango = _rangoSemanaPasadaCli();
+  else if (tipo === 'mes')           rango = _rangoMesActualCli();
+  else if (tipo === 'mes-pasado')    rango = _rangoMesPasadoCli();
+  else return;
+
+  _filtroDesdeDetalle = rango.desde;
+  _filtroHastaDetalle = rango.hasta;
+  _tipoFiltroDetalle  = tipo;
+  renderDetalleTienda(_tiendaIdDetalleActual);
+};
+
+window.aplicarFiltroDetalle = function() {
+  var inpD = document.getElementById('filtro-detalle-desde');
+  var inpH = document.getElementById('filtro-detalle-hasta');
+  var desde = inpD ? inpD.value : '';
+  var hasta = inpH ? inpH.value : '';
+  if (desde && !hasta) hasta = desde;
+  if (hasta && !desde) desde = hasta;
+  _filtroDesdeDetalle = desde;
+  _filtroHastaDetalle = hasta;
+  _tipoFiltroDetalle  = '';
+  renderDetalleTienda(_tiendaIdDetalleActual);
+};
+
+window.limpiarFiltroDetalle = function() {
+  _filtroDesdeDetalle = '';
+  _filtroHastaDetalle = '';
+  _tipoFiltroDetalle  = '';
+  renderDetalleTienda(_tiendaIdDetalleActual);
+};
+
+/* Reinicia el filtro de período del detalle — se llama al entrar desde la lista,
+   así no queda pegado el filtro de la tienda que se vio antes */
+window._resetFiltroDetalleTienda = function() {
+  _filtroDesdeDetalle = '';
+  _filtroHastaDetalle = '';
+  _tipoFiltroDetalle  = '';
+};
+
+/* Fila de tabla de una orden en el detalle de tienda.
+   mostrarFecha=true agrega la columna Fecha (para la vista agrupada por período,
+   donde las órdenes de varios días conviven en una sola tabla) */
+function _filaOrdenDetalle(o, _ec, mostrarFecha) {
+  var badgeE = {
+    'entregado':'<span class="badge entregado">Entregado</span>',
+    'no-entregado':'<span class="badge no-entregado">No entregado</span>',
+    'ausente':'<span class="badge ausente">Ausente</span>',
+    'en-proceso':'<span class="badge pendiente">En proceso</span>',
+    'reprogramado':'<span class="badge reprogramado">Reprogramado</span>',
+    'cancelado':'<span class="badge no-entregado">Cancelado</span>',
+    'cambio':'<span class="badge ausente">Cambio</span>',
+    'devolucion':'<span class="badge ausente">Devolución</span>',
+    'recojo':'<span class="badge pendiente">Recojo</span>',
+  };
+  var tieneCobro = _ec.includes(o.estado);
+  var delivery   = tieneCobro ? parseFloat(o.delivery_total||0) : 0;
+  var adicional  = tieneCobro ? parseFloat(o.monto_adicional||0) : 0;
+  var cobrado    = tieneCobro ? parseFloat(o.monto_cobrado||0)  : 0;
+  var saldoO     = delivery - cobrado;
+  var dStr = tieneCobro
+    ? 'S/ '+delivery.toFixed(2) +
+      (adicional > 0
+        ? ' <span style="font-size:10px;color:var(--color-amber-text);background:var(--color-amber-bg);padding:1px 5px;border-radius:8px">+S/'+adicional.toFixed(2)+'</span>'
+        : '')
+    : '<span style="color:var(--color-text-tertiary)">S/ 0.00</span>';
+  var cStr = tieneCobro ? 'S/ '+cobrado.toFixed(2)  : '<span style="color:var(--color-text-tertiary)">S/ 0.00</span>';
+  var sStr = tieneCobro
+    ? (saldoO>0 ? '<span class="balance-pos">S/ '+saldoO.toFixed(2)+'</span>'
+      : saldoO<0 ? '<span class="balance-neg">− S/ '+Math.abs(saldoO).toFixed(2)+'</span>'
+      : '<span class="balance-zero">S/ 0.00</span>')
+    : '<span style="color:var(--color-text-tertiary)">S/ 0.00</span>';
+  return '<tr>' +
+    (mostrarFecha ? '<td style="font-size:12px;color:var(--color-text-secondary)">' + _fechaDisplayCli(o.fecha) + '</td>' : '') +
+    '<td><strong>#'+o.codigo+'</strong></td>' +
+    '<td>'+(o.dest_nombre||'—')+'</td>' +
+    '<td>'+o.distrito+'</td>' +
+    '<td>'+(o.motorizado||'—')+'</td>' +
+    '<td>'+(badgeE[o.estado]||o.estado)+'</td>' +
+    '<td>'+dStr+'</td><td>'+cStr+'</td><td>'+sStr+'</td>' +
+  '</tr>';
+}
+
+/* Mini bloque de resumen (tarjetas + banner de saldo) para un conjunto de órdenes,
+   reutilizado tanto por cada tab de día como por la vista agrupada por período */
+function _bloqueResumenPeriodoDetalle(titulo, ords, _ec) {
+  var deliv = ords.reduce(function(s,o){return s+(_ec.includes(o.estado)?parseFloat(o.delivery_total||0):0);},0);
+  var cobr  = ords.reduce(function(s,o){return s+(_ec.includes(o.estado)?parseFloat(o.monto_cobrado||0):0);},0);
+  var saldo = deliv - cobr;
+  var color = saldo > 0 ? 'var(--color-green)' : saldo < 0 ? 'var(--color-red-text)' : 'var(--color-text-secondary)';
+  var msg   = saldo > 0
+    ? 'En resumen debe la tienda a Velox: S/ ' + saldo.toFixed(2)
+    : saldo < 0
+    ? 'En resumen se le debe a la tienda: S/ ' + Math.abs(saldo).toFixed(2)
+    : 'Saldo en cero';
+  return '<div class="resumen-dia" style="grid-template-columns:repeat(5,1fr);margin-bottom:12px">' +
+      '<div class="resumen-item"><div class="resumen-label">Total</div><div class="resumen-val blue">' + ords.length + '</div></div>' +
+      '<div class="resumen-item"><div class="resumen-label">Entregados</div><div class="resumen-val green">' + ords.filter(function(o){return o.estado==='entregado';}).length + '</div></div>' +
+      '<div class="resumen-item"><div class="resumen-label">Reprogramados</div><div class="resumen-val purple">' + ords.filter(function(o){return o.estado==='reprogramado';}).length + '</div></div>' +
+      '<div class="resumen-item"><div class="resumen-label">Delivery cobrable</div><div class="resumen-val blue">S/ ' + deliv.toFixed(2) + '</div></div>' +
+      '<div class="resumen-item"><div class="resumen-label">Cobrado</div><div class="resumen-val green">S/ ' + cobr.toFixed(2) + '</div></div>' +
+    '</div>' +
+    '<div style="background:var(--color-bg-secondary);border-radius:var(--radius-lg);padding:14px 18px;' +
+      'margin-bottom:14px;border-left:5px solid ' + color + ';display:flex;align-items:center;gap:12px">' +
+      '<div style="background:' + color + ';border-radius:50%;width:34px;height:34px;display:flex;align-items:center;justify-content:center;flex-shrink:0">' +
+        '<i class="ti ti-calculator" style="color:#fff;font-size:15px"></i>' +
+      '</div>' +
+      '<div>' +
+        '<div style="font-size:11px;color:var(--color-text-secondary);font-weight:500;margin-bottom:1px">' + titulo + '</div>' +
+        '<div style="font-size:14px;font-weight:700;color:' + color + '">' + msg + '</div>' +
+      '</div>' +
+    '</div>';
+}
+
 /* Cambiar tab de fecha en detalle tienda */
 window.cambiarDiaTienda = function(idx) {
   document.querySelectorAll('.dia-tab-tienda').forEach(function(t){ t.classList.remove('active'); });
@@ -262,6 +466,7 @@ window.cambiarDiaTienda = function(idx) {
 window.renderDetalleTienda = async function(tiendaId) {
   var container = document.getElementById('detalle-tienda-root');
   if (!container) return;
+  _tiendaIdDetalleActual = tiendaId;
   container.innerHTML = '<div style="padding:40px;text-align:center;color:var(--color-text-secondary)"><i class="ti ti-loader" style="font-size:32px"></i> Cargando...</div>';
 
   if (!TIENDAS_REGISTRO.length) await _cargarTiendas();
@@ -293,8 +498,8 @@ window.renderDetalleTienda = async function(tiendaId) {
     mapaFecha[o.fecha].push(o);
   });
   var fechas = Object.keys(mapaFecha).sort().reverse();
-  if (_filtroFechaClientes && mapaFecha[_filtroFechaClientes]) {
-    fechas = [_filtroFechaClientes].concat(fechas.filter(function(f){ return f !== _filtroFechaClientes; }));
+  if (_filtroDesdeClientes && _filtroDesdeClientes === _filtroHastaClientes && mapaFecha[_filtroDesdeClientes]) {
+    fechas = [_filtroDesdeClientes].concat(fechas.filter(function(f){ return f !== _filtroDesdeClientes; }));
   }
   window._detalleMapaFechaCache = mapaFecha; /* para enviarResumenWP */
 
@@ -351,104 +556,83 @@ window.renderDetalleTienda = async function(tiendaId) {
       '</div>' +
     '</div>';
 
-  /* Tabs de fechas */
   if (fechas.length === 0) {
     html += '<div style="padding:40px;text-align:center;color:var(--color-text-tertiary)">Sin órdenes registradas.</div>';
     container.innerHTML = html;
     return;
   }
 
-  html += '<div class="dias-tabs">';
-  fechas.forEach(function(fecha, i) {
-    html += '<div class="dia-tab-tienda dia-tab' + (i===0?' active':'') + '" data-dia="' + fecha + '" onclick="cambiarDiaTienda(' + i + ')">' + _fechaDisplayCli(fecha) + '</div>';
-  });
-  html += '</div>';
+  /* ── Barra de filtro por período (agrupa el rango en una sola vista) ── */
+  var hayFiltroDetalle = !!(_filtroDesdeDetalle && _filtroHastaDetalle);
+  var activoBtn = function(t){ return _tipoFiltroDetalle === t ? ' active' : ''; };
+  var descPeriodo = hayFiltroDetalle
+    ? (_filtroDesdeDetalle === _filtroHastaDetalle ? _fechaDisplayCli(_filtroDesdeDetalle)
+       : _fechaDisplayCli(_filtroDesdeDetalle) + ' al ' + _fechaDisplayCli(_filtroHastaDetalle))
+    : 'Últimos 7 días';
 
-  /* Tabla por fecha */
-  fechas.forEach(function(fecha, i) {
-    var ordsDia  = mapaFecha[fecha] || [];
-    var diaDeliv = ordsDia.reduce(function(s,o){return s+(_ec.includes(o.estado)?parseFloat(o.delivery_total||0):0);},0);
-    var diaCobr  = ordsDia.reduce(function(s,o){return s+(_ec.includes(o.estado)?parseFloat(o.monto_cobrado||0):0);},0);
-    var diaSaldo = diaDeliv - diaCobr;
-    var diaColor = diaSaldo > 0 ? 'var(--color-green)' : diaSaldo < 0 ? 'var(--color-red-text)' : 'var(--color-text-secondary)';
-    var diaMsg   = diaSaldo > 0
-      ? 'En resumen debe la tienda a Velox: S/ ' + diaSaldo.toFixed(2)
-      : diaSaldo < 0
-      ? 'En resumen se le debe a la tienda: S/ ' + Math.abs(diaSaldo).toFixed(2)
-      : 'Saldo en cero';
+  html += '<div style="display:flex;align-items:center;gap:8px;margin:16px 0;flex-wrap:wrap">' +
+    '<button class="btn btn-sm' + activoBtn('semana') + '" onclick="filtroRapidoDetalle(\'semana\')">Por semana</button>' +
+    '<button class="btn btn-sm' + activoBtn('semana-pasada') + '" onclick="filtroRapidoDetalle(\'semana-pasada\')">Semana pasada</button>' +
+    '<button class="btn btn-sm' + activoBtn('mes') + '" onclick="filtroRapidoDetalle(\'mes\')">Por mes</button>' +
+    '<button class="btn btn-sm' + activoBtn('mes-pasado') + '" onclick="filtroRapidoDetalle(\'mes-pasado\')">Mes pasado</button>' +
+    '<div class="date-filter-wrap"><i class="ti ti-calendar"></i>' +
+      '<input type="date" id="filtro-detalle-desde" value="' + (_filtroDesdeDetalle||'') + '" onchange="aplicarFiltroDetalle()" /></div>' +
+    '<span style="font-size:12px;color:var(--color-text-secondary)">hasta</span>' +
+    '<div class="date-filter-wrap"><i class="ti ti-calendar"></i>' +
+      '<input type="date" id="filtro-detalle-hasta" value="' + (_filtroHastaDetalle||'') + '" onchange="aplicarFiltroDetalle()" /></div>' +
+    '<button class="btn btn-sm" onclick="limpiarFiltroDetalle()"><i class="ti ti-adjustments-horizontal"></i> Últimos 7 días</button>' +
+    '<span style="font-size:12px;color:var(--color-text-tertiary)">' + descPeriodo + '</span>' +
+  '</div>';
 
-    html += '<div class="tabla-dia-tienda tabla-dia' + (i===0?' active':'') + '">';
+  if (hayFiltroDetalle) {
+    /* ── Vista agrupada: todo el rango en un solo bloque + tabla con columna Fecha ── */
+    var ordsPeriodo = ordenes
+      .filter(function(o){ return o.fecha >= _filtroDesdeDetalle && o.fecha <= _filtroHastaDetalle; })
+      .sort(function(a,b){ return a.fecha < b.fecha ? 1 : a.fecha > b.fecha ? -1 : 0; });
 
-    /* Mini resumen del día */
-    html +=
-      '<div class="resumen-dia" style="grid-template-columns:repeat(5,1fr);margin-bottom:12px">' +
-        '<div class="resumen-item"><div class="resumen-label">Total</div><div class="resumen-val blue">' + ordsDia.length + '</div></div>' +
-        '<div class="resumen-item"><div class="resumen-label">Entregados</div><div class="resumen-val green">' + ordsDia.filter(function(o){return o.estado==='entregado';}).length + '</div></div>' +
-        '<div class="resumen-item"><div class="resumen-label">Reprogramados</div><div class="resumen-val purple">' + ordsDia.filter(function(o){return o.estado==='reprogramado';}).length + '</div></div>' +
-        '<div class="resumen-item"><div class="resumen-label">Delivery cobrable</div><div class="resumen-val blue">S/ ' + diaDeliv.toFixed(2) + '</div></div>' +
-        '<div class="resumen-item"><div class="resumen-label">Cobrado</div><div class="resumen-val green">S/ ' + diaCobr.toFixed(2) + '</div></div>' +
-      '</div>' +
-      '<div style="background:var(--color-bg-secondary);border-radius:var(--radius-lg);padding:14px 18px;' +
-        'margin-bottom:14px;border-left:5px solid ' + diaColor + ';display:flex;align-items:center;gap:12px">' +
-        '<div style="background:' + diaColor + ';border-radius:50%;width:34px;height:34px;display:flex;align-items:center;justify-content:center;flex-shrink:0">' +
-          '<i class="ti ti-calculator" style="color:#fff;font-size:15px"></i>' +
-        '</div>' +
-        '<div>' +
-          '<div style="font-size:11px;color:var(--color-text-secondary);font-weight:500;margin-bottom:1px">RESUMEN DEL DÍA</div>' +
-          '<div style="font-size:14px;font-weight:700;color:' + diaColor + '">' + diaMsg + '</div>' +
-        '</div>' +
-      '</div>';
+    if (ordsPeriodo.length === 0) {
+      html += '<div style="padding:40px;text-align:center;color:var(--color-text-tertiary)">Sin órdenes en este período.</div>';
+    } else {
+      html += _bloqueResumenPeriodoDetalle('RESUMEN DEL PERÍODO', ordsPeriodo, _ec);
+      html +=
+        '<div class="card"><div class="card-head">' +
+          '<span class="card-title">Órdenes — ' + descPeriodo + '</span>' +
+          '<span style="font-size:12px;color:var(--color-text-secondary)">' + ordsPeriodo.length + ' registros</span>' +
+        '</div><div class="table-wrap"><table><thead><tr>' +
+          '<th>Fecha</th><th>Código</th><th>Destinatario</th><th>Distrito</th><th>Motorizado</th>' +
+          '<th>Estado</th><th>Delivery</th><th>Cobrado</th><th>Saldo</th>' +
+        '</tr></thead><tbody>' +
+        ordsPeriodo.map(function(o){ return _filaOrdenDetalle(o, _ec, true); }).join('') +
+        '</tbody></table></div></div>';
+    }
+  } else {
+    /* ── Tabs por día, limitadas a los últimos 7 días con órdenes ── */
+    var fechasMostrar = fechas.slice(0, 7);
 
-    html +=
-      '<div class="card"><div class="card-head">' +
-        '<span class="card-title">Órdenes del ' + _fechaDisplayCli(fecha) + '</span>' +
-        '<span style="font-size:12px;color:var(--color-text-secondary)">' + ordsDia.length + ' registros</span>' +
-      '</div><div class="table-wrap"><table><thead><tr>' +
-        '<th>Código</th><th>Destinatario</th><th>Distrito</th><th>Motorizado</th>' +
-        '<th>Estado</th><th>Delivery</th><th>Cobrado</th><th>Saldo</th>' +
-      '</tr></thead><tbody>' +
-      ordsDia.map(function(o) {
-        var badgeE = {
-          'entregado':'<span class="badge entregado">Entregado</span>',
-          'no-entregado':'<span class="badge no-entregado">No entregado</span>',
-          'ausente':'<span class="badge ausente">Ausente</span>',
-          'en-proceso':'<span class="badge pendiente">En proceso</span>',
-          'reprogramado':'<span class="badge reprogramado">Reprogramado</span>',
-          'cancelado':'<span class="badge no-entregado">Cancelado</span>',
-          'cambio':'<span class="badge ausente">Cambio</span>',
-          'devolucion':'<span class="badge ausente">Devolución</span>',
-          'recojo':'<span class="badge pendiente">Recojo</span>',
-        };
-        var tieneCobro = _ec.includes(o.estado);
-        var delivery   = tieneCobro ? parseFloat(o.delivery_total||0) : 0;
-        var adicional  = tieneCobro ? parseFloat(o.monto_adicional||0) : 0;
-        var cobrado    = tieneCobro ? parseFloat(o.monto_cobrado||0)  : 0;
-        var saldoO     = delivery - cobrado;
-        var dStr = tieneCobro
-          ? 'S/ '+delivery.toFixed(2) +
-            (adicional > 0
-              ? ' <span style="font-size:10px;color:var(--color-amber-text);background:var(--color-amber-bg);padding:1px 5px;border-radius:8px">+S/'+adicional.toFixed(2)+'</span>'
-              : '')
-          : '<span style="color:var(--color-text-tertiary)">S/ 0.00</span>';
-        var cStr = tieneCobro ? 'S/ '+cobrado.toFixed(2)  : '<span style="color:var(--color-text-tertiary)">S/ 0.00</span>';
-        var sStr = tieneCobro
-          ? (saldoO>0 ? '<span class="balance-pos">S/ '+saldoO.toFixed(2)+'</span>'
-            : saldoO<0 ? '<span class="balance-neg">− S/ '+Math.abs(saldoO).toFixed(2)+'</span>'
-            : '<span class="balance-zero">S/ 0.00</span>')
-          : '<span style="color:var(--color-text-tertiary)">S/ 0.00</span>';
-        return '<tr>' +
-          '<td><strong>#'+o.codigo+'</strong></td>' +
-          '<td>'+(o.dest_nombre||'—')+'</td>' +
-          '<td>'+o.distrito+'</td>' +
-          '<td>'+(o.motorizado||'—')+'</td>' +
-          '<td>'+(badgeE[o.estado]||o.estado)+'</td>' +
-          '<td>'+dStr+'</td><td>'+cStr+'</td><td>'+sStr+'</td>' +
-        '</tr>';
-      }).join('') +
-      '</tbody></table></div></div>';
+    html += '<div class="dias-tabs">';
+    fechasMostrar.forEach(function(fecha, i) {
+      html += '<div class="dia-tab-tienda dia-tab' + (i===0?' active':'') + '" data-dia="' + fecha + '" onclick="cambiarDiaTienda(' + i + ')">' + _fechaDisplayCli(fecha) + '</div>';
+    });
+    html += '</div>';
 
-    html += '</div>'; /* /tabla-dia-tienda */
-  });
+    fechasMostrar.forEach(function(fecha, i) {
+      var ordsDia = mapaFecha[fecha] || [];
+
+      html += '<div class="tabla-dia-tienda tabla-dia' + (i===0?' active':'') + '">';
+      html += _bloqueResumenPeriodoDetalle('RESUMEN DEL DÍA', ordsDia, _ec);
+      html +=
+        '<div class="card"><div class="card-head">' +
+          '<span class="card-title">Órdenes del ' + _fechaDisplayCli(fecha) + '</span>' +
+          '<span style="font-size:12px;color:var(--color-text-secondary)">' + ordsDia.length + ' registros</span>' +
+        '</div><div class="table-wrap"><table><thead><tr>' +
+          '<th>Código</th><th>Destinatario</th><th>Distrito</th><th>Motorizado</th>' +
+          '<th>Estado</th><th>Delivery</th><th>Cobrado</th><th>Saldo</th>' +
+        '</tr></thead><tbody>' +
+        ordsDia.map(function(o){ return _filaOrdenDetalle(o, _ec, false); }).join('') +
+        '</tbody></table></div></div>';
+      html += '</div>'; /* /tabla-dia-tienda */
+    });
+  }
 
   container.innerHTML = html;
 };
@@ -567,15 +751,18 @@ window.exportarTiendas = function() {
 
 window.initClientes = function() {
   /* Si no hay filtro previo (primera vez), arrancar con hoy */
-  if (!_filtroFechaClientes) {
-    _filtroFechaClientes = _hoyCli();
+  if (!_filtroDesdeClientes && !_filtroHastaClientes) {
+    _filtroDesdeClientes = _hoyCli();
+    _filtroHastaClientes = _hoyCli();
   }
   renderClientes();
-  /* Restaurar el input de fecha y el botón activo */
-  var inp = document.getElementById('filtro-fecha-clientes');
-  if (inp) inp.value = _filtroFechaClientes;
-  var esHoy  = _filtroFechaClientes === _hoyCli();
-  var esAyer = _filtroFechaClientes === _ayerCli();
+  /* Restaurar los inputs de fecha y el botón activo */
+  var inpD = document.getElementById('filtro-fecha-clientes-desde');
+  var inpH = document.getElementById('filtro-fecha-clientes-hasta');
+  if (inpD) inpD.value = _filtroDesdeClientes;
+  if (inpH) inpH.value = _filtroHastaClientes;
+  var esHoy  = _filtroDesdeClientes === _hoyCli()  && _filtroHastaClientes === _hoyCli();
+  var esAyer = _filtroDesdeClientes === _ayerCli() && _filtroHastaClientes === _ayerCli();
   _marcarBotonActivoClientes(esHoy ? 'hoy' : esAyer ? 'ayer' : null);
 };
 
@@ -592,8 +779,8 @@ window.enviarResumenWP = function(telefono, nombreTienda) {
 
   /* Determinar qué fecha mostrar — la activa en el tab, o todas */
   var fechas = Object.keys(mapaFecha).sort().reverse();
-  if (_filtroFechaClientes && mapaFecha[_filtroFechaClientes]) {
-    fechas = [_filtroFechaClientes].concat(fechas.filter(function(f){ return f !== _filtroFechaClientes; }));
+  if (_filtroDesdeClientes && _filtroDesdeClientes === _filtroHastaClientes && mapaFecha[_filtroDesdeClientes]) {
+    fechas = [_filtroDesdeClientes].concat(fechas.filter(function(f){ return f !== _filtroDesdeClientes; }));
   }
 
   /* Usar solo la fecha activa (primera tab) si existe */
@@ -668,11 +855,12 @@ window.enviarResumenRapidoWP = async function(btn) {
   try {
     var t = TIENDAS_REGISTRO.find(function(x){ return x.nombre === nombreTienda; });
     if (!t) return;
-    var fecha = _filtroFechaClientes || _hoyCli();
-    var r = await fetch(API + '/tiendas/' + t.id + '/ordenes?fecha=' + fecha);
+    var desde = _filtroDesdeClientes || _hoyCli();
+    var hasta = _filtroHastaClientes || desde;
+    var r = await fetch(API + '/tiendas/' + t.id + '/ordenes?desde=' + desde + '&hasta=' + hasta);
     var ordenes = await r.json();
     if (!ordenes.length) {
-      if (typeof showNotif==='function') showNotif('Sin ordenes para ' + nombreTienda + ' en esa fecha');
+      if (typeof showNotif==='function') showNotif('Sin ordenes para ' + nombreTienda + ' en ese rango');
       return;
     }
     var _ec = ['entregado','ausente'];
@@ -686,8 +874,9 @@ window.enviarResumenRapidoWP = async function(btn) {
     var signo      = diaSaldo>0 ? '(+)' : diaSaldo<0 ? '(-)' : '';
     var saldoTexto = diaSaldo>0 ? 'Deuda pendiente: S/ '+diaSaldo.toFixed(2)
                    : diaSaldo<0 ? 'A devolver: S/ '+Math.abs(diaSaldo).toFixed(2) : 'Saldo en cero';
+    var fechaTexto = desde === hasta ? _fechaDisplayCli(desde) : _fechaDisplayCli(desde) + ' al ' + _fechaDisplayCli(hasta);
     var msg = '*Velox Courier - ' + nombreTienda + '*\n';
-    msg    += 'Fecha: ' + _fechaDisplayCli(fecha) + '\n';
+    msg    += 'Fecha: ' + fechaTexto + '\n';
     msg    += '─────────────────────\n';
     msg    += 'Entregados: ' + entregados + '\n';
     if (ausentes>0)      msg += 'Ausentes: '      + ausentes      + '\n';

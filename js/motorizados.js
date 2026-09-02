@@ -371,7 +371,8 @@ function _renderTablaOrdenesDetalle(ordenes) {
   };
   var metodoLabel = {
     'yape':'Yape','plin':'Plin','pos':'POS',
-    'efectivo':'Efectivo','pago-tienda':'Pago tienda','sin-cobro':'Sin cobro'
+    'efectivo':'Efectivo','pago-tienda':'Pago tienda','sin-cobro':'Sin cobro',
+    'contraentrega':'Contraentrega'
   };
 
   /* Estados que SÍ generan cobro */
@@ -769,6 +770,7 @@ window.initMotorizados = function() {
    porque todas leen de la misma BD en tiempo real.
 ════════════════════════════════════════════ */
 var _ordenActualizarId = null;
+var _ordenActualizarBloqueaEnProceso = false; /* true si hace falta confirmar la devolución primero */
 
 var _ESTADOS_ORDEN = [
   { value: 'entregado',    label: 'Entregado' },
@@ -776,19 +778,26 @@ var _ESTADOS_ORDEN = [
   { value: 'ausente',      label: 'Ausente' },
   { value: 'reprogramado', label: 'Reprogramado' },
   { value: 'cancelado',    label: 'Cancelado' },
-  { value: 'cambio',       label: 'Cambio' },
   { value: 'devolucion',   label: 'Devolución' },
-  { value: 'recojo',       label: 'Recojo' },
   { value: 'en-proceso',   label: 'En proceso' },
 ];
 
+/* "Cambio"/"Recojo"/"Escoge talla" no son estados de progreso, son
+   condiciones especiales aparte (columna condicion_especial) */
+var _CONDICIONES_ESPECIALES = [
+  { value: 'cambio',       label: 'Cambio' },
+  { value: 'recojo',       label: 'Recojo' },
+  { value: 'escoge-talla', label: 'Escoge talla' },
+];
+
 var _METODOS_PAGO = [
-  { value: 'sin-cobro',   label: 'Sin cobro / Por definir' },
-  { value: 'yape',        label: 'Yape' },
-  { value: 'plin',        label: 'Plin' },
-  { value: 'pos',         label: 'POS' },
-  { value: 'efectivo',    label: 'Efectivo' },
-  { value: 'pago-tienda', label: 'Pago tienda' },
+  { value: 'sin-cobro',     label: 'Sin cobro' },
+  { value: 'contraentrega', label: 'Contraentrega' },
+  { value: 'yape',          label: 'Yape' },
+  { value: 'plin',          label: 'Plin' },
+  { value: 'pos',           label: 'POS' },
+  { value: 'efectivo',      label: 'Efectivo' },
+  { value: 'pago-tienda',   label: 'Pago tienda' },
 ];
 
 window.abrirActualizarEstadoOrden = async function(ordenId) {
@@ -823,9 +832,69 @@ window.abrirActualizarEstadoOrden = async function(ordenId) {
   }
 };
 
+/* Estados que hacen que el motorizado vuelva a la oficina con el
+   producto en mano. Compartido con js/pedidos.js y
+   js/pendiente-devolucion.js (para no repetir esta lista en 3 lados). */
+var _ESTADOS_CON_DEVOLUCION = ['reprogramado', 'cancelado', 'no-entregado', 'ausente'];
+
+/* Reprogramado/No entregado cambian de estado al confirmar (vuelven a
+   "en-proceso"), así que pueden volver a calificar en un ciclo futuro.
+   Ausente/Cancelado/condición especial NO cambian de estado al confirmar
+   (a propósito: Ausente conserva el cobro, Cancelado y condición especial
+   pasan a "Devolución Tienda") — ahí el "ya se atendió" no lo dice el
+   estado, lo dice el contador: si ya se confirmó una vez, no vuelve a
+   calificar acá (para Cancelado/condición especial, el siguiente paso es
+   la página "Devolución Tienda", no volver a aparecer en esta lista). */
+var _ESTADOS_UNA_SOLA_VEZ = ['ausente', 'cancelado'];
+
+function _calificaDevolucion(estado, condicionEspecial, devuelto) {
+  var yaConfirmado = parseInt(devuelto) > 0;
+  if (_ESTADOS_UNA_SOLA_VEZ.includes(estado) || condicionEspecial) {
+    return !yaConfirmado;
+  }
+  return _ESTADOS_CON_DEVOLUCION.includes(estado);
+}
+
 function _renderModalActualizarOrden(orden, tiendas, distritos, motorizados) {
   var overlay = document.getElementById('orden-estado-modal-overlay');
   if (!overlay) return;
+
+  var calificaDevolucion = _calificaDevolucion(orden.estado, orden.condicionEspecial, orden.devuelto);
+  var vecesDevuelto = parseInt(orden.devuelto) || 0;
+  _ordenActualizarBloqueaEnProceso = calificaDevolucion;
+
+  /* Contador siempre visible, sin importar si la orden está calificando
+     ahora mismo o no — es el historial de esta orden */
+  var contadorDevueltoHTML =
+    '<div style="font-size:11px;color:var(--color-text-tertiary)">' +
+      'Veces que volvió a la oficina: <strong style="color:var(--color-text-secondary)">' + vecesDevuelto + '</strong>' +
+    '</div>';
+
+  var seccionDevuelto = '';
+  if (calificaDevolucion) {
+    seccionDevuelto =
+      '<div style="background:var(--color-amber-bg);border-radius:var(--radius-md);padding:12px 14px">' +
+        '<div style="font-size:13px;font-weight:600;color:var(--color-amber-text);margin-bottom:4px">' +
+          '¿El motorizado ya devolvió el producto a la oficina?' +
+        '</div>' +
+        '<div style="font-size:11px;color:var(--color-text-secondary);margin-bottom:10px">' +
+          (orden.estado === 'ausente'
+            ? 'A esta orden ya se le cobró el viaje a la tienda: se va a crear una orden nueva para reintentar la entrega.'
+            : (orden.estado === 'cancelado' || orden.condicionEspecial)
+            ? 'El producto no vuelve a salir a reparto: queda en almacén, pendiente de devolver a la tienda (ver la página "Devolución Tienda").'
+            : 'La orden va a volver a "En proceso" para que pueda salir de nuevo.') +
+        '</div>' +
+        '<button type="button" class="btn btn-primary btn-sm" onclick="confirmarDevolucionOrden(' + orden.id + ', this)">' +
+          '<i class="ti ti-package-import"></i> Confirmar devolución' +
+        '</button>' +
+      '</div>';
+  } else if (vecesDevuelto > 0) {
+    seccionDevuelto =
+      '<div style="background:var(--color-green-bg);border-radius:var(--radius-md);padding:10px 14px;' +
+      'font-size:13px;color:var(--color-green-text);display:flex;align-items:center;gap:8px">' +
+        '<i class="ti ti-circle-check"></i> Producto devuelto a Velox — confirmado' +
+      '</div>';
+  }
 
   overlay.innerHTML =
     '<div style="background:var(--color-bg-primary);border-radius:var(--radius-lg);padding:24px;width:480px;max-width:95vw;box-shadow:0 8px 32px rgba(0,0,0,0.18);margin:auto">' +
@@ -885,7 +954,7 @@ function _renderModalActualizarOrden(orden, tiendas, distritos, motorizados) {
           '</div>' +
           '<div>' +
             '<label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px">Método de pago</label>' +
-            '<select id="f-orden-metodo-update" class="filter-select" style="width:100%">' +
+            '<select id="f-orden-metodo-update" class="filter-select" style="width:100%" onchange="onMetodoPagoChangeUpdate()">' +
               _METODOS_PAGO.map(function(m){
                 return '<option value="' + m.value + '"' + (m.value===(orden.metodo_pago||'sin-cobro')?' selected':'') + '>' + m.label + '</option>';
               }).join('') +
@@ -893,25 +962,62 @@ function _renderModalActualizarOrden(orden, tiendas, distritos, motorizados) {
           '</div>' +
         '</div>' +
 
+        '<div>' +
+          '<label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:6px">Condiciones especiales</label>' +
+          '<div style="display:flex;align-items:center;gap:10px">' +
+            '<label class="toggle-switch">' +
+              '<input type="checkbox" id="f-orden-tiene-condicion-update" onchange="onToggleCondicionUpdate()"' + (orden.condicionEspecial ? ' checked' : '') + ' />' +
+              '<span class="toggle-slider"></span>' +
+            '</label>' +
+            '<select id="f-orden-condicion-update" class="filter-select" style="flex:1"' + (orden.condicionEspecial ? '' : ' disabled') + '>' +
+              '<option value="">Ninguna</option>' +
+              _CONDICIONES_ESPECIALES.map(function(c){
+                return '<option value="' + c.value + '"' + (c.value===orden.condicionEspecial?' selected':'') + '>' + c.label + '</option>';
+              }).join('') +
+            '</select>' +
+          '</div>' +
+        '</div>' +
+
+        '<div>' +
+          '<label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:6px">Pago del delivery en oficina</label>' +
+          '<div style="display:flex;align-items:center;gap:10px">' +
+            '<label class="toggle-switch">' +
+              '<input type="checkbox" id="f-orden-prepagado-update" onchange="onTogglePrepagadoUpdate()"' + (orden.pago_velox === 'PAGADO' ? ' checked' : '') + ' />' +
+              '<span class="toggle-slider"></span>' +
+            '</label>' +
+            '<span id="f-orden-prepagado-update-label" style="font-size:13px;font-weight:500">' +
+              (orden.pago_velox === 'PAGADO' ? 'Pre pagado' : 'Post pago') +
+            '</span>' +
+            '<select id="f-orden-prepagado-metodo-update" class="filter-select" style="flex:1"' + (orden.pago_velox === 'PAGADO' ? '' : ' disabled') + '>' +
+              '<option value="">¿Cómo?</option>' +
+              '<option value="efectivo"' + (orden.pago_velox_metodo==='efectivo'?' selected':'') + '>Efectivo</option>' +
+              '<option value="yape"' + (orden.pago_velox_metodo==='yape'?' selected':'') + '>Yape</option>' +
+            '</select>' +
+          '</div>' +
+        '</div>' +
+
+        contadorDevueltoHTML +
+        seccionDevuelto +
+
         '<div style="font-size:12px;color:var(--color-text-secondary);font-weight:600;margin-top:4px">Montos (S/)</div>' +
         '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">' +
           '<div>' +
-            '<label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px">Delivery base</label>' +
-            '<input id="f-orden-delivery-update" type="number" step="0.01" min="0" class="search-box" style="width:100%" value="' + (orden.delivery_base||0) + '" />' +
+            '<label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px">Cobrado</label>' +
+            '<input id="f-orden-cobrado-update" type="number" step="0.01" min="0" class="search-box" style="width:100%;background:var(--color-green-bg)" value="' + (orden.monto_cobrado||0) + '" oninput="_recalcularValorProductoUpdate()" />' +
           '</div>' +
           '<div>' +
-            '<label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px">Adicional</label>' +
-            '<input id="f-orden-adicional-update" type="number" step="0.01" min="0" class="search-box" style="width:100%" value="' + (orden.monto_adicional||0) + '" />' +
+            '<label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px">Valor producto <span style="font-weight:400;color:var(--color-text-tertiary)">(automático)</span></label>' +
+            '<input id="f-orden-producto-update" type="number" step="0.01" min="0" class="search-box" style="width:100%;background:var(--color-bg-secondary)" value="' + (orden.monto_producto||0) + '" readonly />' +
           '</div>' +
         '</div>' +
         '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">' +
           '<div>' +
-            '<label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px">Cobrado</label>' +
-            '<input id="f-orden-cobrado-update" type="number" step="0.01" min="0" class="search-box" style="width:100%" value="' + (orden.monto_cobrado||0) + '" />' +
+            '<label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px">Delivery base</label>' +
+            '<input id="f-orden-delivery-update" type="number" step="0.01" min="0" class="search-box" style="width:100%" value="' + (orden.delivery_base||0) + '" oninput="_recalcularValorProductoUpdate()" />' +
           '</div>' +
           '<div>' +
-            '<label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px">Valor producto</label>' +
-            '<input id="f-orden-producto-update" type="number" step="0.01" min="0" class="search-box" style="width:100%" value="' + (orden.monto_producto||0) + '" />' +
+            '<label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px">Adicional</label>' +
+            '<input id="f-orden-adicional-update" type="number" step="0.01" min="0" class="search-box" style="width:100%" value="' + (orden.monto_adicional||0) + '" oninput="_recalcularValorProductoUpdate()" />' +
           '</div>' +
         '</div>' +
         '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">' +
@@ -955,7 +1061,114 @@ function _renderModalActualizarOrden(orden, tiendas, distritos, motorizados) {
   initComboBuscable('f-orden-distrito-update', function() {
     return distritos.map(function(d) { return { value: d.distrito, label: d.distrito }; });
   }, function(valor) { onDistritoChangeUpdate(valor); });
+
+  /* Recalcula de una por si el valor guardado había quedado desactualizado,
+     y bloquea "Cobrado" si el método ya venía en "Sin cobro" */
+  onMetodoPagoChangeUpdate();
 }
+
+/* "Sin cobro" bloquea y limpia "Cobrado" — no tiene sentido que el
+   motorizado reporte un monto cobrado si el método dice que no cobró
+   nada (sería un error de gestión, ver el pedido del usuario). */
+window.onMetodoPagoChangeUpdate = function() {
+  var sel   = document.getElementById('f-orden-metodo-update');
+  var fCobr = document.getElementById('f-orden-cobrado-update');
+  if (!sel || !fCobr) return;
+  var esSinCobro = sel.value === 'sin-cobro';
+  fCobr.disabled = esSinCobro;
+  if (esSinCobro) fCobr.value = '0';
+  _recalcularValorProductoUpdate();
+};
+
+/* Valor producto = lo que se cobró de más sobre el delivery (con su
+   adicional) — es lo que se le debe devolver a la tienda. Se recalcula
+   solo, no se escribe a mano (ver D-005 y el pedido del usuario). */
+window._recalcularValorProductoUpdate = function() {
+  var fDeliv = document.getElementById('f-orden-delivery-update');
+  var fAdic  = document.getElementById('f-orden-adicional-update');
+  var fCobr  = document.getElementById('f-orden-cobrado-update');
+  var fProd  = document.getElementById('f-orden-producto-update');
+  if (!fDeliv || !fAdic || !fCobr || !fProd) return;
+
+  var delivery  = parseFloat(fDeliv.value) || 0;
+  var adicional = parseFloat(fAdic.value)  || 0;
+  var cobrado   = parseFloat(fCobr.value)  || 0;
+  var producto  = cobrado - (delivery + adicional);
+
+  fProd.value = (producto > 0 ? producto : 0).toFixed(2);
+};
+
+/* Habilita el select de condición especial solo si el interruptor está prendido */
+window.onToggleCondicionUpdate = function() {
+  var chk = document.getElementById('f-orden-tiene-condicion-update');
+  var sel = document.getElementById('f-orden-condicion-update');
+  if (!chk || !sel) return;
+  sel.disabled = !chk.checked;
+  if (!chk.checked) sel.value = '';
+};
+
+/* Actualiza la etiqueta "Post pago" / "Pre pagado" y habilita el
+   select de Efectivo/Yape solo si el interruptor está prendido */
+window.onTogglePrepagadoUpdate = function() {
+  var chk = document.getElementById('f-orden-prepagado-update');
+  var lbl = document.getElementById('f-orden-prepagado-update-label');
+  var sel = document.getElementById('f-orden-prepagado-metodo-update');
+  if (!chk || !lbl) return;
+  lbl.textContent = chk.checked ? 'Pre pagado' : 'Post pago';
+  if (sel) {
+    sel.disabled = !chk.checked;
+    if (!chk.checked) sel.value = '';
+  }
+};
+
+/* ── Confirmar que el motorizado devolvió el producto — acción aparte,
+   separada del botón "Guardar" porque dispara un cambio importante
+   (cambia el estado, o crea una orden nueva) ── */
+/**
+ * @param {number} [ordenId] - Si no se pasa, usa la orden abierta en el modal.
+ * @param {HTMLElement} [btnEl] - Botón que disparó la acción, se desactiva
+ *        mientras se procesa para evitar un doble click accidental.
+ */
+window.confirmarDevolucionOrden = async function(ordenId, btnEl) {
+  ordenId = ordenId || _ordenActualizarId;
+  if (!ordenId) return;
+
+  if (btnEl) { btnEl.disabled = true; }
+  var errEl = document.getElementById('orden-estado-error');
+
+  try {
+    var r = await fetch(API + '/ordenes/' + ordenId + '/devolver', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+    });
+    var data = await r.json().catch(function(){ return {}; });
+    if (!r.ok) throw new Error(data.error || 'No se pudo procesar la devolución');
+
+    if (_ordenActualizarId == ordenId) cerrarActualizarEstadoOrden();
+    if (typeof showNotif === 'function') {
+      showNotif(data.duplicada
+        ? 'Producto devuelto — se creó la orden #' + data.nuevoCodigo + ' para reintentar'
+        : data.almacen
+        ? 'Producto devuelto — queda en almacén, pendiente de devolver a la tienda'
+        : 'Producto devuelto — la orden volvió a "En proceso"');
+    }
+
+    if (typeof _renderTablaResumen === 'function') _renderTablaResumen();
+    if (typeof _motoDetalleAbiertoId !== 'undefined' && _motoDetalleAbiertoId) abrirDetalleMotoHistorial(_motoDetalleAbiertoId);
+    if (typeof renderPedidos === 'function') renderPedidos();
+    if (typeof _recargarTablaPendienteDevolucion === 'function') _recargarTablaPendienteDevolucion();
+    if (typeof _recargarTablaDevolucionTienda === 'function') _recargarTablaDevolucionTienda();
+    if (typeof _refrescarCajaActual === 'function') _refrescarCajaActual();
+  } catch (err) {
+    if (btnEl) { btnEl.disabled = false; }
+    if (errEl) {
+      errEl.textContent = err.message || 'Error al procesar la devolución.';
+      errEl.style.display = 'block';
+    } else if (typeof showNotif === 'function') {
+      showNotif(err.message || 'Error al procesar la devolución.');
+    }
+  }
+};
 
 /* Catálogo de distritos vigente para el combobox del modal "Actualizar
    orden" — se refresca cada vez que _renderModalActualizarOrden corre */
@@ -987,6 +1200,10 @@ window.guardarActualizarEstadoOrden = async function() {
   var telefono    = document.getElementById('f-orden-telefono-update').value.trim();
   var telefono2   = document.getElementById('f-orden-telefono2-update').value.trim();
   var estado      = document.getElementById('f-orden-estado-update').value;
+  var tieneCondicion    = document.getElementById('f-orden-tiene-condicion-update').checked;
+  var condicionEspecial = tieneCondicion ? document.getElementById('f-orden-condicion-update').value : '';
+  var prepagado   = document.getElementById('f-orden-prepagado-update').checked ? 'pre-pagado' : 'post-pago';
+  var prepagadoMetodo = prepagado === 'pre-pagado' ? document.getElementById('f-orden-prepagado-metodo-update').value : '';
   var metodoPago  = document.getElementById('f-orden-metodo-update').value;
   var delivery    = document.getElementById('f-orden-delivery-update').value;
   var adicional   = document.getElementById('f-orden-adicional-update').value;
@@ -999,6 +1216,12 @@ window.guardarActualizarEstadoOrden = async function() {
 
   if (!tienda || !distrito) {
     errEl.textContent = 'Tienda y distrito son obligatorios: elige uno de la lista.';
+    errEl.style.display = 'block';
+    return;
+  }
+
+  if (estado === 'en-proceso' && _ordenActualizarBloqueaEnProceso) {
+    errEl.textContent = 'Esta orden necesita que confirmes la devolución del producto antes de pasarla a "En proceso" (usá el botón "Confirmar devolución" de arriba).';
     errEl.style.display = 'block';
     return;
   }
@@ -1020,7 +1243,9 @@ window.guardarActualizarEstadoOrden = async function() {
         tienda: tienda, dest: dest, distrito: distrito, direccion: direccion,
         telefDest: telefono, telefDest2: telefono2,
         delivery: delivery, montoAdicional: adicional, montoCobrado: cobrado, montoProducto: producto,
-        pagoMotoBase: pagoMoto, pagoMotoAdic: pagoMotoAd, obs: obs,
+        pagoMotoBase: pagoMoto, pagoMotoAdic: pagoMotoAd,
+        pagoVelox: prepagado, pagoVeloxMetodo: prepagadoMetodo,
+        obs: obs,
       }),
     });
     if (!rCompleto.ok) {
@@ -1038,7 +1263,7 @@ window.guardarActualizarEstadoOrden = async function() {
     var rEstado = await fetch(API + '/ordenes/' + _ordenActualizarId + '/estado', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ estado: estado, metodoPago: metodoPago }),
+      body: JSON.stringify({ estado: estado, metodoPago: metodoPago, condicionEspecial: condicionEspecial }),
     });
     if (!rEstado.ok) throw new Error('No se pudo actualizar el estado');
 
@@ -1050,6 +1275,8 @@ window.guardarActualizarEstadoOrden = async function() {
     if (typeof _renderTablaResumen === 'function') _renderTablaResumen();
     if (typeof _motoDetalleAbiertoId !== 'undefined' && _motoDetalleAbiertoId) abrirDetalleMotoHistorial(_motoDetalleAbiertoId);
     if (typeof renderPedidos === 'function') renderPedidos();
+    if (typeof _recargarTablaPendienteDevolucion === 'function') _recargarTablaPendienteDevolucion();
+    if (typeof _recargarTablaDevolucionTienda === 'function') _recargarTablaDevolucionTienda();
     if (typeof _refrescarCajaActual === 'function') _refrescarCajaActual();
 
   } catch (err) {

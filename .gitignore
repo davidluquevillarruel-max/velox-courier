@@ -3,3 +3,4 @@ node_modules/
 *.bak
 credenciales_*.md
 video/
+velox_agregar_*.sql

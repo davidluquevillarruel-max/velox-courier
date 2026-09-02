@@ -44,16 +44,23 @@ router.get('/', async (req, res) => {
   }
 });
 
-/* GET /api/tiendas/resumen?fecha=YYYY-MM-DD */
+/* GET /api/tiendas/resumen?fecha=YYYY-MM-DD
+   GET /api/tiendas/resumen?desde=YYYY-MM-DD&hasta=YYYY-MM-DD */
 router.get('/resumen', async (req, res) => {
   try {
     const pool    = await getPool();
     const fecha   = req.query.fecha;
+    const desde   = req.query.desde;
+    const hasta   = req.query.hasta;
     const request = pool.request();
 
     let filtroFecha  = '';
     let filtroTienda = '';
-    if (fecha) {
+    if (desde && hasta) {
+      request.input('desde', sql.Date, desde);
+      request.input('hasta', sql.Date, hasta);
+      filtroFecha = 'AND o.fecha BETWEEN @desde AND @hasta';
+    } else if (fecha) {
       request.input('fecha', sql.Date, fecha);
       filtroFecha = 'AND o.fecha = @fecha';
     }
@@ -192,6 +199,8 @@ router.get('/:id/ordenes', async (req, res) => {
 
     const pool  = await getPool();
     const fecha = req.query.fecha;
+    const desde = req.query.desde;
+    const hasta = req.query.hasta;
     let query = `
       SELECT o.id, o.codigo, CONVERT(varchar,o.fecha,23) AS fecha,
              d.nombre AS distrito, m.nombre AS motorizado,
@@ -203,10 +212,16 @@ router.get('/:id/ordenes', async (req, res) => {
       LEFT JOIN motorizados m ON m.id = o.id_motorizado
       WHERE o.id_tienda = @id
     `;
-    if (fecha) query += ` AND o.fecha = @fecha`;
-    query += ` ORDER BY o.fecha DESC, o.id`;
     const request = pool.request().input('id', sql.Int, req.params.id);
-    if (fecha) request.input('fecha', sql.Date, fecha);
+    if (desde && hasta) {
+      query += ` AND o.fecha BETWEEN @desde AND @hasta`;
+      request.input('desde', sql.Date, desde);
+      request.input('hasta', sql.Date, hasta);
+    } else if (fecha) {
+      query += ` AND o.fecha = @fecha`;
+      request.input('fecha', sql.Date, fecha);
+    }
+    query += ` ORDER BY o.fecha DESC, o.id`;
     const result = await request.query(query);
     res.json(result.recordset);
   } catch (err) {

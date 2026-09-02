@@ -1,0 +1,57 @@
+<!-- ============================================================
+     pages/devolucion-tienda.html — Devolución Tienda
+     Órdenes Canceladas o con condición especial (Cambio/Recojo/
+     Escoge talla) que ya volvieron a la oficina (confirmadas en
+     "Pendiente devolución") y ahora están en almacén, esperando
+     devolverse físicamente a la tienda. La lógica vive en
+     js/devolucion-tienda.js — misma base de datos que el resto.
+     ============================================================ -->
+
+<div class="page-title">Devolución Tienda</div>
+<div class="page-sub">Productos en almacén — canceladas o con condición especial, pendientes de devolver a la tienda</div>
+
+<div class="card">
+  <div class="card-head">
+    <span class="card-title">En almacén</span>
+    <div class="filters">
+
+      <!-- Buscador con ícono lupa -->
+      <div class="search-wrap">
+        <i class="ti ti-search search-icon"></i>
+        <input id="f-buscar-devolucion-tienda" class="search-box" placeholder="Buscar pedido, cliente..."
+               oninput="filtrarTablaDevolucionTienda()" />
+      </div>
+
+      <!-- Filtro por tienda cliente -->
+      <div style="min-width:180px">
+        <input id="f-filtro-tienda-devolucion-tienda" class="search-box" style="width:100%" placeholder="Filtrar por tienda..." />
+      </div>
+
+      <!-- Filtro por motorizado -->
+      <div style="min-width:180px">
+        <input id="f-filtro-motorizado-devolucion-tienda" class="search-box" style="width:100%" placeholder="Filtrar por motorizado..." />
+      </div>
+
+      <span style="font-size:12px;color:var(--color-text-secondary)" id="total-devolucion-tienda"></span>
+
+    </div>
+  </div>
+  <div class="table-wrap">
+    <table id="tabla-devolucion-tienda">
+      <thead>
+        <tr>
+          <th>Código</th>
+          <th>Tienda cliente</th>
+          <th>Destinatario</th>
+          <th>Distrito</th>
+          <th>Motorizado</th>
+          <th>Motivo</th>
+          <th>Fecha</th>
+          <th>Sub-estado</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="tbody-devolucion-tienda"></tbody>
+    </table>
+  </div>
+</div>

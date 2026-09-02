@@ -69,7 +69,8 @@ window.initAsignacion = async function() {
   await _cargarDatosAsignacion();
   _initComboMotoAsig();
 
-  /* Si es motorizado, pre-seleccionar su nombre y bloquear el campo */
+  /* Si es motorizado, pre-seleccionar su nombre, bloquear el campo, y
+     ocultar "Autoasignar todos" (acción de gestores — ver PATCH /asignar) */
   var sesion = _obtenerSesionAsig();
   if (sesion && sesion.rol === 'motorizado' && sesion.nombre) {
     var sel = document.getElementById('moto-select');
@@ -77,6 +78,8 @@ window.initAsignacion = async function() {
       if (_comboMotoAsig) _comboMotoAsig.setValor(sesion.nombre);
       sel.disabled = true; /* no puede cambiar a otro motorizado */
     }
+    var btnAuto = document.getElementById('btn-autoasignar');
+    if (btnAuto) btnAuto.style.display = 'none';
   }
 
   _renderPoolPendientes();
@@ -214,6 +217,11 @@ function _renderPoolAsignados() {
 
   if (emptyMsg) emptyMsg.style.display = 'none';
 
+  /* Reasignar/desasignar son acciones de gestores — un motorizado
+     no puede tocar la asignación una vez hecha (ver PATCH /asignar) */
+  var sesionAsig = _obtenerSesionAsig();
+  var esGestorAsig = !sesionAsig || sesionAsig.rol !== 'motorizado';
+
   asignadas.forEach(function(o) {
     var item = document.createElement('div');
     item.className = 'assign-item';
@@ -224,16 +232,18 @@ function _renderPoolAsignados() {
         '<div class="assign-dest" style="font-size:11px">' + o.tienda + ' · ' + o.distrito + '</div>' +
         '<div style="margin-top:3px">' + _badgeEstadoAsig(o.estado) + '</div>' +
       '</div>' +
-      '<div style="display:flex;gap:4px;flex-shrink:0">' +
-        '<button class="btn btn-sm" style="font-size:11px;padding:4px 8px;color:var(--color-amber-text);border-color:#fcd34d" ' +
-          'onclick="abrirReasignar(' + o.id + ')" title="Reasignar a otro motorizado">' +
-          '<i class="ti ti-arrows-exchange"></i> Reasignar' +
-        '</button>' +
-        '<button class="btn btn-danger btn-sm" style="font-size:11px;padding:4px 8px" ' +
-          'onclick="desasignarOrden(' + o.id + ')" title="Quitar asignación">' +
-          '<i class="ti ti-x"></i>' +
-        '</button>' +
-      '</div>';
+      (esGestorAsig
+        ? '<div style="display:flex;gap:4px;flex-shrink:0">' +
+            '<button class="btn btn-sm" style="font-size:11px;padding:4px 8px;color:var(--color-amber-text);border-color:#fcd34d" ' +
+              'onclick="abrirReasignar(' + o.id + ')" title="Reasignar a otro motorizado">' +
+              '<i class="ti ti-arrows-exchange"></i> Reasignar' +
+            '</button>' +
+            '<button class="btn btn-danger btn-sm" style="font-size:11px;padding:4px 8px" ' +
+              'onclick="desasignarOrden(' + o.id + ')" title="Quitar asignación">' +
+              '<i class="ti ti-x"></i>' +
+            '</button>' +
+          '</div>'
+        : '');
     pool.appendChild(item);
   });
 }

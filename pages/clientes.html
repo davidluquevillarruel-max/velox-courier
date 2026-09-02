@@ -30,9 +30,19 @@
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
       <button class="btn btn-sm" id="btn-hoy-clientes" onclick="filtroRapidoClientes('hoy')">Hoy</button>
       <button class="btn btn-sm" id="btn-ayer-clientes" onclick="filtroRapidoClientes('ayer')">Ayer</button>
+      <button class="btn btn-sm" id="btn-semana-clientes" onclick="filtroRapidoClientes('semana')">Por semana</button>
+      <button class="btn btn-sm" id="btn-semana-pasada-clientes" onclick="filtroRapidoClientes('semana-pasada')">Semana pasada</button>
+      <button class="btn btn-sm" id="btn-mes-clientes" onclick="filtroRapidoClientes('mes')">Por mes</button>
+      <button class="btn btn-sm" id="btn-mes-pasado-clientes" onclick="filtroRapidoClientes('mes-pasado')">Mes pasado</button>
       <div class="date-filter-wrap">
         <i class="ti ti-calendar"></i>
-        <input type="date" id="filtro-fecha-clientes"
+        <input type="date" id="filtro-fecha-clientes-desde"
+               onchange="aplicarFiltroClientes()" />
+      </div>
+      <span style="font-size:12px;color:var(--color-text-secondary)">hasta</span>
+      <div class="date-filter-wrap">
+        <i class="ti ti-calendar"></i>
+        <input type="date" id="filtro-fecha-clientes-hasta"
                onchange="aplicarFiltroClientes()" />
       </div>
       <button class="btn btn-sm" onclick="limpiarFiltroClientes()">

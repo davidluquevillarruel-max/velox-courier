@@ -77,3 +77,29 @@ function showNotif(msg, duracion = 2500) {
   clearTimeout(n._timer);
   n._timer = setTimeout(() => { n.style.display = 'none'; }, duracion);
 }
+
+/* ============================================================
+   REFRESCO AUTOMÁTICO COMPARTIDO
+   Varios usuarios con su propio login trabajan sobre la misma
+   base al mismo tiempo — esto hace que los cambios de uno
+   aparezcan solos en la pantalla de los demás, sin que nadie
+   tenga que recargar. Nunca reemplaza la página entera: cada
+   callback repinta solo su tabla (su <tbody>), así que un modal
+   abierto (ej. "Actualizar orden") no se ve afectado — vive en
+   su propio overlay, aparte del <tbody> que se repinta.
+
+   Se autolimpia: para cuando `elementoGuardia` deja de existir
+   en el DOM (o sea, cuando se navegó a otra página — showPage
+   reemplaza #main-content). No hace falta acordarse de pararlo.
+   ============================================================ */
+function iniciarRefrescoAutomatico(elementoGuardia, callback, intervalMs) {
+  intervalMs = intervalMs || 8000;
+  var id = setInterval(async function() {
+    if (!document.getElementById(elementoGuardia)) {
+      clearInterval(id);
+      return;
+    }
+    try { await callback(); } catch (err) { console.error('Error en refresco automático:', err); }
+  }, intervalMs);
+  return id;
+}

@@ -270,6 +270,16 @@ nav.nav {
   color: var(--color-text-tertiary);
 }
 
+/* Campos bloqueados por rol (ej: motorizado en "Actualizar orden") —
+   se ven pero no se pueden editar. El bloqueo real es del servidor;
+   esto es solo la señal visual. */
+.search-box:disabled,
+.filter-select:disabled {
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-tertiary);
+  cursor: not-allowed;
+}
+
 /* Lista desplegable del combobox buscable (js/combobox.js) */
 .combo-list {
   display: none;

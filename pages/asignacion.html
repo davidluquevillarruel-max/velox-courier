@@ -37,6 +37,23 @@
                    padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600"
             id="count-libre">0</span>
     </div>
+
+    <!-- Filtros del pool de pendientes — cada uno vive solo en este
+         navegador, no se comparte entre motorizados conectados -->
+    <div class="filters" style="padding:10px 12px;border-bottom:0.5px solid var(--color-border-tertiary)">
+      <div class="search-wrap">
+        <i class="ti ti-search search-icon"></i>
+        <input id="f-buscar-asignacion" class="search-box" placeholder="Buscar código, destinatario, tienda..."
+               oninput="filtrarPoolAsignacion()" />
+      </div>
+      <div style="min-width:160px">
+        <input id="f-filtro-tienda-asignacion" class="search-box" style="width:100%" placeholder="Filtrar por tienda..." />
+      </div>
+      <div style="min-width:160px">
+        <input id="f-filtro-distrito-asignacion" class="search-box" style="width:100%" placeholder="Filtrar por distrito..." />
+      </div>
+    </div>
+
     <div class="assign-list" id="pool-libre">
       <!-- Se llena desde asignacion.js -->
     </div>

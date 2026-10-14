@@ -227,3 +227,236 @@
 .table-wrap table tbody tr:hover td:first-child {
   background: var(--color-bg-secondary);
 }
+
+/* ══════════════════════════════════════
+   ÚLTIMA COLUMNA FIJA — "Todos los pedidos"
+   El botón "Actualizar" queda pegado a la derecha al
+   scrollear horizontalmente, sin cambiar su posición
+   (sigue siendo la última columna, no se mueve al frente).
+══════════════════════════════════════ */
+#tabla-pedidos-main th:last-child,
+#tabla-pedidos-main td:last-child {
+  position: sticky;
+  right: 0;
+  z-index: 1;
+  box-shadow: -2px 0 4px rgba(0,0,0,0.06);
+}
+
+#tabla-pedidos-main thead th:last-child {
+  background: var(--color-bg-secondary);
+  z-index: 2;
+}
+
+#tabla-pedidos-main tbody td:last-child {
+  background: var(--color-bg-primary);
+}
+
+#tabla-pedidos-main tbody tr:hover td:last-child {
+  background: var(--color-bg-secondary);
+}
+
+/* ══════════════════════════════════════
+   ÚLTIMA COLUMNA FIJA — "Ver detalle" de un motorizado
+   Mismo tratamiento que la tabla de arriba, para la tabla de
+   órdenes que se ve al abrir el detalle de un motorizado
+   (panel inline en Motorizados y la página de detalle completo).
+══════════════════════════════════════ */
+#tabla-ordenes-moto-detalle th:last-child,
+#tabla-ordenes-moto-detalle td:last-child {
+  position: sticky;
+  right: 0;
+  z-index: 1;
+  box-shadow: -2px 0 4px rgba(0,0,0,0.06);
+}
+
+#tabla-ordenes-moto-detalle thead th:last-child {
+  background: var(--color-bg-secondary);
+  z-index: 2;
+}
+
+#tabla-ordenes-moto-detalle tbody td:last-child {
+  background: var(--color-bg-primary);
+}
+
+#tabla-ordenes-moto-detalle tbody tr:hover td:last-child {
+  background: var(--color-bg-secondary);
+}
+
+/* ══════════════════════════════════════
+   ÚLTIMA COLUMNA FIJA — "Clientes / Tiendas"
+   La columna "Acciones" (ojo, lápiz, tacho) queda pegada a la
+   derecha, siempre visible, sin cambiar de lugar.
+══════════════════════════════════════ */
+#tabla-clientes-main th:last-child,
+#tabla-clientes-main td:last-child {
+  position: sticky;
+  right: 0;
+  z-index: 1;
+  box-shadow: -2px 0 4px rgba(0,0,0,0.06);
+}
+
+#tabla-clientes-main thead th:last-child {
+  background: var(--color-bg-secondary);
+  z-index: 2;
+}
+
+#tabla-clientes-main tbody td:last-child {
+  background: var(--color-bg-primary);
+}
+
+#tabla-clientes-main tbody tr:hover td:last-child {
+  background: var(--color-bg-secondary);
+}
+
+/* ══════════════════════════════════════
+   ÚLTIMA COLUMNA FIJA — "Evidencias" (Rendimiento por motorizado)
+══════════════════════════════════════ */
+#tabla-ev-motos th:last-child,
+#tabla-ev-motos td:last-child {
+  position: sticky;
+  right: 0;
+  z-index: 1;
+  box-shadow: -2px 0 4px rgba(0,0,0,0.06);
+}
+
+#tabla-ev-motos thead th:last-child {
+  background: var(--color-bg-secondary);
+  z-index: 2;
+}
+
+#tabla-ev-motos tbody td:last-child {
+  background: var(--color-bg-primary);
+}
+
+#tabla-ev-motos tbody tr:hover td:last-child {
+  background: var(--color-bg-secondary);
+}
+
+/* ══════════════════════════════════════
+   COLUMNA "Ver" FIJA — "Caja" → tab Tiendas (Registros por tienda)
+   Esta columna usa rowspan (se agrupa por tienda), así que no
+   siempre es la última celda de cada <tr> — por eso va con una
+   clase propia en vez de :last-child (ver js/caja.js).
+══════════════════════════════════════ */
+.col-ver-tienda-fijo {
+  position: sticky;
+  right: 0;
+  z-index: 1;
+  box-shadow: -2px 0 4px rgba(0,0,0,0.06);
+}
+
+thead .col-ver-tienda-fijo {
+  background: var(--color-bg-secondary);
+  z-index: 2;
+}
+
+tbody .col-ver-tienda-fijo {
+  background: var(--color-bg-primary);
+}
+
+/* ══════════════════════════════════════
+   ÚLTIMA COLUMNA FIJA — "Pendiente devolución"
+   El botón "Actualizar" queda pegado a la derecha, igual que en
+   "Todos los pedidos" (misma tabla, mismas columnas).
+══════════════════════════════════════ */
+#tabla-pendiente-devolucion th:last-child,
+#tabla-pendiente-devolucion td:last-child {
+  position: sticky;
+  right: 0;
+  z-index: 1;
+  box-shadow: -2px 0 4px rgba(0,0,0,0.06);
+}
+
+#tabla-pendiente-devolucion thead th:last-child {
+  background: var(--color-bg-secondary);
+  z-index: 2;
+}
+
+#tabla-pendiente-devolucion tbody td:last-child {
+  background: var(--color-bg-primary);
+}
+
+#tabla-pendiente-devolucion tbody tr:hover td:last-child {
+  background: var(--color-bg-secondary);
+}
+
+/* ══════════════════════════════════════
+   "Sub-estado" + "Devuelto" FIJAS — "Devolución Tienda"
+   Son las dos últimas columnas (encabezado y filas coinciden en
+   cantidad acá, así que alcanza con nth-last-child en vez de una
+   clase aparte). Ancho fijo para que el offset de cada una sea
+   predecible.
+══════════════════════════════════════ */
+#tabla-devolucion-tienda th:last-child,
+#tabla-devolucion-tienda td:last-child,
+#tabla-devolucion-tienda th:nth-last-child(2),
+#tabla-devolucion-tienda td:nth-last-child(2) {
+  position: sticky;
+  z-index: 1;
+  min-width: 110px;
+}
+
+#tabla-devolucion-tienda th:last-child,
+#tabla-devolucion-tienda td:last-child {
+  right: 0;
+  min-width: 130px;
+  box-shadow: -2px 0 4px rgba(0,0,0,0.06);
+}
+
+#tabla-devolucion-tienda th:nth-last-child(2),
+#tabla-devolucion-tienda td:nth-last-child(2) {
+  right: 130px;
+}
+
+#tabla-devolucion-tienda thead th:last-child,
+#tabla-devolucion-tienda thead th:nth-last-child(2) {
+  background: var(--color-bg-secondary);
+  z-index: 2;
+}
+
+#tabla-devolucion-tienda tbody td:last-child,
+#tabla-devolucion-tienda tbody td:nth-last-child(2) {
+  background: var(--color-bg-primary);
+}
+
+#tabla-devolucion-tienda tbody tr:hover td:last-child,
+#tabla-devolucion-tienda tbody tr:hover td:nth-last-child(2) {
+  background: var(--color-bg-secondary);
+}
+
+/* ══════════════════════════════════════
+   "Total cobrado" FIJA — "Detalle de gestión por motorizado"
+   No es la última columna (le siguen "Total moto" y el botón
+   "Ver detalle"), así que las tres quedan ancladas juntas a la
+   derecha con un ancho fijo — así el offset de cada una es
+   predecible y "Total cobrado" no se pierde al scrollear.
+══════════════════════════════════════ */
+.col-accion-moto-fijo,
+.col-totalmoto-fijo,
+.col-cobrado-fijo {
+  position: sticky;
+  z-index: 1;
+  min-width: 110px;
+}
+.col-accion-moto-fijo { right: 0;   min-width: 130px; }
+.col-totalmoto-fijo   { right: 130px; }
+.col-cobrado-fijo     { right: 240px; box-shadow: -2px 0 4px rgba(0,0,0,0.06); }
+
+thead .col-accion-moto-fijo,
+thead .col-totalmoto-fijo,
+thead .col-cobrado-fijo {
+  background: var(--color-bg-secondary);
+  z-index: 2;
+}
+
+tbody .col-accion-moto-fijo,
+tbody .col-totalmoto-fijo,
+tbody .col-cobrado-fijo {
+  background: var(--color-bg-primary);
+}
+
+tbody tr:hover .col-accion-moto-fijo,
+tbody tr:hover .col-totalmoto-fijo,
+tbody tr:hover .col-cobrado-fijo {
+  background: var(--color-bg-secondary);
+}

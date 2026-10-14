@@ -31,6 +31,10 @@ window.initDevolucionTienda = async function() {
   if (typeof _cargarCatalogos === 'function') await _cargarCatalogos();
   _initFiltrosDevolucionTienda();
   await _recargarTablaDevolucionTienda();
+
+  if (typeof iniciarRefrescoAutomatico === 'function') {
+    iniciarRefrescoAutomatico('tbody-devolucion-tienda', _recargarTablaDevolucionTienda);
+  }
 };
 
 function _initFiltrosDevolucionTienda() {

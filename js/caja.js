@@ -213,7 +213,7 @@ window.renderTiendasCaja = async function() {
           ? '<td rowspan="'+rowspan+'" style="vertical-align:top;padding-top:13px"><strong>'+nombre+'</strong><br><span style="font-size:11px;color:var(--color-text-secondary)">'+g.ciclo+'</span></td>'
           : '';
         var celdaVer = i===0
-          ? '<td rowspan="'+rowspan+'" style="vertical-align:top;padding-top:10px"><button class="btn btn-sm" onclick="verDetalleTiendaCaja(\''+nombre+'\')"><i class="ti ti-eye"></i></button></td>'
+          ? '<td rowspan="'+rowspan+'" class="col-ver-tienda-fijo" style="vertical-align:top;padding-top:10px"><button class="btn btn-sm" onclick="verDetalleTiendaCaja(\''+nombre+'\')"><i class="ti ti-eye"></i></button></td>'
           : '';
 
         html += '<tr>'+celdaTienda+
@@ -670,6 +670,14 @@ window.initCaja = function() {
     if (el) el.style.display = t==='tiendas' ? 'block' : 'none';
   });
   renderTiendasCaja();
+
+  /* _refrescarCajaActual() ya repinta las 3 tabs y cualquier panel de
+     detalle abierto sin importar cuál esté activa — un solo refresco
+     cubre toda la página (tbody-tiendas-caja existe siempre, tab
+     activa o no, así que sirve de guardia para las 3). */
+  if (typeof iniciarRefrescoAutomatico === 'function') {
+    iniciarRefrescoAutomatico('tbody-tiendas-caja', _refrescarCajaActual);
+  }
 };
 
 /* ── Editar orden desde Caja ── */

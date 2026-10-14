@@ -473,6 +473,10 @@ window.initPedidos = async function() {
   _initCombosOrden();
   _initFiltrosPedidosTabla();
   await renderPedidos();
+
+  /* Repinta la tabla sola cada 8s, así los cambios de otros usuarios
+     conectados aparecen sin que haga falta recargar (ver js/utils.js) */
+  iniciarRefrescoAutomatico('tbody-pedidos', renderPedidos);
 };
 
 /* Comboboxes buscables de la barra de filtros de la tabla (no confundir

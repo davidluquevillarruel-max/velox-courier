@@ -8,6 +8,7 @@ const express = require('express');
 const router  = express.Router();
 const { getPool, sql } = require('../db');
 const { requireAuth, requireRol } = require('../middleware/auth');
+const { r2Habilitado, generarUrlSubidaEvidencia } = require('../r2');
 
 /* Todas las rutas de este archivo exigen sesión */
 router.use(requireAuth);
@@ -21,6 +22,12 @@ const CONDICIONES_ESPECIALES = ['cambio', 'recojo', 'escoge-talla'];
 
 /* Cómo se pagó por adelantado en oficina (solo aplica si pago_velox = 'PAGADO') */
 const PAGO_VELOX_METODOS = ['efectivo', 'yape'];
+
+/* Medio de pago real (distinto de metodo_pago — ver
+   velox_agregar_medio_pago.sql). "pago-tienda" y "pago-empresa"
+   exigen evidencia fotográfica adjunta. */
+const MEDIOS_PAGO = ['yape-motorizado', 'efectivo-motorizado', 'pago-tienda', 'pago-empresa'];
+const MEDIOS_PAGO_CON_EVIDENCIA = ['pago-tienda', 'pago-empresa'];
 
 /* ────────────────────────────────────────────────────────────
    Devuelve el filtro SQL según quién pregunta.
@@ -61,6 +68,7 @@ async function puedeTocarOrden(usuario, ordenId, pool) {
 const SELECT_ORDEN = `
   SELECT
     o.id, o.codigo, CONVERT(varchar,o.fecha,23) AS fecha,
+    CONVERT(varchar(20), o.row_version, 1) AS version,
     o.hora_asignacion,
     t.nombre  AS tienda,
     ori.nombre AS origen,
@@ -68,7 +76,8 @@ const SELECT_ORDEN = `
     z.nombre  AS zona,
     m.nombre  AS motorizado,
     o.dest_nombre, o.dest_telefono, o.dest_telefono_2, o.dest_direccion,
-    o.estado, o.condicion_especial AS condicionEspecial, o.devuelto, o.devuelto_tienda, o.metodo_pago, o.pago_velox, o.pago_velox_metodo,
+    o.estado, o.condicion_especial AS condicionEspecial, o.devuelto, o.devuelto_tienda, o.metodo_pago, o.medio_pago, o.pago_velox, o.pago_velox_metodo,
+    (SELECT TOP 1 url FROM ordenes_fotos WHERE id_orden = o.id AND tipo = 'evidencia_medio_pago' ORDER BY subido_en DESC) AS evidencia_url,
     o.delivery_base, o.monto_adicional, o.delivery_total,
     o.monto_cobrado, o.monto_producto,
     o.pago_moto_base, o.pago_moto_adicional, o.pago_moto_total,
@@ -80,6 +89,42 @@ const SELECT_ORDEN = `
   JOIN zonas      z   ON z.id   = d.id_zona
   LEFT JOIN motorizados m ON m.id = o.id_motorizado
 `;
+
+/* ────────────────────────────────────────────────────────────
+   CONTROL DE CONCURRENCIA OPTIMISTA (ver velox_agregar_concurrencia.sql)
+   El cliente manda la "version" (row_version en hex) que tenía la
+   orden cuando la abrió. Si para cuando llega el guardado esa versión
+   ya cambió (alguien más la guardó primero), el UPDATE no toca nada
+   y el servidor avisa con 409 + los datos frescos, en vez de pisar
+   en silencio lo que el otro usuario ya guardó.
+
+   Es opcional: si el cliente no manda "ifVersion", estas rutas se
+   comportan exactamente igual que antes (sin este chequeo) — así
+   no se rompe ningún llamador existente (Asignación, autoasignar,
+   confirmar devolución, etc.) que todavía no lo usa.
+──────────────────────────────────────────────────────────── */
+function bufferDeVersion(hex) {
+  if (!hex || typeof hex !== 'string') return null;
+  const limpio = (hex.startsWith('0x') || hex.startsWith('0X')) ? hex.slice(2) : hex;
+  if (!/^[0-9a-fA-F]{16}$/.test(limpio)) return null;
+  return Buffer.from(limpio, 'hex');
+}
+
+async function versionActualHex(pool, ordenId) {
+  const r = await pool.request()
+    .input('id', sql.BigInt, ordenId)
+    .query(`SELECT CONVERT(varchar(20), row_version, 1) AS version FROM ordenes WHERE id = @id`);
+  return r.recordset[0] ? r.recordset[0].version : null;
+}
+
+/* Se llama después de un UPDATE que filtró por versión y no tocó
+   ninguna fila — devuelve la orden fresca para mostrar qué cambió. */
+async function conflictoDeVersion(pool, ordenId) {
+  const fresh = await pool.request()
+    .input('id', sql.BigInt, ordenId)
+    .query(`${SELECT_ORDEN} WHERE o.id = @id`);
+  return fresh.recordset[0] || null;
+}
 
 /* ── GET /api/ordenes?fecha=YYYY-MM-DD ───────────────────── */
 router.get('/', async (req, res) => {
@@ -231,7 +276,8 @@ router.patch('/:id/estado', async (req, res) => {
 
     const ESTADOS = ['entregado','no-entregado','ausente','reprogramado','cancelado',
                      'devolucion','en-proceso'];
-    const { estado, metodoPago, condicionEspecial } = req.body;
+    const { estado } = req.body;
+    let { metodoPago, condicionEspecial } = req.body;
     if (!ESTADOS.includes(estado)) {
       return res.status(400).json({ error: 'Estado no válido' });
     }
@@ -239,14 +285,38 @@ router.patch('/:id/estado', async (req, res) => {
       return res.status(400).json({ error: 'Condición especial no válida' });
     }
 
-    await pool.request()
+    /* Un motorizado no puede cambiar el método de pago ni la condición
+       especial (aunque los mande en el body) — se ignoran y se
+       conserva lo que ya había. La UI ya los muestra bloqueados; esto
+       es la protección real. */
+    if (req.usuario.rol === 'motorizado') {
+      const actual = await pool.request()
+        .input('id', sql.BigInt, req.params.id)
+        .query(`SELECT metodo_pago, condicion_especial FROM ordenes WHERE id = @id`);
+      if (!actual.recordset[0]) return res.status(404).json({ error: 'Orden no encontrada' });
+      metodoPago        = actual.recordset[0].metodo_pago;
+      condicionEspecial = actual.recordset[0].condicion_especial;
+    }
+
+    const ifVersion = bufferDeVersion(req.body.ifVersion);
+    const request = pool.request()
       .input('id',        sql.BigInt,   req.params.id)
       .input('estado',    sql.NVarChar, estado)
       .input('metodo',    sql.NVarChar, metodoPago || '')
-      .input('condicion', sql.NVarChar, condicionEspecial || null)
-      .query(`UPDATE ordenes SET estado = @estado, metodo_pago = @metodo, condicion_especial = @condicion WHERE id = @id`);
+      .input('condicion', sql.NVarChar, condicionEspecial || null);
+    let whereVersion = '';
+    if (ifVersion) { request.input('ifVersion', sql.VarBinary(8), ifVersion); whereVersion = ' AND row_version = @ifVersion'; }
 
-    res.json({ ok: true });
+    const result = await request.query(
+      `UPDATE ordenes SET estado = @estado, metodo_pago = @metodo, condicion_especial = @condicion WHERE id = @id${whereVersion}`
+    );
+    if (ifVersion && result.rowsAffected[0] === 0) {
+      const fresca = await conflictoDeVersion(pool, req.params.id);
+      if (!fresca) return res.status(404).json({ error: 'Orden no encontrada' });
+      return res.status(409).json({ error: 'Esta orden fue modificada por otro usuario mientras la editabas.', orden: fresca });
+    }
+
+    res.json({ ok: true, version: await versionActualHex(pool, req.params.id) });
   } catch (err) {
     console.error('PATCH /ordenes/:id/estado:', err.message);
     res.status(500).json({ error: 'Error al actualizar el estado' });
@@ -280,11 +350,21 @@ router.patch('/:id/contacto', async (req, res) => {
   }
 });
 
-/* ── PATCH /api/ordenes/:id/completo — solo gestores ─────── */
-router.patch('/:id/completo', requireRol(...GESTORES), async (req, res) => {
+/* ── PATCH /api/ordenes/:id/completo ─────────────────────────
+   Gestores: cualquier orden, todos los campos. Motorizado: solo
+   las suyas, y los montos de "gestión" (delivery, adicionales,
+   cobrado, pago al motorizado) se ignoran pase lo que pase en el
+   body — se conserva lo que ya había en la base (ver más abajo). */
+router.patch('/:id/completo', async (req, res) => {
   try {
     const pool = await getPool();
-    const o    = req.body;
+
+    if (!(await puedeTocarOrden(req.usuario, req.params.id, pool))) {
+      return res.status(403).json({ error: 'No puedes modificar esta orden' });
+    }
+    const esMotorizado = req.usuario.rol === 'motorizado';
+
+    const o = req.body;
 
     const lookups = await pool.request()
       .input('tienda',   sql.NVarChar, o.tienda)
@@ -299,11 +379,41 @@ router.patch('/:id/completo', requireRol(...GESTORES), async (req, res) => {
     if (!id_tienda)   return res.status(400).json({ error: `Tienda no encontrada: ${o.tienda}` });
     if (!id_distrito) return res.status(400).json({ error: `Distrito no encontrado: ${o.distrito}` });
 
+    let delivery   = parseFloat(o.delivery)      || 0;
+    let adicional  = parseFloat(o.montoAdicional)|| 0;
+    let cobrado    = parseFloat(o.montoCobrado)  || 0;
+    let producto   = parseFloat(o.montoProducto) || 0;
+    let pagoMoto   = parseFloat(o.pagoMotoBase)  || 0;
+    let pagoMotoAd = parseFloat(o.pagoMotoAdic)  || 0;
+
+    /* Un motorizado no puede tocar estos montos (aunque los mande en
+       el body): se ignoran y se conserva lo que ya había en la base.
+       La UI ya los muestra bloqueados; esto es la protección real —
+       nunca confiar en lo que manda el cliente. */
+    if (esMotorizado) {
+      const actual = await pool.request()
+        .input('id', sql.BigInt, req.params.id)
+        .query(`
+          SELECT delivery_base, monto_adicional, monto_cobrado, monto_producto,
+                 pago_moto_base, pago_moto_adicional
+          FROM ordenes WHERE id = @id
+        `);
+      const a = actual.recordset[0];
+      if (!a) return res.status(404).json({ error: 'Orden no encontrada' });
+      delivery   = a.delivery_base;
+      adicional  = a.monto_adicional;
+      cobrado    = a.monto_cobrado;
+      producto   = a.monto_producto;
+      pagoMoto   = a.pago_moto_base;
+      pagoMotoAd = a.pago_moto_adicional;
+    }
+
     const pagoVelox = o.pagoVelox === 'pre-pagado' ? 'PAGADO' : 'PENDIENTE';
     const pagoVeloxMetodo = (pagoVelox === 'PAGADO' && PAGO_VELOX_METODOS.includes(o.pagoVeloxMetodo))
       ? o.pagoVeloxMetodo : null;
 
-    await pool.request()
+    const ifVersion = bufferDeVersion(o.ifVersion);
+    const request = pool.request()
       .input('id',           sql.BigInt,        req.params.id)
       .input('id_tienda',    sql.Int,           id_tienda)
       .input('id_distrito',  sql.Int,           id_distrito)
@@ -311,16 +421,19 @@ router.patch('/:id/completo', requireRol(...GESTORES), async (req, res) => {
       .input('dest_tel',     sql.NVarChar,      o.telefDest || '')
       .input('dest_tel2',    sql.NVarChar,      o.telefDest2 || '')
       .input('dest_dir',     sql.NVarChar,      o.direccion || '')
-      .input('delivery',     sql.Decimal(10,2), parseFloat(o.delivery) || 0)
-      .input('adicional',    sql.Decimal(10,2), parseFloat(o.montoAdicional) || 0)
-      .input('cobrado',      sql.Decimal(10,2), parseFloat(o.montoCobrado) || 0)
-      .input('producto',     sql.Decimal(10,2), parseFloat(o.montoProducto) || 0)
-      .input('pago_moto',    sql.Decimal(10,2), parseFloat(o.pagoMotoBase) || 0)
-      .input('pago_moto_ad', sql.Decimal(10,2), parseFloat(o.pagoMotoAdic) || 0)
+      .input('delivery',     sql.Decimal(10,2), delivery)
+      .input('adicional',    sql.Decimal(10,2), adicional)
+      .input('cobrado',      sql.Decimal(10,2), cobrado)
+      .input('producto',     sql.Decimal(10,2), producto)
+      .input('pago_moto',    sql.Decimal(10,2), pagoMoto)
+      .input('pago_moto_ad', sql.Decimal(10,2), pagoMotoAd)
       .input('pago_velox',   sql.NVarChar,      pagoVelox)
       .input('pago_velox_metodo', sql.NVarChar, pagoVeloxMetodo)
-      .input('obs',          sql.NVarChar,      o.obs || '')
-      .query(`
+      .input('obs',          sql.NVarChar,      o.obs || '');
+    let whereVersion = '';
+    if (ifVersion) { request.input('ifVersion', sql.VarBinary(8), ifVersion); whereVersion = ' AND row_version = @ifVersion'; }
+
+    const result = await request.query(`
         UPDATE ordenes
         SET id_tienda           = @id_tienda,
             id_distrito         = @id_distrito,
@@ -338,10 +451,15 @@ router.patch('/:id/completo', requireRol(...GESTORES), async (req, res) => {
             pago_velox_metodo   = @pago_velox_metodo,
             observaciones       = @obs,
             actualizado_en      = GETDATE()
-        WHERE id = @id
+        WHERE id = @id${whereVersion}
       `);
+    if (ifVersion && result.rowsAffected[0] === 0) {
+      const fresca = await conflictoDeVersion(pool, req.params.id);
+      if (!fresca) return res.status(404).json({ error: 'Orden no encontrada' });
+      return res.status(409).json({ error: 'Esta orden fue modificada por otro usuario mientras la editabas.', orden: fresca });
+    }
 
-    res.json({ ok: true });
+    res.json({ ok: true, version: await versionActualHex(pool, req.params.id) });
   } catch (err) {
     console.error('PATCH /ordenes/:id/completo:', err.message);
     res.status(500).json({ error: 'Error al actualizar la orden' });
@@ -395,12 +513,21 @@ router.patch('/:id/asignar', async (req, res) => {
       }
     }
 
-    await pool.request()
+    const ifVersion = bufferDeVersion(req.body.ifVersion);
+    const request = pool.request()
       .input('id',   sql.BigInt, req.params.id)
-      .input('moto', sql.Int,    id_motorizado)
-      .query(`UPDATE ordenes SET id_motorizado = @moto WHERE id = @id`);
+      .input('moto', sql.Int,    id_motorizado);
+    let whereVersion = '';
+    if (ifVersion) { request.input('ifVersion', sql.VarBinary(8), ifVersion); whereVersion = ' AND row_version = @ifVersion'; }
 
-    res.json({ ok: true });
+    const result = await request.query(`UPDATE ordenes SET id_motorizado = @moto WHERE id = @id${whereVersion}`);
+    if (ifVersion && result.rowsAffected[0] === 0) {
+      const fresca = await conflictoDeVersion(pool, req.params.id);
+      if (!fresca) return res.status(404).json({ error: 'Orden no encontrada' });
+      return res.status(409).json({ error: 'Esta orden fue modificada por otro usuario mientras la editabas.', orden: fresca });
+    }
+
+    res.json({ ok: true, version: await versionActualHex(pool, req.params.id) });
   } catch (err) {
     console.error('PATCH /ordenes/:id/asignar:', err.message);
     res.status(500).json({ error: 'Error al asignar la orden' });
@@ -550,6 +677,91 @@ router.patch('/:id/devolver-tienda', requireRol(...GESTORES), async (req, res) =
   } catch (err) {
     console.error('PATCH /ordenes/:id/devolver-tienda:', err.message);
     res.status(500).json({ error: 'Error al procesar la devolución a la tienda' });
+  }
+});
+
+/* ── POST /api/ordenes/:id/evidencia/presigned ────────────────
+   Gestores, o el motorizado dueño de la orden. Devuelve una URL
+   firmada para que el celular suba la foto DIRECTO a Cloudflare
+   R2 (el servidor nunca recibe el archivo — ver server/r2.js). */
+router.post('/:id/evidencia/presigned', async (req, res) => {
+  try {
+    const pool = await getPool();
+    if (!(await puedeTocarOrden(req.usuario, req.params.id, pool))) {
+      return res.status(403).json({ error: 'No puedes subir evidencia para esta orden' });
+    }
+
+    if (!r2Habilitado()) {
+      return res.status(503).json({
+        error: 'El módulo de evidencia fotográfica todavía no está configurado. Contacta al administrador.'
+      });
+    }
+
+    const { contentType } = req.body;
+    const { uploadUrl, publicUrl } = await generarUrlSubidaEvidencia(req.params.id, contentType);
+
+    res.json({ uploadUrl, publicUrl });
+  } catch (err) {
+    console.error('POST /ordenes/:id/evidencia/presigned:', err.message);
+    res.status(400).json({ error: err.message || 'Error al generar la URL de subida' });
+  }
+});
+
+/* ── PATCH /api/ordenes/:id/medio-pago ─────────────────────────
+   Gestores, o el motorizado dueño de la orden.
+   "pago-tienda" y "pago-empresa" (en pantalla: "Pago Velox")
+   exigen evidenciaUrl — ya subida a R2 vía el endpoint de arriba. */
+router.patch('/:id/medio-pago', async (req, res) => {
+  try {
+    const pool = await getPool();
+    if (!(await puedeTocarOrden(req.usuario, req.params.id, pool))) {
+      return res.status(403).json({ error: 'No puedes modificar esta orden' });
+    }
+
+    const { medioPago, evidenciaUrl } = req.body;
+    const ordenId = req.params.id;
+
+    if (medioPago && !MEDIOS_PAGO.includes(medioPago)) {
+      return res.status(400).json({ error: 'Medio de pago no válido' });
+    }
+
+    /* Si ya tiene una evidencia subida de antes, no hace falta volver a
+       subirla cada vez que se guarda la orden — solo se exige si es la
+       primera vez que se elige un medio de pago que la requiere. */
+    if (MEDIOS_PAGO_CON_EVIDENCIA.includes(medioPago) && !evidenciaUrl) {
+      const yaTiene = await pool.request()
+        .input('id_orden', sql.BigInt, ordenId)
+        .query(`SELECT TOP 1 1 AS x FROM ordenes_fotos WHERE id_orden = @id_orden AND tipo = 'evidencia_medio_pago'`);
+      if (yaTiene.recordset.length === 0) {
+        return res.status(400).json({ error: 'Este medio de pago requiere adjuntar evidencia' });
+      }
+    }
+
+    const ifVersion = bufferDeVersion(req.body.ifVersion);
+    const request = pool.request()
+      .input('id',    sql.BigInt,   ordenId)
+      .input('medio', sql.NVarChar, medioPago || null);
+    let whereVersion = '';
+    if (ifVersion) { request.input('ifVersion', sql.VarBinary(8), ifVersion); whereVersion = ' AND row_version = @ifVersion'; }
+
+    const result = await request.query(`UPDATE ordenes SET medio_pago = @medio WHERE id = @id${whereVersion}`);
+    if (ifVersion && result.rowsAffected[0] === 0) {
+      const fresca = await conflictoDeVersion(pool, ordenId);
+      if (!fresca) return res.status(404).json({ error: 'Orden no encontrada' });
+      return res.status(409).json({ error: 'Esta orden fue modificada por otro usuario mientras la editabas.', orden: fresca });
+    }
+
+    if (evidenciaUrl) {
+      await pool.request()
+        .input('id_orden', sql.BigInt,   ordenId)
+        .input('url',      sql.NVarChar, evidenciaUrl)
+        .query(`INSERT INTO ordenes_fotos (id_orden, tipo, url) VALUES (@id_orden, 'evidencia_medio_pago', @url)`);
+    }
+
+    res.json({ ok: true, version: await versionActualHex(pool, ordenId) });
+  } catch (err) {
+    console.error('PATCH /ordenes/:id/medio-pago:', err.message);
+    res.status(500).json({ error: 'Error al guardar el medio de pago' });
   }
 });
 

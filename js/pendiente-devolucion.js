@@ -17,6 +17,10 @@ window.initPendienteDevolucion = async function() {
   if (typeof _cargarCatalogos === 'function') await _cargarCatalogos();
   _initFiltrosPendienteDevolucion();
   await _recargarTablaPendienteDevolucion();
+
+  if (typeof iniciarRefrescoAutomatico === 'function') {
+    iniciarRefrescoAutomatico('tbody-pendiente-devolucion', _recargarTablaPendienteDevolucion);
+  }
 };
 
 function _initFiltrosPendienteDevolucion() {

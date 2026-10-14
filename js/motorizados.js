@@ -154,7 +154,7 @@ async function _renderTablaResumen() {
           '<div class="avatar ' + m.color_avatar + '" style="width:30px;height:30px;font-size:11px">' + m.iniciales + '</div>' +
           '<strong>' + m.nombre + '</strong></div></td>' +
         '<td colspan="8" style="color:var(--color-text-tertiary)">Sin órdenes</td>' +
-        '<td><button class="btn btn-sm" onclick="abrirDetalleMotoHistorial(' + m.id + ')"><i class="ti ti-eye"></i></button></td>' +
+        '<td class="col-accion-moto-fijo"><button class="btn btn-sm" onclick="abrirDetalleMotoHistorial(' + m.id + ')"><i class="ti ti-eye"></i></button></td>' +
       '</tr>';
     }
     var tc = s.tasaNum >= 75 ? 'var(--color-green)' : s.tasaNum >= 50 ? 'var(--color-amber)' : 'var(--color-red-text)';
@@ -171,9 +171,9 @@ async function _renderTablaResumen() {
       '<td style="color:var(--color-purple-text);font-weight:600">' + s.reprogramados + '</td>' +
       '<td><span style="color:' + tc + ';font-weight:700">' + s.tasa + '</span></td>' +
       '<td style="font-weight:600">S/ ' + s.pagoTotal.toFixed(2) + '</td>' +
-      '<td style="font-weight:600;color:var(--color-blue-text)">S/ ' + s.cobrado.toFixed(2) + '</td>' +
-      '<td style="font-weight:700;color:' + tmColor + '">S/ ' + totalMoto.toFixed(2) + '</td>' +
-      '<td><button class="btn btn-primary btn-sm" onclick="abrirDetalleMotoHistorial(' + m.id + ')">' +
+      '<td class="col-cobrado-fijo" style="font-weight:600;color:var(--color-blue-text)">S/ ' + s.cobrado.toFixed(2) + '</td>' +
+      '<td class="col-totalmoto-fijo" style="font-weight:700;color:' + tmColor + '">S/ ' + totalMoto.toFixed(2) + '</td>' +
+      '<td class="col-accion-moto-fijo"><button class="btn btn-primary btn-sm" onclick="abrirDetalleMotoHistorial(' + m.id + ')">' +
         '<i class="ti ti-eye"></i> Ver detalle</button></td>' +
     '</tr>';
   }));
@@ -326,7 +326,7 @@ function _linkWhatsApp(telefono, nombreDest) {
     ? 'Buenas tardes ' + nombreDest.trim() + ', le saludamos de Velox, para comentarle que estamos llegando a su ubicación en 10 minutos.'
     : 'Buenas tardes, le saludamos de Velox, para comentarle que estamos llegando a su ubicación en 10 minutos.';
 
-  return 'https://wa.me/' + limpio + '?text=' + encodeURIComponent(saludo);
+  return 'https://api.whatsapp.com/send?phone=' + limpio + '&text=' + encodeURIComponent(saludo);
 }
 
 function _botonWhatsApp(telefono, nombreDest, telefono2) {
@@ -381,7 +381,7 @@ function _renderTablaOrdenesDetalle(ordenes) {
   var cols = ['Código','Tienda','Destinatario','','Distrito','Estado','Método',
               'Delivery','Cobrado','Pago moto','Total moto','Especial','Fecha',''];
 
-  return '<div class="table-wrap"><table style="width:100%;border-collapse:collapse;font-size:12px">' +
+  return '<div class="table-wrap"><table id="tabla-ordenes-moto-detalle" style="width:100%;border-collapse:collapse;font-size:12px">' +
     '<thead><tr>' +
     cols.map(function(h){
       return '<th style="background:var(--color-bg-secondary);padding:9px 12px;text-align:left;' +
@@ -772,6 +772,25 @@ window.initMotorizados = function() {
 var _ordenActualizarId = null;
 var _ordenActualizarBloqueaEnProceso = false; /* true si hace falta confirmar la devolución primero */
 
+/* Control de concurrencia optimista (ver velox_agregar_concurrencia.sql
+   y server/routes/ordenes.js): versión de la orden tal como la
+   cargamos. Se va actualizando con la que devuelve cada PATCH
+   exitoso, para encadenar los guardados de una misma sesión del
+   modal — ver _patchOrdenConVersion(). */
+var _ordenActualizarVersion = null;
+
+/* URL pública de la evidencia recién subida en esta apertura del modal
+   (o null si no se subió ninguna nueva — ver onSeleccionarEvidenciaUpdate) */
+var _medioPagoEvidenciaUrl = null;
+/* true si la orden YA tenía una evidencia subida de una vez anterior —
+   en ese caso no hace falta volver a subir una para poder guardar */
+var _medioPagoTeniaEvidenciaPrevia = false;
+
+/* Gate "Recibido" — solo motorizado, solo si la orden tiene condición
+   especial (ver confirmarRecibidoCondicionEspecial) */
+var _ordenActualizarRecibidoRequerido  = false;
+var _ordenActualizarRecibidoConfirmado = false;
+
 var _ESTADOS_ORDEN = [
   { value: 'entregado',    label: 'Entregado' },
   { value: 'no-entregado', label: 'No entregado' },
@@ -793,11 +812,19 @@ var _CONDICIONES_ESPECIALES = [
 var _METODOS_PAGO = [
   { value: 'sin-cobro',     label: 'Sin cobro' },
   { value: 'contraentrega', label: 'Contraentrega' },
-  { value: 'yape',          label: 'Yape' },
-  { value: 'plin',          label: 'Plin' },
-  { value: 'pos',           label: 'POS' },
-  { value: 'efectivo',      label: 'Efectivo' },
-  { value: 'pago-tienda',   label: 'Pago tienda' },
+];
+
+/* Medio de pago real (distinto de "Método de pago" de arriba):
+   cómo se recibió la plata en la práctica. Selección única.
+   "pago-tienda" y "pago-empresa" exigen evidencia fotográfica
+   (ver server/r2.js y velox_agregar_medio_pago.sql). "pago-empresa"
+   se muestra como "Pago Velox" — nombre distinto por dentro para no
+   confundirlo con la columna pago_velox (prepago de la tienda en oficina). */
+var _MEDIOS_PAGO = [
+  { value: 'yape-motorizado',     label: 'Yape motorizado',     evidencia: false },
+  { value: 'efectivo-motorizado', label: 'Efectivo motorizado', evidencia: false },
+  { value: 'pago-tienda',         label: 'Pago tienda',         evidencia: true },
+  { value: 'pago-empresa',        label: 'Pago Velox',          evidencia: true },
 ];
 
 window.abrirActualizarEstadoOrden = async function(ordenId) {
@@ -862,6 +889,7 @@ function _renderModalActualizarOrden(orden, tiendas, distritos, motorizados) {
   var calificaDevolucion = _calificaDevolucion(orden.estado, orden.condicionEspecial, orden.devuelto);
   var vecesDevuelto = parseInt(orden.devuelto) || 0;
   _ordenActualizarBloqueaEnProceso = calificaDevolucion;
+  _ordenActualizarVersion = orden.version || null;
 
   /* Contador siempre visible, sin importar si la orden está calificando
      ahora mismo o no — es el historial de esta orden */
@@ -907,11 +935,6 @@ function _renderModalActualizarOrden(orden, tiendas, distritos, motorizados) {
         '<div>' +
           '<label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px">Tienda cliente</label>' +
           '<input id="f-orden-tienda-update" class="search-box" style="width:100%" placeholder="Escribe para buscar tienda..." value="' + (orden.tienda||'').replace(/"/g,'&quot;') + '" />' +
-        '</div>' +
-
-        '<div>' +
-          '<label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px">Motorizado asignado <span style="font-weight:400;color:var(--color-text-tertiary)">(opcional)</span></label>' +
-          '<input id="f-orden-motorizado-update" class="search-box" style="width:100%" placeholder="Escribe para buscar motorizado..." value="' + (orden.motorizado||'').replace(/"/g,'&quot;') + '" />' +
         '</div>' +
 
         '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">' +
@@ -963,6 +986,25 @@ function _renderModalActualizarOrden(orden, tiendas, distritos, motorizados) {
         '</div>' +
 
         '<div>' +
+          '<label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px">' +
+            'Medio de pago <span style="font-weight:400;color:var(--color-text-tertiary)">(cómo se recibió la plata — distinto del "Método de pago" de arriba)</span>' +
+          '</label>' +
+          '<select id="f-orden-medio-pago-update" class="filter-select" style="width:100%" onchange="onMedioPagoChangeUpdate()">' +
+            '<option value="">Sin definir</option>' +
+            _MEDIOS_PAGO.map(function(mp){
+              return '<option value="' + mp.value + '"' + (mp.value===orden.medio_pago?' selected':'') + '>' + mp.label + '</option>';
+            }).join('') +
+          '</select>' +
+          '<div id="f-orden-evidencia-wrap-update" style="display:none;margin-top:8px;background:var(--color-amber-bg);border-radius:var(--radius-md);padding:10px 12px">' +
+            '<div style="font-size:12px;color:var(--color-amber-text);font-weight:600;margin-bottom:6px">' +
+              '<i class="ti ti-camera"></i> Este medio de pago requiere evidencia (foto)' +
+            '</div>' +
+            '<input id="f-orden-evidencia-update" type="file" accept="image/jpeg,image/png,image/webp" onchange="onSeleccionarEvidenciaUpdate(this)" style="font-size:12px" />' +
+            '<div id="f-orden-evidencia-status-update" style="font-size:11px;color:var(--color-text-secondary);margin-top:6px"></div>' +
+          '</div>' +
+        '</div>' +
+
+        '<div id="bloque-condicion-especial-update">' +
           '<label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:6px">Condiciones especiales</label>' +
           '<div style="display:flex;align-items:center;gap:10px">' +
             '<label class="toggle-switch">' +
@@ -978,7 +1020,24 @@ function _renderModalActualizarOrden(orden, tiendas, distritos, motorizados) {
           '</div>' +
         '</div>' +
 
-        '<div>' +
+        /* Solo para motorizado, y solo si la orden ya tiene una condición
+           especial (Cambio/Recojo/Escoge talla) — ver confirmarRecibidoCondicionEspecial() */
+        '<div id="bloque-recibido-update" style="display:none;background:var(--color-amber-bg);border-radius:var(--radius-md);padding:12px 14px">' +
+          '<div style="font-size:13px;font-weight:600;color:var(--color-amber-text);margin-bottom:4px">' +
+            '<i class="ti ti-package-import"></i> Esta orden tiene una condición especial' +
+          '</div>' +
+          '<div style="font-size:11px;color:var(--color-text-secondary);margin-bottom:10px">' +
+            'Antes de guardar, confirma que ya recibiste el producto de vuelta del cliente.' +
+          '</div>' +
+          '<button type="button" id="btn-recibido-update" class="btn btn-primary btn-sm" onclick="confirmarRecibidoCondicionEspecial()">' +
+            '<i class="ti ti-check"></i> Recibido' +
+          '</button>' +
+          '<div id="f-orden-recibido-status-update" style="font-size:12px;color:var(--color-green-text);margin-top:8px;display:none">' +
+            '<i class="ti ti-circle-check"></i> Confirmado' +
+          '</div>' +
+        '</div>' +
+
+        '<div id="bloque-prepago-update">' +
           '<label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:6px">Pago del delivery en oficina</label>' +
           '<div style="display:flex;align-items:center;gap:10px">' +
             '<label class="toggle-switch">' +
@@ -1032,15 +1091,35 @@ function _renderModalActualizarOrden(orden, tiendas, distritos, motorizados) {
         '</div>' +
 
         '<div>' +
+          '<label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px">Motorizado asignado <span style="font-weight:400;color:var(--color-text-tertiary)">(opcional)</span></label>' +
+          '<input id="f-orden-motorizado-update" class="search-box" style="width:100%" placeholder="Escribe para buscar motorizado..." value="' + (orden.motorizado||'').replace(/"/g,'&quot;') + '" />' +
+        '</div>' +
+
+        '<div>' +
           '<label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px">Observaciones</label>' +
           '<input id="f-orden-obs-update" class="search-box" style="width:100%" maxlength="300" value="' + (orden.observaciones||'') + '" />' +
         '</div>' +
 
         '<div id="orden-estado-error" style="display:none;color:#A32D2D;font-size:12px;padding:8px 12px;background:#FCEBEB;border-radius:var(--radius-md)"></div>' +
+
+        /* Conflicto de edición simultánea — ver _patchOrdenConVersion()
+           y guardarActualizarEstadoOrden(). Nada de lo que estaba en
+           este formulario se llegó a guardar cuando esto aparece. */
+        '<div id="orden-conflicto-update" style="display:none;background:var(--color-amber-bg);border-radius:var(--radius-md);padding:12px 14px">' +
+          '<div style="font-size:13px;font-weight:600;color:var(--color-amber-text);margin-bottom:6px">' +
+            '<i class="ti ti-alert-triangle"></i> Esta orden cambió mientras la editabas' +
+          '</div>' +
+          '<div style="font-size:11px;color:var(--color-text-secondary);margin-bottom:10px">' +
+            'Otro usuario guardó cambios en esta misma orden hace un momento. Para no pisar lo suyo, nada de lo que escribiste acá se guardó todavía.' +
+          '</div>' +
+          '<button type="button" class="btn btn-primary btn-sm" onclick="recargarOrdenPorConflicto()">' +
+            '<i class="ti ti-refresh"></i> Ver los datos actuales' +
+          '</button>' +
+        '</div>' +
       '</div>' +
       '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:20px">' +
         '<button class="btn btn-sm" onclick="cerrarActualizarEstadoOrden()">Cancelar</button>' +
-        '<button class="btn btn-primary btn-sm" onclick="guardarActualizarEstadoOrden()"><i class="ti ti-check"></i> Guardar</button>' +
+        '<button class="btn btn-primary btn-sm" id="btn-guardar-orden-update" onclick="guardarActualizarEstadoOrden()"><i class="ti ti-check"></i> Guardar</button>' +
       '</div>' +
     '</div>';
 
@@ -1065,7 +1144,68 @@ function _renderModalActualizarOrden(orden, tiendas, distritos, motorizados) {
   /* Recalcula de una por si el valor guardado había quedado desactualizado,
      y bloquea "Cobrado" si el método ya venía en "Sin cobro" */
   onMetodoPagoChangeUpdate();
+
+  /* Evidencia: se resetea en cada apertura del modal — si la orden ya
+     tenía una foto subida de antes, se avisa pero no hace falta volver
+     a subirla (ver PATCH /medio-pago en el servidor) */
+  _medioPagoEvidenciaUrl = null;
+  _medioPagoTeniaEvidenciaPrevia = !!orden.evidencia_url;
+  onMedioPagoChangeUpdate();
+  var statusEvidencia = document.getElementById('f-orden-evidencia-status-update');
+  if (statusEvidencia && orden.evidencia_url) {
+    statusEvidencia.innerHTML = '<i class="ti ti-circle-check" style="color:var(--color-green)"></i> Ya tiene evidencia subida — ' +
+      '<a href="' + orden.evidencia_url + '" target="_blank" rel="noopener">ver foto</a>. Elige otro archivo solo si quieres reemplazarla.';
+  }
+
+  /* Un motorizado ve estos campos, pero no los puede tocar — quedan
+     en gris. La protección REAL está en el servidor (/completo y
+     /estado ignoran estos valores si vienen de un motorizado, y
+     /asignar directamente no se llama — ver guardarActualizarEstadoOrden);
+     esto es solo para que no puedan ni intentarlo desde la pantalla. */
+  _ordenActualizarRecibidoRequerido  = false;
+  _ordenActualizarRecibidoConfirmado = false;
+
+  if (_esSesionMotorizado()) {
+    ['f-orden-metodo-update', 'f-orden-cobrado-update', 'f-orden-adicional-update',
+     'f-orden-pagomotoad-update', 'f-orden-motorizado-update',
+     'f-orden-delivery-update', 'f-orden-pagomoto-update',
+     'f-orden-tiene-condicion-update', 'f-orden-condicion-update'].forEach(function(id) {
+      var el = document.getElementById(id);
+      if (el) el.disabled = true;
+    });
+
+    /* No debe ver "Pago del delivery en oficina" — se oculta entero,
+       no solo se bloquea (a diferencia de los campos de arriba) */
+    var bloquePrepago = document.getElementById('bloque-prepago-update');
+    if (bloquePrepago) bloquePrepago.style.display = 'none';
+
+    /* Si la orden ya tiene una condición especial, no puede guardar
+       nada de esta orden sin antes confirmar "Recibido" */
+    if (orden.condicionEspecial) {
+      _ordenActualizarRecibidoRequerido = true;
+      var bloqueRecibido = document.getElementById('bloque-recibido-update');
+      if (bloqueRecibido) bloqueRecibido.style.display = 'block';
+      var btnGuardar = document.getElementById('btn-guardar-orden-update');
+      if (btnGuardar) btnGuardar.disabled = true;
+    }
+  }
 }
+
+/* El motorizado confirma que ya tiene en mano el producto que el
+   cliente le devolvió/entregó (condición especial: Cambio/Recojo/
+   Escoge talla) — recién ahí se habilita "Guardar". Es un chequeo
+   de esta sesión del modal, se vuelve a pedir cada vez que se abre. */
+window.confirmarRecibidoCondicionEspecial = function() {
+  _ordenActualizarRecibidoConfirmado = true;
+
+  var btn = document.getElementById('btn-recibido-update');
+  if (btn) { btn.disabled = true; btn.style.display = 'none'; }
+  var status = document.getElementById('f-orden-recibido-status-update');
+  if (status) status.style.display = 'block';
+
+  var btnGuardar = document.getElementById('btn-guardar-orden-update');
+  if (btnGuardar) btnGuardar.disabled = false;
+};
 
 /* "Sin cobro" bloquea y limpia "Cobrado" — no tiene sentido que el
    motorizado reporte un monto cobrado si el método dice que no cobró
@@ -1078,6 +1218,81 @@ window.onMetodoPagoChangeUpdate = function() {
   fCobr.disabled = esSinCobro;
   if (esSinCobro) fCobr.value = '0';
   _recalcularValorProductoUpdate();
+};
+
+/* Muestra el bloque de "adjuntar evidencia" solo cuando el medio de
+   pago elegido la exige (pago-tienda / pago-empresa — ver _MEDIOS_PAGO) */
+window.onMedioPagoChangeUpdate = function() {
+  var sel  = document.getElementById('f-orden-medio-pago-update');
+  var wrap = document.getElementById('f-orden-evidencia-wrap-update');
+  if (!sel || !wrap) return;
+  var medio = _MEDIOS_PAGO.find(function(m) { return m.value === sel.value; });
+  wrap.style.display = (medio && medio.evidencia) ? 'block' : 'none';
+};
+
+/* Comprime la foto en el navegador antes de subirla (ver DECISIONES.md
+   D-003: ~1280px de ancho, calidad 0.7 — sin esto, cualquier proveedor
+   de almacenamiento sale caro con el volumen de fotos del negocio). */
+function _comprimirImagenEvidencia(file) {
+  return new Promise(function(resolve, reject) {
+    var img = new Image();
+    var url = URL.createObjectURL(file);
+    img.onload = function() {
+      URL.revokeObjectURL(url);
+      var maxAncho = 1280;
+      var escala = img.width > maxAncho ? maxAncho / img.width : 1;
+      var canvas = document.createElement('canvas');
+      canvas.width  = Math.round(img.width * escala);
+      canvas.height = Math.round(img.height * escala);
+      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+      canvas.toBlob(function(blob) {
+        if (blob) resolve(blob); else reject(new Error('No se pudo procesar la imagen'));
+      }, 'image/jpeg', 0.7);
+    };
+    img.onerror = function() { URL.revokeObjectURL(url); reject(new Error('No se pudo leer el archivo como imagen')); };
+    img.src = url;
+  });
+}
+
+/* Al elegir un archivo: comprime, pide una URL firmada al servidor, y
+   sube la foto DIRECTO a Cloudflare R2 (el servidor nunca la recibe —
+   ver server/r2.js). Guarda la URL pública en _medioPagoEvidenciaUrl
+   para que guardarActualizarEstadoOrden() la mande al guardar. */
+window.onSeleccionarEvidenciaUpdate = async function(inputEl) {
+  var statusEl = document.getElementById('f-orden-evidencia-status-update');
+  var file = inputEl.files && inputEl.files[0];
+  if (!file || !_ordenActualizarId) return;
+
+  _medioPagoEvidenciaUrl = null;
+  if (statusEl) statusEl.innerHTML = '<i class="ti ti-loader"></i> Comprimiendo y subiendo...';
+
+  try {
+    var blob = await _comprimirImagenEvidencia(file);
+
+    var rPre = await fetch(API + '/ordenes/' + _ordenActualizarId + '/evidencia/presigned', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ contentType: 'image/jpeg' }),
+    });
+    var dataPre = await rPre.json().catch(function(){ return {}; });
+    if (!rPre.ok) throw new Error(dataPre.error || 'No se pudo iniciar la subida');
+
+    /* Subida directa a R2 — sin credentials: no es nuestro servidor,
+       no hace falta (ni conviene) mandar la cookie de sesión */
+    var rSubida = await fetch(dataPre.uploadUrl, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'image/jpeg' },
+      body: blob,
+      credentials: 'omit',
+    });
+    if (!rSubida.ok) throw new Error('No se pudo subir la foto al almacenamiento');
+
+    _medioPagoEvidenciaUrl = dataPre.publicUrl;
+    if (statusEl) statusEl.innerHTML = '<i class="ti ti-circle-check" style="color:var(--color-green)"></i> Evidencia lista para guardar';
+  } catch (err) {
+    if (statusEl) statusEl.innerHTML = '<span style="color:#A32D2D">' + (err.message || 'Error al subir la evidencia') + '</span>';
+    inputEl.value = '';
+  }
 };
 
 /* Valor producto = lo que se cobró de más sobre el delivery (con su
@@ -1191,6 +1406,41 @@ window.cerrarActualizarEstadoOrden = function() {
   _ordenActualizarId = null;
 };
 
+/* PATCH con control de versión (ver server/routes/ordenes.js). Manda
+   siempre _ordenActualizarVersion, y si el guardado sale bien, la
+   actualiza con la que devuelve el servidor — así el siguiente PATCH
+   de esta misma sesión de guardado encadena sobre la versión recién
+   escrita (que es propia, no un conflicto real).
+   Si el servidor responde 409 (alguien más guardó primero), tira un
+   error con `conflicto: true` y la orden fresca adjunta, para que
+   guardarActualizarEstadoOrden() lo muestre en vez de un error genérico. */
+async function _patchOrdenConVersion(url, body) {
+  var cuerpo = Object.assign({}, body, { ifVersion: _ordenActualizarVersion });
+  var r = await fetch(url, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(cuerpo),
+  });
+  var data = await r.json().catch(function() { return {}; });
+
+  if (r.status === 409) {
+    var errConflicto = new Error(data.error || 'Esta orden fue modificada por otro usuario mientras la editabas.');
+    errConflicto.conflicto = true;
+    throw errConflicto;
+  }
+  if (!r.ok) throw new Error(data.error || 'No se pudo guardar el cambio.');
+
+  if (data.version) _ordenActualizarVersion = data.version;
+  return data;
+}
+
+/* Botón "Ver los datos actuales" del aviso de conflicto — recarga la
+   orden entera desde cero (descarta el borrador que había en el
+   formulario, a propósito: es lo que el usuario elige al apretarlo). */
+window.recargarOrdenPorConflicto = function() {
+  if (_ordenActualizarId) abrirActualizarEstadoOrden(_ordenActualizarId);
+};
+
 window.guardarActualizarEstadoOrden = async function() {
   var tienda      = document.getElementById('f-orden-tienda-update').value;
   var dest        = document.getElementById('f-orden-dest-update').value.trim();
@@ -1205,6 +1455,7 @@ window.guardarActualizarEstadoOrden = async function() {
   var prepagado   = document.getElementById('f-orden-prepagado-update').checked ? 'pre-pagado' : 'post-pago';
   var prepagadoMetodo = prepagado === 'pre-pagado' ? document.getElementById('f-orden-prepagado-metodo-update').value : '';
   var metodoPago  = document.getElementById('f-orden-metodo-update').value;
+  var medioPago   = document.getElementById('f-orden-medio-pago-update').value;
   var delivery    = document.getElementById('f-orden-delivery-update').value;
   var adicional   = document.getElementById('f-orden-adicional-update').value;
   var cobrado     = document.getElementById('f-orden-cobrado-update').value;
@@ -1235,37 +1486,46 @@ window.guardarActualizarEstadoOrden = async function() {
   ];
   if (!ejecutarValidaciones(validaciones, errEl)) return;
 
+  var medioRequiereEvidencia = _MEDIOS_PAGO.some(function(m) { return m.value === medioPago && m.evidencia; });
+  if (medioRequiereEvidencia && !_medioPagoEvidenciaUrl && !_medioPagoTeniaEvidenciaPrevia) {
+    errEl.textContent = 'Este medio de pago requiere adjuntar una foto de evidencia antes de guardar.';
+    errEl.style.display = 'block';
+    return;
+  }
+
+  if (_ordenActualizarRecibidoRequerido && !_ordenActualizarRecibidoConfirmado) {
+    errEl.textContent = 'Confirma "Recibido" antes de guardar esta orden.';
+    errEl.style.display = 'block';
+    return;
+  }
+
   try {
-    var rCompleto = await fetch(API + '/ordenes/' + _ordenActualizarId + '/completo', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        tienda: tienda, dest: dest, distrito: distrito, direccion: direccion,
-        telefDest: telefono, telefDest2: telefono2,
-        delivery: delivery, montoAdicional: adicional, montoCobrado: cobrado, montoProducto: producto,
-        pagoMotoBase: pagoMoto, pagoMotoAdic: pagoMotoAd,
-        pagoVelox: prepagado, pagoVeloxMetodo: prepagadoMetodo,
-        obs: obs,
-      }),
+    await _patchOrdenConVersion(API + '/ordenes/' + _ordenActualizarId + '/completo', {
+      tienda: tienda, dest: dest, distrito: distrito, direccion: direccion,
+      telefDest: telefono, telefDest2: telefono2,
+      delivery: delivery, montoAdicional: adicional, montoCobrado: cobrado, montoProducto: producto,
+      pagoMotoBase: pagoMoto, pagoMotoAdic: pagoMotoAd,
+      pagoVelox: prepagado, pagoVeloxMetodo: prepagadoMetodo,
+      obs: obs,
     });
-    if (!rCompleto.ok) {
-      var errData = await rCompleto.json().catch(function(){ return {}; });
-      throw new Error(errData.error || 'No se pudo actualizar la orden');
+
+    /* Un motorizado no puede reasignar (el campo queda bloqueado en
+       pantalla) — directamente no se manda este PATCH: el servidor
+       igual lo rechazaría (una orden que ya tiene motorizado no se
+       puede "autoasignar" de nuevo), así evitamos ese error confuso. */
+    if (!_esSesionMotorizado()) {
+      await _patchOrdenConVersion(API + '/ordenes/' + _ordenActualizarId + '/asignar', {
+        motorizado: motorizado || null,
+      });
     }
 
-    var rAsignar = await fetch(API + '/ordenes/' + _ordenActualizarId + '/asignar', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ motorizado: motorizado || null }),
+    await _patchOrdenConVersion(API + '/ordenes/' + _ordenActualizarId + '/estado', {
+      estado: estado, metodoPago: metodoPago, condicionEspecial: condicionEspecial,
     });
-    if (!rAsignar.ok) throw new Error('No se pudo actualizar el motorizado asignado');
 
-    var rEstado = await fetch(API + '/ordenes/' + _ordenActualizarId + '/estado', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ estado: estado, metodoPago: metodoPago, condicionEspecial: condicionEspecial }),
+    await _patchOrdenConVersion(API + '/ordenes/' + _ordenActualizarId + '/medio-pago', {
+      medioPago: medioPago || null, evidenciaUrl: _medioPagoEvidenciaUrl,
     });
-    if (!rEstado.ok) throw new Error('No se pudo actualizar el estado');
 
     cerrarActualizarEstadoOrden();
     if (typeof showNotif === 'function') showNotif('Orden actualizada correctamente');
@@ -1280,6 +1540,16 @@ window.guardarActualizarEstadoOrden = async function() {
     if (typeof _refrescarCajaActual === 'function') _refrescarCajaActual();
 
   } catch (err) {
+    /* Conflicto de edición simultánea: NINGUNO de los PATCH de arriba
+       que todavía no corrieron se manda (el que falló cortó la cadena
+       con el throw) — nada se guarda a medias. Se avisa en vez de
+       pisar lo que el otro usuario ya guardó. */
+    if (err.conflicto) {
+      var banner = document.getElementById('orden-conflicto-update');
+      if (banner) banner.style.display = 'block';
+      if (errEl) errEl.style.display = 'none';
+      return;
+    }
     if (errEl) { errEl.textContent = err.message || 'Error al actualizar la orden.'; errEl.style.display = 'block'; }
   }
 };

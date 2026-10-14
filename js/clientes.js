@@ -27,6 +27,35 @@ function _badgeEstadoTienda(est) {
   return '<span class="badge ' + (map[est]||'pendiente') + '">' + est + '</span>';
 }
 
+/* ════════════════════════════════════════════
+   "YA ENVIADO" — check junto al ícono de WhatsApp
+   Vive en este navegador (localStorage), separado por día: así
+   podés recargar o volver a entrar y seguís viendo a quién ya le
+   mandaste el resumen hoy, pero mañana arranca de cero solo.
+════════════════════════════════════════════ */
+function _waEnviadosHoy() {
+  var hoy = _hoyCli();
+  var data = null;
+  try { data = JSON.parse(localStorage.getItem('velox_wa_enviados')); } catch (e) { data = null; }
+  if (!data || data.fecha !== hoy) {
+    data = { fecha: hoy, tiendas: [] };
+    try { localStorage.setItem('velox_wa_enviados', JSON.stringify(data)); } catch (e) { /* ignorar: solo afecta el check visual */ }
+  }
+  return data;
+}
+
+function _yaEnviadoWaHoy(idTienda) {
+  return _waEnviadosHoy().tiendas.indexOf(idTienda) !== -1;
+}
+
+function _marcarWaEnviado(idTienda) {
+  var data = _waEnviadosHoy();
+  if (data.tiendas.indexOf(idTienda) === -1) {
+    data.tiendas.push(idTienda);
+    try { localStorage.setItem('velox_wa_enviados', JSON.stringify(data)); } catch (e) { /* ignorar */ }
+  }
+}
+
 /* ── Cargar tiendas desde API ── */
 async function _cargarTiendas() {
   try {
@@ -122,15 +151,20 @@ window.renderClientes = async function() {
     var telHTML = '';
     if (t.telefono) {
       var tel51 = '51' + t.telefono.replace(/[^0-9]/g,'');
-      telHTML += '<a href="https://wa.me/'+tel51+'" target="_blank" style="display:inline-flex;align-items:center;gap:4px;color:#25D366;text-decoration:none;font-weight:500"><i class="ti ti-brand-whatsapp"></i> '+t.telefono+'</a>';
+      telHTML += '<a href="https://api.whatsapp.com/send?phone='+tel51+'" target="_blank" style="display:inline-flex;align-items:center;gap:4px;color:#25D366;text-decoration:none;font-weight:500"><i class="ti ti-brand-whatsapp"></i> '+t.telefono+'</a>';
     } else {
       telHTML += '<span style="color:var(--color-text-tertiary)">—</span>';
     }
     if (t.yape) telHTML += '<br><span style="font-size:11px;color:var(--color-text-secondary)"><i class="ti ti-currency-sol"></i> Yape: '+t.yape+'</span>';
 
-    /* Botón WA resumen */
+    /* Botón WA resumen — el check de al lado avisa si ya se le mandó
+       hoy (ver _yaEnviadoWaHoy / _marcarWaEnviado) */
     var btnWA = t.telefono
-      ? '<td><button class="btn btn-sm" onclick="enviarResumenRapidoWP(this)" data-tel="'+t.telefono+'" data-nombre="'+t.nombre.replace(/"/g,' ')+'" title="Enviar resumen WA" style="background:#25D366;color:#fff;border-color:#25D366;padding:4px 8px"><i class="ti ti-brand-whatsapp"></i></button></td>'
+      ? '<td><button class="btn btn-sm" onclick="enviarResumenRapidoWP(this)" data-tel="'+t.telefono+'" data-id="'+t.id+'" data-nombre="'+t.nombre.replace(/"/g,' ')+'" title="Enviar resumen WA" style="background:#25D366;color:#fff;border-color:#25D366;padding:4px 8px"><i class="ti ti-brand-whatsapp"></i></button>' +
+          (_yaEnviadoWaHoy(t.id)
+            ? ' <i class="ti ti-circle-check wa-enviado-check" title="Ya se le envió el resumen hoy" style="color:var(--color-green);font-size:14px;vertical-align:middle"></i>'
+            : '') +
+        '</td>'
       : '<td style="color:var(--color-text-tertiary);font-size:12px">—</td>';
 
     /* Acciones — tienda no puede editar/eliminar */
@@ -764,6 +798,10 @@ window.initClientes = function() {
   var esHoy  = _filtroDesdeClientes === _hoyCli()  && _filtroHastaClientes === _hoyCli();
   var esAyer = _filtroDesdeClientes === _ayerCli() && _filtroHastaClientes === _ayerCli();
   _marcarBotonActivoClientes(esHoy ? 'hoy' : esAyer ? 'ayer' : null);
+
+  if (typeof iniciarRefrescoAutomatico === 'function') {
+    iniciarRefrescoAutomatico('tbody-clientes', renderClientes);
+  }
 };
 
 /* ════════════════════════════════════════════
@@ -772,10 +810,68 @@ window.initClientes = function() {
    resumen del día activo (o de todas las fechas)
    y abre WhatsApp con ese mensaje pre-cargado.
 ════════════════════════════════════════════ */
+/* Arma el mismo mensaje (mismos íconos, misma información completa)
+   para los dos botones de WhatsApp de esta página — el de la lista
+   principal (enviarResumenRapidoWP) y el de "Enviar resumen" dentro
+   de "Ver detalle" (enviarResumenWP). Antes decían cosas distintas;
+   ahora comparten este único armado para no volver a desincronizarse. */
+function _construirMensajeResumenTienda(nombreTienda, fechaLabel, ordenes) {
+  var _ec = ['entregado', 'ausente'];
+
+  var deliv = ordenes.reduce(function(s,o){ return s+(_ec.includes(o.estado)?parseFloat(o.delivery_total||0):0); }, 0);
+  var cobr  = ordenes.reduce(function(s,o){ return s+(_ec.includes(o.estado)?parseFloat(o.monto_cobrado||0):0);  }, 0);
+  var saldo = deliv - cobr;
+
+  var entregados    = ordenes.filter(function(o){ return o.estado === 'entregado'; }).length;
+  var ausentes       = ordenes.filter(function(o){ return o.estado === 'ausente'; }).length;
+  var reprogramados = ordenes.filter(function(o){ return o.estado === 'reprogramado'; }).length;
+  var noEntregados  = ordenes.filter(function(o){ return o.estado === 'no-entregado'; }).length;
+
+  var emojiSaldo = saldo > 0 ? '🟢' : saldo < 0 ? '🔴' : '⚪';
+  var saldoTexto = saldo > 0
+    ? 'Deuda pendiente: S/ ' + saldo.toFixed(2)
+    : saldo < 0
+    ? 'A devolver a tienda: S/ ' + Math.abs(saldo).toFixed(2)
+    : 'Saldo en cero ✅';
+
+  var msg = '📦 *Velox Courier — ' + nombreTienda + '*\n';
+  msg    += '📅 ' + fechaLabel + '\n';
+  msg    += '-----------------------\n';
+  msg    += '✅ Entregados: *' + entregados + '*\n';
+  if (ausentes      > 0) msg += '⚠️ Ausentes: *' + ausentes + '*\n';
+  if (reprogramados > 0) msg += '🔄 Reprogramados: *' + reprogramados + '*\n';
+  if (noEntregados  > 0) msg += '❌ No entregados: *' + noEntregados + '*\n';
+  msg    += '-----------------------\n';
+  msg    += '💰 Delivery cobrable: *S/ ' + deliv.toFixed(2) + '*\n';
+  msg    += '💵 Cobrado: *S/ ' + cobr.toFixed(2) + '*\n';
+  msg    += emojiSaldo + ' ' + saldoTexto + '\n';
+  msg    += '-----------------------\n';
+  msg    += '_Detalle de órdenes:_\n';
+
+  var estadoEmojiMap = {
+    'entregado':    '✅',
+    'reprogramado': '🔄',
+    'no-entregado': '❌',
+    'ausente':      '⚠️',
+    'cancelado':    '🚫',
+    'en-proceso':   '🚚',
+  };
+  ordenes.forEach(function(o) {
+    var estadoEmoji = estadoEmojiMap[o.estado] || '📋';
+    var linea = estadoEmoji + ' #' + o.codigo + ' · ' + (o.dest_nombre || '—') + ' · ' + o.distrito;
+    if (_ec.includes(o.estado) && parseFloat(o.delivery_total||0) > 0) {
+      linea += ' · S/' + parseFloat(o.delivery_total).toFixed(2);
+    }
+    msg += linea + '\n';
+  });
+
+  msg += '\n_Enviado desde Velox Courier_';
+  return msg;
+}
+
 window.enviarResumenWP = function(telefono, nombreTienda) {
   var ordenes  = window._detalleOrdenesCache || [];
   var mapaFecha = window._detalleMapaFechaCache || {};
-  var _ec = ['entregado','ausente'];
 
   /* Determinar qué fecha mostrar — la activa en el tab, o todas */
   var fechas = Object.keys(mapaFecha).sort().reverse();
@@ -786,64 +882,17 @@ window.enviarResumenWP = function(telefono, nombreTienda) {
   /* Usar solo la fecha activa (primera tab) si existe */
   var fechaActiva = fechas[0];
   var ordsDia = fechaActiva ? (mapaFecha[fechaActiva] || []) : ordenes;
-
-  var diaDeliv = ordsDia.reduce(function(s,o){ return s+(_ec.includes(o.estado)?parseFloat(o.delivery_total||0):0); }, 0);
-  var diaCobr  = ordsDia.reduce(function(s,o){ return s+(_ec.includes(o.estado)?parseFloat(o.monto_cobrado||0):0);  }, 0);
-  var diaSaldo = diaDeliv - diaCobr;
-
-  var entregados   = ordsDia.filter(function(o){ return o.estado === 'entregado'; }).length;
-  var reprogramados= ordsDia.filter(function(o){ return o.estado === 'reprogramado'; }).length;
-  var noEntregados = ordsDia.filter(function(o){ return o.estado === 'no-entregado'; }).length;
-
   var fechaLabel = fechaActiva ? _fechaDisplayCli(fechaActiva) : 'Período completo';
 
-  /* Construir mensaje formateado */
-  var emoji = diaSaldo > 0 ? '🟢' : diaSaldo < 0 ? '🔴' : '⚪';
-  var saldoTexto = diaSaldo > 0
-    ? 'Deuda pendiente: S/ ' + diaSaldo.toFixed(2)
-    : diaSaldo < 0
-    ? 'A devolver a tienda: S/ ' + Math.abs(diaSaldo).toFixed(2)
-    : 'Saldo en cero ✅';
-
-  var msg = '📦 *Velox Courier — ' + (nombreTienda || window._detalleTiendaNombre) + '*\n';
-  msg    += '📅 ' + fechaLabel + '\n';
-  msg    += '─────────────────────\n';
-  msg    += '✅ Entregados: *' + entregados + '*\n';
-  if (reprogramados > 0) msg += '🔄 Reprogramados: *' + reprogramados + '*\n';
-  if (noEntregados  > 0) msg += '❌ No entregados: *' + noEntregados  + '*\n';
-  msg    += '─────────────────────\n';
-  msg    += '💰 Delivery cobrable: *S/ ' + diaDeliv.toFixed(2) + '*\n';
-  msg    += '💵 Cobrado: *S/ ' + diaCobr.toFixed(2) + '*\n';
-  msg    += emoji + ' ' + saldoTexto + '\n';
-  msg    += '─────────────────────\n';
-  msg    += '_Detalle de órdenes:_\n';
-
-  ordsDia.forEach(function(o) {
-    var estadoEmoji = {
-      'entregado':    '✅',
-      'reprogramado': '🔄',
-      'no-entregado': '❌',
-      'ausente':      '⚠️',
-      'cancelado':    '🚫',
-      'en-proceso':   '🚚',
-    }[o.estado] || '📋';
-
-    var linea = estadoEmoji + ' #' + o.codigo + ' · ' + (o.dest_nombre || '—') + ' · ' + o.distrito;
-    if (_ec.includes(o.estado) && parseFloat(o.delivery_total||0) > 0) {
-      linea += ' · S/' + parseFloat(o.delivery_total).toFixed(2);
-    }
-    msg += linea + '\n';
-  });
-
-  msg += '\n_Enviado desde Velox Courier_';
+  var msg = _construirMensajeResumenTienda(nombreTienda || window._detalleTiendaNombre, fechaLabel, ordsDia);
 
   /* Normalizar teléfono: código Perú 51 + 9 dígitos */
   var tel = (telefono || window._detalleTiendaTelefono || '').replace(/[^0-9]/g, '');
   if (tel.length === 9) tel = '51' + tel;
 
   var url = tel
-    ? 'https://wa.me/' + tel + '?text=' + encodeURIComponent(msg)
-    : 'https://wa.me/?text=' + encodeURIComponent(msg);
+    ? 'https://api.whatsapp.com/send?phone=' + tel + '&text=' + encodeURIComponent(msg)
+    : 'https://api.whatsapp.com/send?text=' + encodeURIComponent(msg);
 
   window.open(url, '_blank');
 };
@@ -863,46 +912,24 @@ window.enviarResumenRapidoWP = async function(btn) {
       if (typeof showNotif==='function') showNotif('Sin ordenes para ' + nombreTienda + ' en ese rango');
       return;
     }
-    var _ec = ['entregado','ausente'];
-    var diaDeliv = ordenes.reduce(function(s,o){ return s+(_ec.includes(o.estado)?parseFloat(o.delivery_total||0):0); },0);
-    var diaCobr  = ordenes.reduce(function(s,o){ return s+(_ec.includes(o.estado)?parseFloat(o.monto_cobrado||0):0);  },0);
-    var diaSaldo = diaDeliv - diaCobr;
-    var entregados    = ordenes.filter(function(o){ return o.estado==='entregado'; }).length;
-    var reprogramados = ordenes.filter(function(o){ return o.estado==='reprogramado'; }).length;
-    var noEntregados  = ordenes.filter(function(o){ return o.estado==='no-entregado'; }).length;
-    var ausentes      = ordenes.filter(function(o){ return o.estado==='ausente'; }).length;
-    var signo      = diaSaldo>0 ? '(+)' : diaSaldo<0 ? '(-)' : '';
-    var saldoTexto = diaSaldo>0 ? 'Deuda pendiente: S/ '+diaSaldo.toFixed(2)
-                   : diaSaldo<0 ? 'A devolver: S/ '+Math.abs(diaSaldo).toFixed(2) : 'Saldo en cero';
-    var fechaTexto = desde === hasta ? _fechaDisplayCli(desde) : _fechaDisplayCli(desde) + ' al ' + _fechaDisplayCli(hasta);
-    var msg = '*Velox Courier - ' + nombreTienda + '*\n';
-    msg    += 'Fecha: ' + fechaTexto + '\n';
-    msg    += '─────────────────────\n';
-    msg    += 'Entregados: ' + entregados + '\n';
-    if (ausentes>0)      msg += 'Ausentes: '      + ausentes      + '\n';
-    if (reprogramados>0) msg += 'Reprogramados: ' + reprogramados + '\n';
-    if (noEntregados>0)  msg += 'No entregados: ' + noEntregados  + '\n';
-    msg    += '─────────────────────\n';
-    msg    += 'Delivery cobrable: S/ ' + diaDeliv.toFixed(2) + '\n';
-    msg    += 'Cobrado: S/ '           + diaCobr.toFixed(2)  + '\n';
-    msg    += signo + ' ' + saldoTexto + '\n';
-    msg    += '─────────────────────\n';
-    msg    += 'Detalle de ordenes:\n';
-    ordenes.forEach(function(o) {
-      var etiqueta = {
-        'entregado':'[ENTREGADO]','no-entregado':'[NO ENTREGADO]','ausente':'[AUSENTE]',
-        'reprogramado':'[REPROGRAMADO]','cancelado':'[CANCELADO]','en-proceso':'[EN PROCESO]',
-        'cambio':'[CAMBIO]','devolucion':'[DEVOLUCION]','recojo':'[RECOJO]'
-      }[o.estado] || '['+o.estado.toUpperCase()+']';
-      var delivery = _ec.includes(o.estado) ? (parseFloat(o.delivery_total||0)||parseFloat(o.delivery_base||0)+parseFloat(o.monto_adicional||0)) : 0;
-      var linea = etiqueta + ' #' + o.codigo + ' - ' + (o.dest_nombre||'—') + ' - ' + o.distrito;
-      if (_ec.includes(o.estado) && delivery>0) linea += ' - S/' + delivery.toFixed(2);
-      msg += linea + '\n';
-    });
-    msg += '\nEnviado desde Velox Courier';
+    var fechaLabel = desde === hasta ? _fechaDisplayCli(desde) : _fechaDisplayCli(desde) + ' al ' + _fechaDisplayCli(hasta);
+    var msg = _construirMensajeResumenTienda(nombreTienda, fechaLabel, ordenes);
+
     var tel = (telefono||'').replace(/[^0-9]/g,'');
     if (tel.length===9) tel='51'+tel;
-    window.open('https://wa.me/'+tel+'?text='+encodeURIComponent(msg),'_blank');
+    window.open('https://api.whatsapp.com/send?phone='+tel+'&text='+encodeURIComponent(msg),'_blank');
+
+    /* Marca el check al lado del ícono sin esperar al próximo
+       repintado de la tabla (que igual lo mostraría solo, pero así
+       se ve al instante) */
+    _marcarWaEnviado(t.id);
+    if (!(btn.nextElementSibling && btn.nextElementSibling.classList.contains('wa-enviado-check'))) {
+      var check = document.createElement('i');
+      check.className = 'ti ti-circle-check wa-enviado-check';
+      check.title = 'Ya se le envió el resumen hoy';
+      check.style.cssText = 'color:var(--color-green);font-size:14px;vertical-align:middle;margin-left:4px';
+      btn.insertAdjacentElement('afterend', check);
+    }
   } catch(err) {
     console.error('Error WA:',err);
     if (typeof showNotif==='function') showNotif('Error al generar resumen');

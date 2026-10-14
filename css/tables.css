@@ -5,6 +5,32 @@
 
 .table-wrap {
   overflow-x: auto;
+  /* Alto máximo + scroll vertical propio: así el scrollbar horizontal
+     queda pegado al fondo de esta "ventana", no al fondo de todas las
+     filas — no hace falta bajar hasta la última orden para encontrarlo. */
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+/* Scrollbar visible siempre (no solo al hacer hover) — en PC con mouse,
+   el scrollbar delgado por defecto casi no se nota. */
+.table-wrap {
+  scrollbar-width: thin; /* Firefox */
+  scrollbar-color: var(--color-border-secondary) transparent; /* Firefox */
+}
+.table-wrap::-webkit-scrollbar {
+  height: 10px;
+  width: 10px;
+}
+.table-wrap::-webkit-scrollbar-track {
+  background: var(--color-bg-secondary);
+}
+.table-wrap::-webkit-scrollbar-thumb {
+  background: var(--color-border-secondary);
+  border-radius: 10px;
+}
+.table-wrap::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-tertiary);
 }
 
 table {

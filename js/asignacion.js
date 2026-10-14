@@ -42,20 +42,31 @@ var ZONA_DISTRITO = {
 ════════════════════════════════════════════ */
 var ORDENES_ASIG     = [];
 var MOTORIZADOS_ASIG = [];
+var TIENDAS_ASIG     = [];
 var _reasignandoOrdenId = null;
 var _comboMotoAsig = null; /* combobox buscable de js/combobox.js */
 
+/* Refresco automático del pool de pendientes: si otro motorizado
+   conectado al mismo tiempo se autoasigna una orden, acá se entera
+   solo (sin recargar la página) en vez de recién notarlo al hacer
+   clic y recibir el error del servidor. Se detiene solo si la
+   página de Asignación ya no está en pantalla (ver _sondearAsignacion). */
+var _INTERVALO_SONDEO_ASIG_MS = 10000;
+var _sondeoAsignacionId = null;
+
 async function _cargarDatosAsignacion() {
   try {
-    var [rO, rM] = await Promise.all([
+    var [rO, rM, rT] = await Promise.all([
       fetch(API + '/ordenes'),
       fetch(API + '/motorizados'),
+      fetch(API + '/tiendas'),
     ]);
     ORDENES_ASIG     = await rO.json();
     MOTORIZADOS_ASIG = await rM.json();
+    TIENDAS_ASIG      = (await rT.json()).filter(function(t){ return t.activa; });
   } catch (err) {
     console.error('Error cargando datos de asignación:', err);
-    ORDENES_ASIG = []; MOTORIZADOS_ASIG = [];
+    ORDENES_ASIG = []; MOTORIZADOS_ASIG = []; TIENDAS_ASIG = [];
   }
 }
 
@@ -68,6 +79,7 @@ window.initAsignacion = async function() {
 
   await _cargarDatosAsignacion();
   _initComboMotoAsig();
+  _initFiltrosAsignacion();
 
   /* Si es motorizado, pre-seleccionar su nombre, bloquear el campo, y
      ocultar "Autoasignar todos" (acción de gestores — ver PATCH /asignar) */
@@ -85,7 +97,30 @@ window.initAsignacion = async function() {
   _renderPoolPendientes();
   _renderPoolAsignados();
   _actualizarContadores();
+
+  _sondearAsignacion();
 };
+
+/* Repite la carga cada _INTERVALO_SONDEO_ASIG_MS mientras el usuario
+   siga en esta página. Los filtros (texto/tienda/distrito) y el
+   motorizado elegido no se tocan — viven en los inputs, así que se
+   respetan solos en cada repintado. */
+function _sondearAsignacion() {
+  if (_sondeoAsignacionId) clearInterval(_sondeoAsignacionId);
+
+  _sondeoAsignacionId = setInterval(async function() {
+    if (!document.getElementById('pool-libre')) {
+      /* Se navegó a otra página: esta ya no existe en el DOM */
+      clearInterval(_sondeoAsignacionId);
+      _sondeoAsignacionId = null;
+      return;
+    }
+    await _cargarDatosAsignacion();
+    _renderPoolPendientes();
+    _renderPoolAsignados();
+    _actualizarContadores();
+  }, _INTERVALO_SONDEO_ASIG_MS);
+}
 
 /* Helper para obtener sesión dentro de asignacion.js */
 function _obtenerSesionAsig() {
@@ -104,12 +139,67 @@ function _hoyAsig() {
   return d.getFullYear() + '-' + mm + '-' + dd;
 }
 
-/* Pendiente = sin motorizado asignado (independientemente del estado) */
+/* Pendiente = sin motorizado asignado (independientemente del estado).
+   SIN filtrar — la usa "Autoasignar todos" y el contador de arriba,
+   que deben seguir contando/tomando TODOS los pendientes sin importar
+   el filtro de búsqueda que esté activo (ver _getOrdenesPendientesFiltradas). */
 function _getOrdenesPendientes() {
   return ORDENES_ASIG.filter(function(o) {
     return !o.motorizado || o.motorizado.trim() === '';
   });
 }
+
+/* Lee los filtros de búsqueda actuales del pool de pendientes.
+   Viven solo en este navegador — no se guardan ni comparten entre
+   sesiones, así que cada motorizado conectado tiene los suyos. */
+function _filtrosPoolAsig() {
+  var val = function(id) { var el = document.getElementById(id); return el ? el.value : ''; };
+  return {
+    texto:    val('f-buscar-asignacion').toLowerCase().trim(),
+    tienda:   val('f-filtro-tienda-asignacion').trim(),
+    distrito: val('f-filtro-distrito-asignacion').trim(),
+  };
+}
+
+/* Igual que _getOrdenesPendientes() pero aplicando los filtros — es
+   lo único que usa el render del pool en pantalla. */
+function _getOrdenesPendientesFiltradas() {
+  var f = _filtrosPoolAsig();
+  return _getOrdenesPendientes().filter(function(o) {
+    if (f.tienda && o.tienda !== f.tienda) return false;
+    if (f.distrito && o.distrito !== f.distrito) return false;
+    if (f.texto) {
+      var texto = ((o.codigo||'') + ' ' + (o.dest_nombre||'') + ' ' + (o.tienda||'') + ' ' + (o.distrito||'')).toLowerCase();
+      if (texto.indexOf(f.texto) === -1) return false;
+    }
+    return true;
+  });
+}
+
+/* Catálogo de distritos para el combobox de filtro — se arma solo con
+   los distritos que aparecen entre las órdenes ya cargadas, no hace
+   falta pedirle nada aparte al servidor. */
+function _distritosDesdeOrdenesAsig() {
+  var set = {};
+  ORDENES_ASIG.forEach(function(o) { if (o.distrito) set[o.distrito] = true; });
+  return Object.keys(set).sort();
+}
+
+/* Comboboxes buscables de tienda y distrito (js/combobox.js) —
+   igual que los de "Todos los pedidos" */
+function _initFiltrosAsignacion() {
+  initComboBuscable('f-filtro-tienda-asignacion', function() {
+    return TIENDAS_ASIG.map(function(t) { return { value: t.nombre, label: t.nombre }; });
+  }, function() { filtrarPoolAsignacion(); });
+
+  initComboBuscable('f-filtro-distrito-asignacion', function() {
+    return _distritosDesdeOrdenesAsig().map(function(d) { return { value: d, label: d }; });
+  }, function() { filtrarPoolAsignacion(); });
+}
+
+window.filtrarPoolAsignacion = function() {
+  _renderPoolPendientes();
+};
 
 /* Ordenes asignadas al motorizado seleccionado */
 function _getOrdenesAsignadas(nombreMoto) {
@@ -154,14 +244,18 @@ function _renderPoolPendientes() {
   var pool = document.getElementById('pool-libre');
   if (!pool) return;
 
-  var pendientes = _getOrdenesPendientes();
+  var pendientes = _getOrdenesPendientesFiltradas();
   pool.innerHTML = '';
 
   if (pendientes.length === 0) {
-    pool.innerHTML =
-      '<div style="padding:24px;text-align:center;color:var(--color-text-tertiary);font-size:13px">' +
-      '<i class="ti ti-check" style="font-size:24px;display:block;margin-bottom:8px"></i>' +
-      'Todos los pedidos están asignados</div>';
+    var hayFiltro = _getOrdenesPendientes().length > 0; /* hay pendientes, pero el filtro no encontró ninguno */
+    pool.innerHTML = hayFiltro
+      ? '<div style="padding:24px;text-align:center;color:var(--color-text-tertiary);font-size:13px">' +
+        '<i class="ti ti-search-off" style="font-size:24px;display:block;margin-bottom:8px"></i>' +
+        'Ningún pendiente coincide con el filtro</div>'
+      : '<div style="padding:24px;text-align:center;color:var(--color-text-tertiary);font-size:13px">' +
+        '<i class="ti ti-check" style="font-size:24px;display:block;margin-bottom:8px"></i>' +
+        'Todos los pedidos están asignados</div>';
     return;
   }
 

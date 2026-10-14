@@ -14,7 +14,7 @@
 | --- | --- | --- |
 | **1** | Infraestructura y despliegue (servidor, BD, SSL, dominio) | Completada |
 | **2** | Autenticación y autorización server-side | Completada |
-| **3** | Módulo de fotos (Cloudflare R2) | Pendiente |
+| **3** | Módulo de fotos (Cloudflare R2) | Código listo — falta crear el bucket R2 |
 | **4** | Rotación de contraseñas + limpieza periódica + web institucional | Pendiente |
 
 **El sistema está en producción y es seguro para repartir accesos.**
@@ -103,7 +103,13 @@ solo paquete: `mssql` a `pg`. Node y VS Code no cambian.
 
 ## D-003 · Fotos: Cloudflare R2, no Cloudinary (Fase 3, pendiente)
 
-**Estado:** Decidido, sin implementar.
+**Estado:** Código implementado (server/r2.js, rutas POST /api/ordenes/:id/evidencia/presigned
+y PATCH /api/ordenes/:id/medio-pago, tabla `ordenes_fotos`, subida y compresión en el modal
+"Actualizar orden"). **Falta crear el bucket R2 y sus credenciales** — hasta entonces, esas
+rutas responden un error claro en vez de fallar. Variables que hay que agregar a `server/.env`
+cuando el bucket esté listo: `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`,
+`R2_BUCKET`, `R2_PUBLIC_URL`. También hay que configurar CORS en el bucket para aceptar PUT
+desde `http://localhost:3000` y `https://sistema.veloxcourierperu.com`.
 
 **Volumen real:** 4-5 fotos x 500 pedidos/día = ~2,250/día = ~810,000 almacenadas (retención 12 meses).
 

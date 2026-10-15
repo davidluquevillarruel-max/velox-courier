@@ -145,6 +145,9 @@ toca la foto.
 **Requisito no negociable:** comprimir en el cliente antes de subir (`canvas.toBlob()`, ~1280px,
 calidad 0.7 = ~250 KB). Sin compresión, cualquier proveedor sale caro.
 
+**Cómo se suben hoy:** ya no se suben al momento de elegirlas, sino por la cola de fotos
+del celular, con reintentos (ver D-008). El camino a R2 (presigned PUT directo) no cambió.
+
 ---
 
 ## D-004 · Autenticación server-side — COMPLETADA
@@ -219,6 +222,56 @@ si solo 30 van a usar el sistema). Al hacerlo: contraseñas aleatorias, no deriv
 entregar una sola vez y forzar cambio en el primer login; borrar los `.md` de credenciales.
 
 **Además rotar:** la contraseña del `SA` de SQL Server (se escribió en un chat).
+
+---
+
+## D-008 · Cola de subida de fotos (señal inestable en la calle)
+
+**Estado:** Implementado en local (octubre 2026), sin probar todavía en el navegador. Requiere
+la migración `velox_agregar_id_subida.sql` (pendiente en producción).
+
+**Problema.** El motorizado saca la foto en la calle, con señal que va y viene. Antes la foto
+se subía una sola vez: si fallaba, se perdía (foto del producto) o el motorizado no podía
+guardar la orden (evidencia del medio de pago, que además exigía estar subida antes de
+guardar).
+
+**Decisión: guardar primero en el teléfono, subir después** (`js/cola-fotos.js`).
+
+- La foto se guarda en **IndexedDB** (nativo del navegador, sin librerías) antes de cualquier
+  intento de red, y se sube de a una, en segundo plano. Se guarda como `ArrayBuffer`, no
+  `Blob`, porque algunos Safari viejos no guardan Blobs en IndexedDB. Si IndexedDB falla
+  (ej. incógnito), queda en memoria y se avisa que no se cierre la app.
+- **Cuándo reintenta:** al encolar, al volver la conexión (`online`), al volver la app a
+  primer plano (`visibilitychange`), al reabrir Velox, y con esperas de 5 s, 15 s, 30 s,
+  60 s y luego cada 2 min. Cada pedido tiene tiempo máximo (30 s / 90 s) para no quedar
+  colgado con señal mala. No se confía en `navigator.onLine` para decidir: manda el
+  resultado del intento.
+- **Errores:** 401 pausa la cola hasta el próximo login; 400/403/404/409/413/415 dejan la
+  foto "con error" sin reintento automático (se reintenta o descarta a mano desde el
+  indicador); todo lo demás se trata como falta de señal.
+- **Sin duplicados:** cada foto lleva un `idSubida` (UUID) generado en el teléfono. Columna
+  `ordenes_fotos.id_subida` con índice único filtrado: si un reintento llega después de que la
+  foto ya se guardó (la respuesta se perdió), el servidor devuelve la existente (200) en vez
+  de insertar otra. Con R2, el nombre del objeto sale de ese id, así los reintentos pisan el
+  mismo archivo en vez de dejar huérfanos.
+- **R2 o modo prueba sin cambiar código:** la URL firmada se pide en cada intento (vencen a
+  los 5 min, no se guardan); con 503 (R2 sin configurar) la foto va al disco local.
+- **Evidencia pendiente (decisión del usuario):** `PATCH /medio-pago` ya no exige la foto al
+  guardar "Pago tienda" / "Pago Velox". La pantalla pide que la foto esté *tomada* (en
+  memoria, ya subida o en la cola del teléfono), no subida. Mientras no llegue, la orden
+  figura con `evidencia_pendiente = 1` (calculado en SQL, sin columna nueva) y las listas lo
+  marcan. La evidencia entra a la cola recién cuando los PATCH de la orden salieron bien, para
+  no subir fotos de un medio de pago que no se guardó.
+- **Indicador visible** (`js/indicador-fotos.js`): pastilla fija con las fotos que faltan
+  subir, panel con "Reintentar ahora" y "Descartar".
+
+**Límites aceptados.** Con la pantalla bloqueada o el navegador cerrado el JavaScript no
+corre: la foto queda guardada y sale cuando la app vuelve a estar activa, no antes. Guardar o
+crear la orden sigue necesitando señal en ese momento (lo que se encola es la foto, no la
+orden: encolar órdenes completas trae duplicados y conflictos).
+
+**Descartado por ahora: Background Sync** (service worker). Solo existe en Chrome Android,
+el navegador decide cuándo correrlo y agrega otra capa; queda como mejora opcional.
 
 ---
 

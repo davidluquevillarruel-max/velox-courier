@@ -140,6 +140,8 @@
 <!-- ══════════════════════════════════════════
      SCRIPTS (orden importa)
      utils     → debe ir primero (showNotif, fecha)
+     cola-fotos → después de utils (usa su fetch con cookie); antes
+                  de pedidos/motorizados, que encolan las fotos
      navigation → carga las páginas desde pages/
      filters   → filtrarTablaPedidos (texto + tienda + motorizado + estado)
      asignacion → asignar, desasignar
@@ -147,6 +149,7 @@
 ══════════════════════════════════════════ -->
 <script src="js/validators.js"></script>
 <script src="js/utils.js"></script>
+<script src="js/cola-fotos.js"></script>
 <script src="js/combobox.js"></script>
 <script src="js/tarifas.js"></script>
 <script src="js/caja.js"></script>

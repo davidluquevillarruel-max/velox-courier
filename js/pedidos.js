@@ -16,7 +16,8 @@ var _ordenesCache = []; /* caché local del día activo */
 /* ── FOTO DEL PRODUCTO ──
    La foto vive comprimida en memoria hasta que la orden existe: la
    subida necesita el id de la orden, que recién se conoce después
-   del POST (ver _subirFotoProducto). */
+   del POST. Ahí pasa a la cola de fotos (js/cola-fotos.js), que la
+   guarda en el teléfono y la sube aunque la señal vaya y venga. */
 var _fotoProductoBlob = null;  /* JPEG comprimido listo para subir */
 var _fotoProductoUrl  = null;  /* object URL solo para la vista previa */
 var _modoOrdenRapida  = false; /* true = solo tienda, destinatario y teléfono */
@@ -646,62 +647,6 @@ function _limpiarFotoProducto() {
   if (cont) cont.style.display = 'none';
 }
 
-/**
- * Sube la foto de una orden que YA existe.
- * Primero intenta Cloudflare R2 con URL firmada (el archivo va
- * directo del navegador a R2, el servidor no lo toca — diseño de
- * DECISIONES.md D-003). Si R2 todavía no está configurado, el
- * servidor responde 503 y se usa el MODO PRUEBA: los bytes van al
- * servidor, que los guarda en disco.
- * @returns {Promise<string>} 'r2' o 'local', según dónde quedó.
- */
-async function _subirFotoProducto(ordenId, blob) {
-  var rPre = await fetch(API + '/ordenes/' + ordenId + '/evidencia/presigned', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ contentType: 'image/jpeg', tipo: 'foto_producto' }),
-  });
-
-  if (rPre.ok) {
-    var pre = await rPre.json();
-
-    /* Sin credentials: R2 no es nuestro servidor, no hace falta
-       (ni conviene) mandarle la cookie de sesión */
-    var rSubida = await fetch(pre.uploadUrl, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'image/jpeg' },
-      body: blob,
-      credentials: 'omit',
-    });
-    if (!rSubida.ok) throw new Error('No se pudo subir la foto al almacenamiento');
-
-    var rReg = await fetch(API + '/ordenes/' + ordenId + '/foto/registrar', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url: pre.publicUrl }),
-    });
-    if (!rReg.ok) throw new Error('La foto se subió pero no se pudo asociar a la orden');
-    return 'r2';
-  }
-
-  /* 503 = R2 sin configurar todavía → modo prueba */
-  if (rPre.status !== 503) {
-    var errPre = await rPre.json().catch(function() { return {}; });
-    throw new Error(errPre.error || 'No se pudo preparar la subida de la foto');
-  }
-
-  var rLocal = await fetch(API + '/ordenes/' + ordenId + '/foto/local', {
-    method: 'POST',
-    headers: { 'Content-Type': 'image/jpeg' },
-    body: blob,
-  });
-  if (!rLocal.ok) {
-    var errLocal = await rLocal.json().catch(function() { return {}; });
-    throw new Error(errLocal.error || 'No se pudo guardar la foto');
-  }
-  return 'local';
-}
-
 window.guardarOrden = async function() {
   var fecha      = document.getElementById('f-orden-fecha').value;
   var tienda     = document.getElementById('f-orden-tienda').value;
@@ -782,14 +727,18 @@ window.guardarOrden = async function() {
     var data = await r.json();
 
     /* La orden ya está creada: recién ahora existe el id que la subida
-       necesita. Si la foto falla, la orden NO se pierde — se avisa. */
+       necesita. La foto pasa a la cola (js/cola-fotos.js): queda
+       guardada en el teléfono y sube en segundo plano, con reintentos
+       si no hay señal. La orden no espera a la foto. */
     var avisoFoto = '';
     if (_fotoProductoBlob) {
       try {
-        var donde = await _subirFotoProducto(data.id, _fotoProductoBlob);
-        if (donde === 'local') avisoFoto = ' · foto guardada en modo prueba';
+        var enCola = await encolarFoto(data.id, 'foto_producto', _fotoProductoBlob);
+        avisoFoto = enCola.persistente
+          ? ' · la foto se sube en segundo plano'
+          : ' · la foto no se pudo guardar en el teléfono: no cierres Velox hasta que suba';
       } catch (errFoto) {
-        avisoFoto = ' · la orden se guardó, pero la foto no: ' + errFoto.message;
+        avisoFoto = ' · la orden se guardó, pero la foto no: ' + (errFoto.message || 'error al procesarla');
       }
     }
 
@@ -798,7 +747,12 @@ window.guardarOrden = async function() {
     if (typeof showNotif === 'function') showNotif('Orden #' + data.codigo + ' registrada' + avisoFoto, avisoFoto ? 5000 : 2500);
 
   } catch (err) {
-    errEl.textContent = 'Error de conexión con el servidor.';
+    /* Sin respuesta del servidor. Lo normal es que la orden NO se haya
+       creado, pero si la señal se cortó justo después del POST pudo
+       haberse creado igual: por eso se pide revisar la lista antes de
+       reintentar. El modal queda abierto con todo lo cargado, foto
+       incluida. */
+    errEl.textContent = 'Sin conexión con el servidor: no se pudo confirmar la orden. Lo que cargaste (y la foto) sigue acá. Cuando haya señal, revisa que no figure en la lista y vuelve a guardar.';
     errEl.style.display = 'block';
   }
 };

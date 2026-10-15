@@ -60,15 +60,19 @@ const TIPOS_PERMITIDOS = {
    URL pública final donde va a quedar la foto una vez subida.
    ordenId se usa para armar una ruta legible dentro del bucket, y
    carpeta separa los tipos de foto ('evidencias' para el medio de
-   pago, 'productos' para la foto que se toma al crear la orden). */
-async function generarUrlSubidaEvidencia(ordenId, contentType, carpeta) {
+   pago, 'productos' para la foto que se toma al crear la orden).
+   Si viene idSubida (la cola de fotos del celular), el nombre del
+   archivo sale de ese id: así cada reintento de la misma foto pisa
+   el mismo objeto en vez de dejar copias huérfanas en el bucket. */
+async function generarUrlSubidaEvidencia(ordenId, contentType, carpeta, idSubida) {
   const ext = TIPOS_PERMITIDOS[contentType];
   if (!ext) {
     throw new Error('Tipo de imagen no permitido (usa JPEG, PNG o WEBP)');
   }
 
   const prefijo = carpeta === 'productos' ? 'productos' : 'evidencias';
-  const nombreArchivo = `${prefijo}/orden-${ordenId}/${Date.now()}-${crypto.randomBytes(4).toString('hex')}.${ext}`;
+  const base = idSubida || `${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
+  const nombreArchivo = `${prefijo}/orden-${parseInt(ordenId, 10)}/${base}.${ext}`;
 
   const comando = new PutObjectCommand({
     Bucket: process.env.R2_BUCKET,
@@ -82,4 +86,14 @@ async function generarUrlSubidaEvidencia(ordenId, contentType, carpeta) {
   return { uploadUrl, publicUrl };
 }
 
-module.exports = { r2Habilitado, generarUrlSubidaEvidencia, TIPOS_PERMITIDOS };
+/* true si la URL es una foto de NUESTRO bucket y de ESA orden. Evita
+   que un cliente registre como evidencia una URL cualquiera. */
+function esUrlDeOrden(url, ordenId) {
+  if (!r2Habilitado() || typeof url !== 'string') return false;
+  const base = process.env.R2_PUBLIC_URL.replace(/\/$/, '');
+  const id   = parseInt(ordenId, 10);
+  return url.startsWith(`${base}/productos/orden-${id}/`) ||
+         url.startsWith(`${base}/evidencias/orden-${id}/`);
+}
+
+module.exports = { r2Habilitado, generarUrlSubidaEvidencia, esUrlDeOrden, TIPOS_PERMITIDOS };

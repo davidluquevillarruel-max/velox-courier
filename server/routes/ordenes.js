@@ -8,7 +8,7 @@ const express = require('express');
 const router  = express.Router();
 const { getPool, sql } = require('../db');
 const { requireAuth, requireRol } = require('../middleware/auth');
-const { r2Habilitado, generarUrlSubidaEvidencia } = require('../r2');
+const { r2Habilitado, generarUrlSubidaEvidencia, esUrlDeOrden } = require('../r2');
 const { guardarFoto, rutaArchivo, existeFoto } = require('../almacenamiento-local');
 
 /* Todas las rutas de este archivo exigen sesión */
@@ -26,8 +26,10 @@ const PAGO_VELOX_METODOS = ['efectivo', 'yape'];
 
 /* Medio de pago real (distinto de metodo_pago — ver
    velox_agregar_medio_pago.sql). "pago-tienda" y "pago-empresa"
-   exigen evidencia fotográfica adjunta. */
-const MEDIOS_PAGO = ['yape-motorizado', 'efectivo-motorizado', 'pago-tienda', 'pago-empresa'];
+   exigen evidencia fotográfica adjunta (puede llegar después, por la
+   cola del celular — SELECT_ORDEN repite esta lista en SQL para
+   calcular evidencia_pendiente). */
+const MEDIOS_PAGO =['yape-motorizado', 'efectivo-motorizado', 'pago-tienda', 'pago-empresa'];
 const MEDIOS_PAGO_CON_EVIDENCIA = ['pago-tienda', 'pago-empresa'];
 
 /* Distrito comodín del flujo rápido con foto: la orden se crea sin
@@ -38,6 +40,18 @@ const DISTRITO_SIN_DEFINIR = 'SIN DEFINIR';
 /* tipo en ordenes_fotos para la foto del producto tomada al crear la
    orden (la otra es 'evidencia_medio_pago') */
 const TIPO_FOTO_PRODUCTO = 'foto_producto';
+const TIPO_FOTO_EVIDENCIA = 'evidencia_medio_pago';
+const TIPOS_FOTO = [TIPO_FOTO_PRODUCTO, TIPO_FOTO_EVIDENCIA];
+
+/* Id único que el celular le pone a cada foto de la cola (ver
+   velox_agregar_id_subida.sql). Opcional: si no viene, la foto se
+   guarda igual, solo que un reintento podría duplicarla. Devuelve
+   el UUID en minúsculas, null si no vino, o false si vino mal. */
+const REGEX_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function leerIdSubida(valor) {
+  if (valor === undefined || valor === null || valor === '') return null;
+  return (typeof valor === 'string' && REGEX_UUID.test(valor)) ? valor.toLowerCase() : false;
+}
 
 /* ────────────────────────────────────────────────────────────
    Devuelve el filtro SQL según quién pregunta.
@@ -89,6 +103,11 @@ const SELECT_ORDEN = `
     o.estado, o.condicion_especial AS condicionEspecial, o.devuelto, o.devuelto_tienda, o.metodo_pago, o.medio_pago, o.pago_velox, o.pago_velox_metodo,
     (SELECT TOP 1 url FROM ordenes_fotos WHERE id_orden = o.id AND tipo = 'evidencia_medio_pago' ORDER BY subido_en DESC) AS evidencia_url,
     (SELECT TOP 1 url FROM ordenes_fotos WHERE id_orden = o.id AND tipo = 'foto_producto' ORDER BY subido_en DESC) AS foto_producto_url,
+    /* Medio de pago que exige foto, pero la foto todavía no llegó
+       (el motorizado guardó sin señal y sigue en la cola del celular) */
+    CASE WHEN o.medio_pago IN ('pago-tienda', 'pago-empresa')
+          AND NOT EXISTS (SELECT 1 FROM ordenes_fotos WHERE id_orden = o.id AND tipo = 'evidencia_medio_pago')
+         THEN 1 ELSE 0 END AS evidencia_pendiente,
     o.delivery_base, o.monto_adicional, o.delivery_total,
     o.monto_cobrado, o.monto_producto,
     o.pago_moto_base, o.pago_moto_adicional, o.pago_moto_total,
@@ -720,8 +739,11 @@ router.post('/:id/evidencia/presigned', async (req, res) => {
     }
 
     const { contentType, tipo } = req.body;
+    const idSubida = leerIdSubida(req.body.idSubida);
+    if (idSubida === false) return res.status(400).json({ error: 'Identificador de subida no válido' });
+
     const carpeta = tipo === TIPO_FOTO_PRODUCTO ? 'productos' : 'evidencias';
-    const { uploadUrl, publicUrl } = await generarUrlSubidaEvidencia(req.params.id, contentType, carpeta);
+    const { uploadUrl, publicUrl } = await generarUrlSubidaEvidencia(req.params.id, contentType, carpeta, idSubida);
 
     res.json({ uploadUrl, publicUrl });
   } catch (err) {
@@ -733,7 +755,11 @@ router.post('/:id/evidencia/presigned', async (req, res) => {
 /* ── PATCH /api/ordenes/:id/medio-pago ─────────────────────────
    Gestores, o el motorizado dueño de la orden.
    "pago-tienda" y "pago-empresa" (en pantalla: "Pago Velox")
-   exigen evidenciaUrl — ya subida a R2 vía el endpoint de arriba. */
+   requieren evidencia, pero ya NO se exige en este momento: el
+   motorizado puede guardar sin señal y la foto entra después por
+   la cola del celular (POST /:id/foto/...). Mientras no llegue, la
+   orden figura con evidencia_pendiente = 1 (ver SELECT_ORDEN).
+   evidenciaUrl se sigue aceptando por compatibilidad. */
 router.patch('/:id/medio-pago', async (req, res) => {
   try {
     const pool = await getPool();
@@ -748,16 +774,9 @@ router.patch('/:id/medio-pago', async (req, res) => {
       return res.status(400).json({ error: 'Medio de pago no válido' });
     }
 
-    /* Si ya tiene una evidencia subida de antes, no hace falta volver a
-       subirla cada vez que se guarda la orden — solo se exige si es la
-       primera vez que se elige un medio de pago que la requiere. */
-    if (MEDIOS_PAGO_CON_EVIDENCIA.includes(medioPago) && !evidenciaUrl) {
-      const yaTiene = await pool.request()
-        .input('id_orden', sql.BigInt, ordenId)
-        .query(`SELECT TOP 1 1 AS x FROM ordenes_fotos WHERE id_orden = @id_orden AND tipo = 'evidencia_medio_pago'`);
-      if (yaTiene.recordset.length === 0) {
-        return res.status(400).json({ error: 'Este medio de pago requiere adjuntar evidencia' });
-      }
+    /* La URL tiene que ser de nuestro bucket y de esta orden */
+    if (evidenciaUrl && !esUrlDeOrden(evidenciaUrl, ordenId)) {
+      return res.status(400).json({ error: 'URL de evidencia no válida' });
     }
 
     const ifVersion = bufferDeVersion(req.body.ifVersion);
@@ -789,30 +808,90 @@ router.patch('/:id/medio-pago', async (req, res) => {
 });
 
 /* ════════════════════════════════════════════════════════════
-   FOTO DEL PRODUCTO (flujo rápido con cámara)
+   FOTOS DE LA ORDEN (foto del producto y evidencia del medio de pago)
+   Las dos clases de foto usan estas rutas; se distinguen por "tipo"
+   ('foto_producto' por defecto, o 'evidencia_medio_pago').
    Dos caminos, según si R2 está configurado:
    · R2 activo → el navegador pide una URL firmada (la ruta
-     /evidencia/presigned de arriba, con tipo 'foto_producto'),
-     sube la foto DIRECTO a R2 y después registra la URL con
-     POST /:id/foto/registrar. El servidor nunca toca el archivo
-     (diseño original, ver DECISIONES.md D-003).
+     /evidencia/presigned de arriba), sube la foto DIRECTO a R2 y
+     después registra la URL con POST /:id/foto/registrar. El
+     servidor nunca toca el archivo (ver DECISIONES.md D-003).
    · R2 sin configurar (MODO PRUEBA) → el navegador manda los bytes
      a POST /:id/foto/local, que los guarda en disco y los sirve por
      GET /:id/foto/:fotoId, siempre validando sesión.
+
+   Reintentos sin duplicar: la cola del celular manda un idSubida
+   (UUID) por foto. Si llega una foto con un idSubida que ya está
+   registrado, se responde 200 con la foto existente en vez de
+   insertar otra (la primera vez es 201).
 ════════════════════════════════════════════════════════════ */
 
-/* Inserta la fila en ordenes_fotos y devuelve su id */
-async function registrarFoto(pool, ordenId, tipo, url) {
-  const r = await pool.request()
-    .input('id_orden', sql.BigInt,   ordenId)
-    .input('tipo',     sql.NVarChar, tipo)
-    .input('url',      sql.NVarChar, url)
-    .query(`INSERT INTO ordenes_fotos (id_orden, tipo, url) VALUES (@id_orden, @tipo, @url);
-            SELECT CAST(SCOPE_IDENTITY() AS INT) AS id;`);
-  return r.recordset[0].id;
+/* Lee y valida tipo + idSubida; si algo vino mal responde 400 y
+   devuelve null */
+function leerDatosFoto(req, res, origen) {
+  const tipo = origen.tipo || TIPO_FOTO_PRODUCTO;
+  if (!TIPOS_FOTO.includes(tipo)) {
+    res.status(400).json({ error: 'Tipo de foto no válido' });
+    return null;
+  }
+  const idSubida = leerIdSubida(origen.idSubida);
+  if (idSubida === false) {
+    res.status(400).json({ error: 'Identificador de subida no válido' });
+    return null;
+  }
+  return { tipo, idSubida };
 }
 
-/* ── POST /api/ordenes/:id/foto/registrar — URL ya subida a R2 ── */
+/* puedeTocarOrden deja pasar a los gestores sin mirar si la orden
+   existe; sin esto, una foto de una orden borrada fallaba con 500 (por
+   la FK) y la cola del celular la reintentaba para siempre */
+async function ordenExiste(pool, ordenId) {
+  const r = await pool.request()
+    .input('id', sql.BigInt, ordenId)
+    .query('SELECT TOP 1 1 AS x FROM ordenes WHERE id = @id');
+  return r.recordset.length > 0;
+}
+
+/* Foto ya registrada con este idSubida (o null) */
+async function buscarPorIdSubida(pool, idSubida) {
+  if (!idSubida) return null;
+  const r = await pool.request()
+    .input('id_subida', sql.UniqueIdentifier, idSubida)
+    .query('SELECT id, CAST(id_orden AS INT) AS id_orden, tipo, url FROM ordenes_fotos WHERE id_subida = @id_subida');
+  return r.recordset[0] || null;
+}
+
+/* Un idSubida repetido solo vale si es la misma foto: misma orden y
+   mismo tipo. Si no, es un error del cliente, no un reintento. */
+function esMismaFoto(existente, ordenId, tipo) {
+  return existente.id_orden === parseInt(ordenId, 10) && existente.tipo === tipo;
+}
+
+/* Inserta la fila en ordenes_fotos y devuelve su id. Si otro
+   reintento con el mismo idSubida ganó la carrera (índice único),
+   devuelve el id de esa fila en vez de fallar. */
+async function registrarFoto(pool, ordenId, tipo, url, idSubida) {
+  try {
+    const r = await pool.request()
+      .input('id_orden',  sql.BigInt,           ordenId)
+      .input('tipo',      sql.NVarChar,         tipo)
+      .input('url',       sql.NVarChar,         url)
+      .input('id_subida', sql.UniqueIdentifier, idSubida || null)
+      .query(`INSERT INTO ordenes_fotos (id_orden, tipo, url, id_subida) VALUES (@id_orden, @tipo, @url, @id_subida);
+              SELECT CAST(SCOPE_IDENTITY() AS INT) AS id;`);
+    return { fotoId: r.recordset[0].id, nueva: true };
+  } catch (err) {
+    /* 2601 / 2627 = clave duplicada */
+    if (idSubida && (err.number === 2601 || err.number === 2627)) {
+      const existente = await buscarPorIdSubida(pool, idSubida);
+      if (existente) return { fotoId: existente.id, nueva: false, existente };
+    }
+    throw err;
+  }
+}
+
+/* ── POST /api/ordenes/:id/foto/registrar — URL ya subida a R2 ──
+   Body: { url, tipo?, idSubida? } */
 router.post('/:id/foto/registrar', async (req, res) => {
   try {
     const pool = await getPool();
@@ -820,13 +899,34 @@ router.post('/:id/foto/registrar', async (req, res) => {
       return res.status(403).json({ error: 'No puedes agregar fotos a esta orden' });
     }
 
+    if (!(await ordenExiste(pool, req.params.id))) {
+      return res.status(404).json({ error: 'Orden no encontrada' });
+    }
+
+    const datos = leerDatosFoto(req, res, req.body);
+    if (!datos) return;
+
     const { url } = req.body;
-    if (!url || typeof url !== 'string' || url.length > 500) {
+    if (!url || typeof url !== 'string' || url.length > 500 || !esUrlDeOrden(url, req.params.id)) {
       return res.status(400).json({ error: 'URL de foto no válida' });
     }
 
-    const fotoId = await registrarFoto(pool, req.params.id, TIPO_FOTO_PRODUCTO, url);
-    res.status(201).json({ ok: true, fotoId, url });
+    const previa = await buscarPorIdSubida(pool, datos.idSubida);
+    if (previa) {
+      if (!esMismaFoto(previa, req.params.id, datos.tipo)) {
+        return res.status(409).json({ error: 'Ese identificador de subida ya se usó para otra foto' });
+      }
+      return res.json({ ok: true, fotoId: previa.id, url: previa.url, repetida: true });
+    }
+
+    const reg = await registrarFoto(pool, req.params.id, datos.tipo, url, datos.idSubida);
+    if (!reg.nueva) {
+      if (!esMismaFoto(reg.existente, req.params.id, datos.tipo)) {
+        return res.status(409).json({ error: 'Ese identificador de subida ya se usó para otra foto' });
+      }
+      return res.json({ ok: true, fotoId: reg.fotoId, url: reg.existente.url, repetida: true });
+    }
+    res.status(201).json({ ok: true, fotoId: reg.fotoId, url });
   } catch (err) {
     console.error('POST /ordenes/:id/foto/registrar:', err.message);
     res.status(500).json({ error: 'Error al registrar la foto' });
@@ -834,9 +934,11 @@ router.post('/:id/foto/registrar', async (req, res) => {
 });
 
 /* ── POST /api/ordenes/:id/foto/local — MODO PRUEBA ────────────
-   Recibe el JPEG crudo (el navegador ya lo comprimió). Solo aplica
-   mientras R2 no esté configurado; si R2 ya está activo se rechaza,
-   para no terminar con fotos partidas entre los dos almacenamientos. */
+   Recibe el JPEG crudo (el navegador ya lo comprimió); tipo e
+   idSubida van en la query (?tipo=...&idSubida=...) porque el body
+   son los bytes. Solo aplica mientras R2 no esté configurado; si R2
+   ya está activo se rechaza, para no terminar con fotos partidas
+   entre los dos almacenamientos. */
 router.post('/:id/foto/local',
   express.raw({ type: 'image/jpeg', limit: '6mb' }),
   async (req, res) => {
@@ -852,21 +954,58 @@ router.post('/:id/foto/local',
         return res.status(400).json({ error: 'No llegó ninguna imagen (se espera un JPEG).' });
       }
 
+      if (!(await ordenExiste(pool, req.params.id))) {
+        return res.status(404).json({ error: 'Orden no encontrada' });
+      }
+
+      const datos = leerDatosFoto(req, res, req.query);
+      if (!datos) return;
+
       const ordenId = req.params.id;
+      const urlLocal = (fotoId) => `/api/ordenes/${parseInt(ordenId, 10)}/foto/${fotoId}`;
 
-      /* Se inserta primero para tener el id, que forma parte del
-         nombre del archivo en disco — así la ruta que lo sirve lo
-         reconstruye sola, sin guardar el nombre en otra columna */
-      const fotoId = await registrarFoto(pool, ordenId, TIPO_FOTO_PRODUCTO, '');
-      await guardarFoto(ordenId, fotoId, req.body);
+      /* Reintento de una foto que ya llegó: si el archivo está en
+         disco no se toca nada; si la fila quedó pero el archivo no
+         (se cortó a mitad de camino), se completa con estos bytes */
+      let reg;
+      const previa = await buscarPorIdSubida(pool, datos.idSubida);
+      if (previa) {
+        reg = { fotoId: previa.id, nueva: false, existente: previa };
+      } else {
+        /* Se inserta primero para tener el id, que forma parte del
+           nombre del archivo en disco — así la ruta que lo sirve lo
+           reconstruye sola, sin guardar el nombre en otra columna */
+        reg = await registrarFoto(pool, ordenId, datos.tipo, '', datos.idSubida);
+      }
 
-      const url = `/api/ordenes/${parseInt(ordenId, 10)}/foto/${fotoId}`;
+      if (!reg.nueva) {
+        if (!esMismaFoto(reg.existente, ordenId, datos.tipo)) {
+          return res.status(409).json({ error: 'Ese identificador de subida ya se usó para otra foto' });
+        }
+        if (existeFoto(ordenId, reg.fotoId) && reg.existente.url) {
+          return res.json({ ok: true, fotoId: reg.fotoId, url: reg.existente.url, modo: 'local', repetida: true });
+        }
+      }
+
+      try {
+        await guardarFoto(ordenId, reg.fotoId, req.body);
+      } catch (errDisco) {
+        /* Sin archivo no hay foto: la fila nueva se borra para no
+           dejar una foto "fantasma" con la URL vacía */
+        if (reg.nueva) {
+          await pool.request()
+            .input('id', sql.Int, reg.fotoId)
+            .query('DELETE FROM ordenes_fotos WHERE id = @id');
+        }
+        throw errDisco;
+      }
+
       await pool.request()
-        .input('id',  sql.Int,      fotoId)
-        .input('url', sql.NVarChar, url)
+        .input('id',  sql.Int,      reg.fotoId)
+        .input('url', sql.NVarChar, urlLocal(reg.fotoId))
         .query('UPDATE ordenes_fotos SET url = @url WHERE id = @id');
 
-      res.status(201).json({ ok: true, fotoId, url, modo: 'local' });
+      res.status(reg.nueva ? 201 : 200).json({ ok: true, fotoId: reg.fotoId, url: urlLocal(reg.fotoId), modo: 'local' });
     } catch (err) {
       console.error('POST /ordenes/:id/foto/local:', err.message);
       res.status(500).json({ error: 'Error al guardar la foto' });

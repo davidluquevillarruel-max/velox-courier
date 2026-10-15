@@ -25,6 +25,21 @@ Velox Courier — internal management system for a courier/delivery company in L
   `server/almacenamiento-local.js`). Las fotos guardadas en modo prueba **no se migran
   solas** a R2. En `ordenes_fotos` las dos clases de foto se distinguen por la columna
   `tipo`: `foto_producto` (al crear la orden) y `evidencia_medio_pago`.
+- **Cola de fotos (señal inestable)** — `js/cola-fotos.js`: la foto se guarda primero en
+  el teléfono (IndexedDB) y se sube en segundo plano, de a una, con reintentos (5 s → 2 min),
+  y también al volver la conexión (`online`), al volver la app a primer plano y al reabrir
+  Velox. Con la pantalla bloqueada o el navegador cerrado **no** sube (el JS no corre):
+  queda guardada y sale cuando la app vuelve a estar activa. Cada foto lleva un `idSubida`
+  (UUID) y el servidor no la duplica si llega dos veces (columna `ordenes_fotos.id_subida`).
+  Funciona igual con R2 o en modo prueba (pide URL firmada en cada intento; con 503 va al
+  disco). 401 pausa la cola hasta el próximo login; 403/404/409 marcan la foto "con error"
+  sin reintento automático. Eventos `velox:cola-fotos` y `velox:foto-subida` en `window`.
+  Ya la usa la foto del producto (`js/pedidos.js`). **Probado solo con `node --check`,
+  todavía no en el navegador.**
+- **Evidencia pendiente** — `PATCH /:id/medio-pago` ya no exige la foto al guardar
+  `pago-tienda`/`pago-empresa` (puede llegar después por la cola); `SELECT_ORDEN` devuelve
+  `evidencia_pendiente` = 1 mientras falte. Las URLs de R2 que se registran se validan contra
+  el bucket y la orden (`esUrlDeOrden` en `server/r2.js`).
 - **Medio de pago** — concepto separado de "método de pago": `metodo_pago` es
   `sin-cobro`/`contraentrega` (se define al crear) y `medio_pago` es cómo entró la plata
   (`yape-motorizado`, `efectivo-motorizado`, `pago-tienda`, `pago-empresa`). Los dos
@@ -44,8 +59,18 @@ Velox Courier — internal management system for a courier/delivery company in L
   lectura. El bloqueo real es server-side (`/completo` y `/estado` ignoran esos campos si
   quien llama es motorizado), no solo visual.
 
-**Pendiente:** crear el bucket R2 con sus credenciales, y aplicar las 3 migraciones en
-producción (ver "Migraciones pendientes de aplicar en producción").
+**Pendiente:**
+- Cola de fotos, parte 4: que la evidencia del medio de pago (`js/motorizados.js`) pase por
+  la cola. Hoy sigue subiendo directo y solo a R2 (en modo prueba falla con 503), y la
+  pantalla todavía exige la foto antes de guardar.
+- Cola de fotos, parte 5: indicador visible de "fotos pendientes" con "Reintentar ahora"
+  (`index.html` + `css/components.css`), y mostrar `evidencia_pendiente` en las listas.
+- Probar en el navegador las partes 1–3 (subida con/sin señal, sin duplicados).
+- Decidir si tienda/visor pueden ver las fotos guardadas en modo prueba (hoy reciben 403 en
+  `GET /:id/foto/:fotoId`).
+- Más adelante, opcional: Background Sync (service worker; solo Chrome Android).
+- Crear el bucket R2 con sus credenciales, y aplicar las 4 migraciones en producción (ver
+  "Migraciones pendientes de aplicar en producción").
 
 ## Running it locally
 
@@ -105,7 +130,7 @@ Roles: `admin`, `operador`, `visor`, `tienda`, `motorizado`. `GESTORES = ['admin
 
 ## Migraciones pendientes de aplicar en producción
 
-Estos 3 scripts ya están aplicados y verificados en local (`DESKTOP-E9N76IK`), pero
+Estos 4 scripts ya están aplicados y verificados en local (`DESKTOP-E9N76IK`), pero
 **todavía no se corrieron en el servidor**. Como los `velox_agregar_*.sql` están
 gitignored, no viajan con `git push`: hay que copiarlos al servidor y correrlos a mano
 con `sqlcmd`, **en este orden**.
@@ -115,6 +140,7 @@ con `sqlcmd`, **en este orden**.
 | 1 | `velox_agregar_medio_pago.sql` | Columna `medio_pago` en `ordenes`; restringe `metodo_pago` a `sin-cobro`/`contraentrega` (elimina Plin y POS migrando los datos viejos); crea la tabla `ordenes_fotos`. |
 | 2 | `velox_agregar_concurrencia.sql` | Columna `row_version` (`ROWVERSION`) en `ordenes`, para el control de concurrencia optimista. |
 | 3 | `velox_agregar_distrito_sin_definir.sql` | Distrito comodín `SIN DEFINIR` (tarifa 0, inactivo) que usan las órdenes del flujo rápido con foto. |
+| 4 | `velox_agregar_id_subida.sql` | Columna `id_subida` (UUID, índice único filtrado) en `ordenes_fotos`, para que los reintentos de la cola de fotos no dupliquen. Requiere la 1. |
 
 Qué pasa si falta cada uno:
 
@@ -123,6 +149,8 @@ Qué pasa si falta cada uno:
 - **Sin el 2**, el sistema funciona igual (el chequeo de versión es opcional y compatible
   hacia atrás), pero dos usuarios editando la misma orden se siguen pisando en silencio.
 - **Sin el 3**, el flujo rápido con foto devuelve un error que lo dice explícitamente.
+- **Sin el 4**, fallan las rutas de subida de fotos (`/foto/local`, `/foto/registrar`
+  consultan `id_subida`). El resto del sistema funciona.
 
 Cuando se apliquen en el servidor, borrar la fila correspondiente de esta tabla.
 

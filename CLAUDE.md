@@ -34,8 +34,12 @@ Velox Courier — internal management system for a courier/delivery company in L
   Funciona igual con R2 o en modo prueba (pide URL firmada en cada intento; con 503 va al
   disco). 401 pausa la cola hasta el próximo login; 403/404/409 marcan la foto "con error"
   sin reintento automático. Eventos `velox:cola-fotos` y `velox:foto-subida` en `window`.
-  Ya la usa la foto del producto (`js/pedidos.js`). **Probado solo con `node --check`,
-  todavía no en el navegador.** Indicador visible en `js/indicador-fotos.js`: pastilla fija
+  La usan la foto del producto (`js/pedidos.js`) y la evidencia del medio de pago
+  (`js/motorizados.js`): la evidencia se comprime al elegirla y entra a la cola recién
+  cuando los PATCH de "Actualizar orden" salieron bien; para guardar basta con que la foto
+  esté tomada (en memoria, ya subida, o en la cola de ese teléfono). Guardar la orden sí
+  sigue necesitando señal en ese momento. **Probado solo con `node --check`, todavía no en
+  el navegador.** Indicador visible en `js/indicador-fotos.js`: pastilla fija
   abajo a la izquierda (ámbar = por subir, rojo = con error), oculta si la cola está vacía;
   al tocarla, panel con la lista, "Reintentar ahora" y "Descartar" para las con error.
 - **Evidencia pendiente** — `PATCH /:id/medio-pago` ya no exige la foto al guardar
@@ -67,9 +71,6 @@ Velox Courier — internal management system for a courier/delivery company in L
   quien llama es motorizado), no solo visual.
 
 **Pendiente:**
-- Cola de fotos, parte 4: que la evidencia del medio de pago (`js/motorizados.js`) pase por
-  la cola. Hoy sigue subiendo directo y solo a R2 (en modo prueba falla con 503), y la
-  pantalla todavía exige la foto antes de guardar.
 - Mostrar `evidencia_pendiente` en las listas (el indicador de la cola ya está hecho).
 - Probar en el navegador las partes 1–3 (subida con/sin señal, sin duplicados).
 - El visor sigue recibiendo 403 al abrir fotos aunque ve todas las órdenes en las listas

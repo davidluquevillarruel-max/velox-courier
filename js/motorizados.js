@@ -779,12 +779,16 @@ var _ordenActualizarBloqueaEnProceso = false; /* true si hace falta confirmar la
    modal — ver _patchOrdenConVersion(). */
 var _ordenActualizarVersion = null;
 
-/* URL pública de la evidencia recién subida en esta apertura del modal
-   (o null si no se subió ninguna nueva — ver onSeleccionarEvidenciaUpdate) */
-var _medioPagoEvidenciaUrl = null;
+/* Evidencia elegida en esta apertura del modal: JPEG comprimido en
+   memoria (o null). No se sube al elegirla: al guardar la orden pasa a
+   la cola de fotos (js/cola-fotos.js), que la sube con reintentos. */
+var _medioPagoEvidenciaBlob = null;
 /* true si la orden YA tenía una evidencia subida de una vez anterior —
-   en ese caso no hace falta volver a subir una para poder guardar */
+   en ese caso no hace falta volver a tomar una para poder guardar */
 var _medioPagoTeniaEvidenciaPrevia = false;
+/* true si en la cola de ESTE teléfono ya hay una evidencia de esta
+   orden esperando subir — tampoco hace falta volver a tomarla */
+var _medioPagoEvidenciaEnCola = false;
 
 /* Gate "Recibido" — solo motorizado, solo si la orden tiene condición
    especial (ver confirmarRecibidoCondicionEspecial) */
@@ -1177,15 +1181,21 @@ function _renderModalActualizarOrden(orden, tiendas, distritos, motorizados) {
 
   /* Evidencia: se resetea en cada apertura del modal — si la orden ya
      tenía una foto subida de antes, se avisa pero no hace falta volver
-     a subirla (ver PATCH /medio-pago en el servidor) */
-  _medioPagoEvidenciaUrl = null;
+     a tomarla (ver PATCH /medio-pago en el servidor) */
+  _medioPagoEvidenciaBlob = null;
+  _medioPagoEvidenciaEnCola = false;
   _medioPagoTeniaEvidenciaPrevia = !!orden.evidencia_url;
   onMedioPagoChangeUpdate();
   var statusEvidencia = document.getElementById('f-orden-evidencia-status-update');
   if (statusEvidencia && orden.evidencia_url) {
     statusEvidencia.innerHTML = '<i class="ti ti-circle-check" style="color:var(--color-green)"></i> Ya tiene evidencia subida — ' +
       '<a href="' + orden.evidencia_url + '" target="_blank" rel="noopener">ver foto</a>. Elige otro archivo solo si quieres reemplazarla.';
+  } else if (statusEvidencia && orden.evidencia_pendiente) {
+    /* Se guardó el medio de pago pero la foto todavía no llegó al
+       servidor (sigue en la cola de algún teléfono) */
+    statusEvidencia.innerHTML = '<i class="ti ti-clock" style="color:var(--color-amber)"></i> Evidencia pendiente de subir.';
   }
+  _revisarEvidenciaEnCola(orden.id);
 
   /* Un motorizado ve estos campos, pero no los puede tocar — quedan
      en gris. La protección REAL está en el servidor (/completo y
@@ -1269,46 +1279,48 @@ function _comprimirImagenEvidencia(file) {
   return comprimirImagenJPEG(file, 1280, 0.7);
 }
 
-/* Al elegir un archivo: comprime, pide una URL firmada al servidor, y
-   sube la foto DIRECTO a Cloudflare R2 (el servidor nunca la recibe —
-   ver server/r2.js). Guarda la URL pública en _medioPagoEvidenciaUrl
-   para que guardarActualizarEstadoOrden() la mande al guardar. */
+/* Al elegir un archivo: solo comprime y lo deja en memoria. No usa la
+   red: la subida la hace la cola de fotos recién cuando la orden se
+   guardó bien (ver guardarActualizarEstadoOrden), así funciona aunque
+   en este momento no haya señal. */
 window.onSeleccionarEvidenciaUpdate = async function(inputEl) {
   var statusEl = document.getElementById('f-orden-evidencia-status-update');
   var file = inputEl.files && inputEl.files[0];
   if (!file || !_ordenActualizarId) return;
 
-  _medioPagoEvidenciaUrl = null;
-  if (statusEl) statusEl.innerHTML = '<i class="ti ti-loader"></i> Comprimiendo y subiendo...';
+  _medioPagoEvidenciaBlob = null;
+  if (statusEl) statusEl.innerHTML = '<i class="ti ti-loader"></i> Procesando la foto...';
 
   try {
-    var blob = await _comprimirImagenEvidencia(file);
-
-    var rPre = await fetch(API + '/ordenes/' + _ordenActualizarId + '/evidencia/presigned', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ contentType: 'image/jpeg' }),
-    });
-    var dataPre = await rPre.json().catch(function(){ return {}; });
-    if (!rPre.ok) throw new Error(dataPre.error || 'No se pudo iniciar la subida');
-
-    /* Subida directa a R2 — sin credentials: no es nuestro servidor,
-       no hace falta (ni conviene) mandar la cookie de sesión */
-    var rSubida = await fetch(dataPre.uploadUrl, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'image/jpeg' },
-      body: blob,
-      credentials: 'omit',
-    });
-    if (!rSubida.ok) throw new Error('No se pudo subir la foto al almacenamiento');
-
-    _medioPagoEvidenciaUrl = dataPre.publicUrl;
-    if (statusEl) statusEl.innerHTML = '<i class="ti ti-circle-check" style="color:var(--color-green)"></i> Evidencia lista para guardar';
+    _medioPagoEvidenciaBlob = await _comprimirImagenEvidencia(file);
+    if (statusEl) statusEl.innerHTML = '<i class="ti ti-circle-check" style="color:var(--color-green)"></i> Foto lista — se sube en segundo plano al guardar';
   } catch (err) {
-    if (statusEl) statusEl.innerHTML = '<span style="color:#A32D2D">' + (err.message || 'Error al subir la evidencia') + '</span>';
+    if (statusEl) statusEl.innerHTML = '<span style="color:#A32D2D">' + (err.message || 'No se pudo procesar la foto') + '</span>';
     inputEl.value = '';
   }
 };
+
+/* ¿Ya hay una evidencia de esta orden en la cola de ESTE teléfono? Si
+   la hay, no se vuelve a pedir la foto para guardar y se avisa. */
+async function _revisarEvidenciaEnCola(ordenId) {
+  if (typeof obtenerColaFotos !== 'function') return;
+  try {
+    var cola = await obtenerColaFotos();
+    var enCola = cola.some(function(it) {
+      return it.ordenId === parseInt(ordenId, 10) && it.tipo === 'evidencia_medio_pago' && it.estado === 'pendiente';
+    });
+    /* El modal pudo cerrarse o cambiar de orden mientras se leía la cola */
+    if (!enCola || _ordenActualizarId != ordenId) return;
+
+    _medioPagoEvidenciaEnCola = true;
+    var statusEl = document.getElementById('f-orden-evidencia-status-update');
+    if (statusEl && !_medioPagoTeniaEvidenciaPrevia && !_medioPagoEvidenciaBlob) {
+      statusEl.innerHTML = '<i class="ti ti-cloud-upload" style="color:var(--color-amber)"></i> La evidencia está en la cola de este teléfono: se sube sola cuando haya señal.';
+    }
+  } catch (err) {
+    console.error('Evidencia en cola:', err);
+  }
+}
 
 /* Valor producto = lo que se cobró de más sobre el delivery (con su
    adicional) — es lo que se le debe devolver a la tienda. Se recalcula
@@ -1517,7 +1529,9 @@ window.guardarActualizarEstadoOrden = async function() {
   if (!ejecutarValidaciones(validaciones, errEl)) return;
 
   var medioRequiereEvidencia = _MEDIOS_PAGO.some(function(m) { return m.value === medioPago && m.evidencia; });
-  if (medioRequiereEvidencia && !_medioPagoEvidenciaUrl && !_medioPagoTeniaEvidenciaPrevia) {
+  /* Basta con que la foto esté TOMADA (en memoria, ya subida o en la cola
+     de este teléfono): no hace falta que haya subido para poder guardar */
+  if (medioRequiereEvidencia && !_medioPagoEvidenciaBlob && !_medioPagoTeniaEvidenciaPrevia && !_medioPagoEvidenciaEnCola) {
     errEl.textContent = 'Este medio de pago requiere adjuntar una foto de evidencia antes de guardar.';
     errEl.style.display = 'block';
     return;
@@ -1554,11 +1568,27 @@ window.guardarActualizarEstadoOrden = async function() {
     });
 
     await _patchOrdenConVersion(API + '/ordenes/' + _ordenActualizarId + '/medio-pago', {
-      medioPago: medioPago || null, evidenciaUrl: _medioPagoEvidenciaUrl,
+      medioPago: medioPago || null,
     });
 
+    /* Recién con la orden guardada, la evidencia pasa a la cola: así no
+       queda subida una foto de un medio de pago que no se guardó. La
+       cola la guarda en el teléfono y la sube con reintentos. */
+    var avisoEvidencia = '';
+    if (_medioPagoEvidenciaBlob) {
+      try {
+        var enCola = await encolarFoto(_ordenActualizarId, 'evidencia_medio_pago', _medioPagoEvidenciaBlob);
+        _medioPagoEvidenciaBlob = null;
+        avisoEvidencia = enCola.persistente
+          ? ' · la evidencia se sube en segundo plano'
+          : ' · la evidencia no se pudo guardar en el teléfono: no cierres Velox hasta que suba';
+      } catch (errFoto) {
+        avisoEvidencia = ' · la orden se guardó, pero la evidencia no: ' + (errFoto.message || 'error al procesarla');
+      }
+    }
+
     cerrarActualizarEstadoOrden();
-    if (typeof showNotif === 'function') showNotif('Orden actualizada correctamente');
+    if (typeof showNotif === 'function') showNotif('Orden actualizada correctamente' + avisoEvidencia, avisoEvidencia ? 5000 : 2500);
 
     /* Refrescar la vista actual, sea cual sea la página donde se abrió el modal.
        Cada función ya se cuida sola si su página no está en pantalla. */
@@ -1580,6 +1610,11 @@ window.guardarActualizarEstadoOrden = async function() {
       if (errEl) errEl.style.display = 'none';
       return;
     }
-    if (errEl) { errEl.textContent = err.message || 'Error al actualizar la orden.'; errEl.style.display = 'block'; }
+    /* fetch tira TypeError cuando no hay red: el mensaje del navegador
+       ("Failed to fetch") no le dice nada a alguien en la calle */
+    var mensaje = (err instanceof TypeError)
+      ? 'Sin conexión: no se pudo guardar. Lo que cargaste (y la foto) sigue acá; vuelve a guardar cuando haya señal.'
+      : (err.message || 'Error al actualizar la orden.');
+    if (errEl) { errEl.textContent = mensaje; errEl.style.display = 'block'; }
   }
 };

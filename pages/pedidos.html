@@ -31,12 +31,25 @@
     <span style="font-size:12px;color:var(--color-text-tertiary)" id="lbl-fecha-activa"></span>
   </div>
 
-  <!-- Agregar orden -->
-  <button class="btn btn-primary" onclick="abrirModalOrden()">
-    <i class="ti ti-plus"></i> Agregar orden
-  </button>
+  <!-- Foto rápida + Agregar orden -->
+  <div style="display:flex;align-items:center;gap:8px">
+
+    <!-- Flujo rápido: toma la foto del producto y abre la orden con la foto ya adjunta -->
+    <button class="btn btn-primary" onclick="tomarFotoOrdenRapida()"
+            title="Tomar foto del producto y crear la orden">
+      <i class="ti ti-camera-plus"></i>
+    </button>
+
+    <button class="btn btn-primary" onclick="abrirModalOrden()">
+      <i class="ti ti-plus"></i> Agregar orden
+    </button>
+  </div>
 
 </div>
+
+<!-- Entrada de cámara del flujo rápido (oculta; la dispara el botón de arriba) -->
+<input type="file" id="f-orden-foto-rapida" accept="image/*" capture="environment"
+       style="display:none" onchange="onFotoProductoSeleccionada(this, true)" />
 
 <!-- ── KPI Cards ── -->
 <div class="metrics" style="margin-bottom:20px">
@@ -177,13 +190,55 @@
   <div style="background:var(--color-bg-primary);border-radius:var(--radius-lg);padding:28px;width:540px;max-width:95vw;box-shadow:var(--shadow-lg);margin:auto">
 
     <!-- Cabecera -->
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:22px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
       <span style="font-size:16px;font-weight:600">Nueva orden</span>
       <button onclick="cerrarModalOrden()"
               style="background:none;border:none;cursor:pointer;font-size:20px;color:var(--color-text-secondary);line-height:1">
         <i class="ti ti-x"></i>
       </button>
     </div>
+
+    <!-- ── FOTO DEL PRODUCTO ──
+         Un solo ícono de cámara para los dos flujos: si la orden viene del
+         botón de cámara, la foto ya está adjunta (marca verde) y al tocar el
+         ícono se ve; si la orden se abrió a mano, arranca vacío (marca roja)
+         y se puede adjuntar o tomar la foto desde acá. Ver js/pedidos.js -->
+    <div style="display:flex;align-items:center;gap:12px;background:var(--color-bg-secondary);border-radius:var(--radius-md);padding:10px 12px;margin-bottom:18px">
+
+      <button type="button" id="btn-ver-foto-orden" onclick="toggleVistaPreviaFotoOrden()"
+              style="position:relative;background:var(--color-bg-primary);border:1px solid var(--color-border-secondary);border-radius:var(--radius-md);width:46px;height:46px;flex-shrink:0;cursor:pointer;font-size:21px;color:var(--color-text-tertiary)">
+        <i class="ti ti-camera"></i>
+        <span id="foto-orden-badge"
+              style="position:absolute;top:-5px;right:-5px;width:15px;height:15px;border-radius:50%;background:var(--color-red);border:2px solid var(--color-bg-secondary)"></span>
+      </button>
+
+      <div style="flex:1;min-width:0">
+        <div id="foto-orden-estado" style="font-size:12px;font-weight:600;color:var(--color-text-secondary)">Sin foto adjunta</div>
+        <div id="orden-modo-rapido-hint" style="display:none;font-size:11px;color:var(--color-text-tertiary);margin-top:2px">
+          Modo rápido: solo hacen falta tienda, destinatario y teléfono.
+        </div>
+        <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
+          <button type="button" class="btn btn-sm" onclick="adjuntarFotoOrden()">
+            <i class="ti ti-paperclip"></i> Adjuntar foto
+          </button>
+          <button type="button" class="btn btn-sm" onclick="tomarFotoOrden()">
+            <i class="ti ti-camera"></i> Tomar foto
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Vista previa: se abre y se cierra tocando el ícono de cámara -->
+    <div id="foto-orden-preview" style="display:none;margin-bottom:18px">
+      <img id="foto-orden-preview-img" alt="Foto del producto"
+           style="width:100%;max-height:320px;object-fit:contain;border-radius:var(--radius-md);display:block;background:var(--color-bg-tertiary)" />
+    </div>
+
+    <!-- Entradas de archivo del modal (ocultas) -->
+    <input type="file" id="f-orden-foto-archivo" accept="image/*"
+           style="display:none" onchange="onFotoProductoSeleccionada(this, false)" />
+    <input type="file" id="f-orden-foto-camara" accept="image/*" capture="environment"
+           style="display:none" onchange="onFotoProductoSeleccionada(this, false)" />
 
     <div style="display:flex;flex-direction:column;gap:14px">
 

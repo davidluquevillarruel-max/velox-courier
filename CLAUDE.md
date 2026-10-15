@@ -8,6 +8,45 @@ Velox Courier — internal management system for a courier/delivery company in L
 
 **The system is live in production** with real stores and delivery riders (motorizados) using it daily. See "Production rules" below before touching anything database- or deploy-related.
 
+## Estado actual
+
+Última actualización: 15 de octubre de 2026.
+
+- **Flujo rápido con foto (Pedidos)** — un botón de cámara al lado de "Agregar orden"
+  abre la cámara del dispositivo con `getUserMedia` (sirve en PC y celular) y, con la
+  foto tomada, abre "Nueva orden" ya adjunta. En ese modo solo se piden tienda,
+  destinatario y teléfono: el distrito queda en el comodín `SIN DEFINIR` para
+  completarlo después desde "Actualizar orden". El modal tiene un único ícono de cámara
+  con marca roja (sin foto) o verde (con foto) que abre la vista previa.
+- **Fotos: MODO PRUEBA.** El código de R2 está completo pero **el bucket todavía no
+  existe**, así que las fotos se guardan en `server/uploads_local/` (gitignored) y se
+  sirven por `GET /api/ordenes/:id/foto/:fotoId` validando sesión. El código prefiere R2
+  solo cuando las 5 variables `R2_*` estén en el `.env` (ver `server/r2.js` y
+  `server/almacenamiento-local.js`). Las fotos guardadas en modo prueba **no se migran
+  solas** a R2. En `ordenes_fotos` las dos clases de foto se distinguen por la columna
+  `tipo`: `foto_producto` (al crear la orden) y `evidencia_medio_pago`.
+- **Medio de pago** — concepto separado de "método de pago": `metodo_pago` es
+  `sin-cobro`/`contraentrega` (se define al crear) y `medio_pago` es cómo entró la plata
+  (`yape-motorizado`, `efectivo-motorizado`, `pago-tienda`, `pago-empresa`). Los dos
+  últimos exigen evidencia fotográfica. `pago-empresa` se muestra como "Pago Velox" pero
+  se llama distinto por dentro para no confundirlo con la columna `pago_velox`, que es
+  otra cosa (el prepago de la tienda en oficina).
+- **Concurrencia** — control optimista con `row_version`: los 4 endpoints que usa
+  "Actualizar orden" aceptan un `ifVersion` opcional y responden 409 con los datos
+  frescos si otro usuario guardó primero, en vez de pisarlo. El modal corta la secuencia
+  y avisa sin guardar nada a medias.
+- **Multiusuario** — las listas se refrescan solas cada 8 s (Asignación cada 10 s)
+  repintando solo el `<tbody>`, nunca la página entera: los filtros de cada usuario son
+  locales a su navegador y no se pisan entre sí. Helper compartido
+  `iniciarRefrescoAutomatico()` en `js/utils.js`.
+- **Rol motorizado** — en "Actualizar orden" tiene bloqueados los montos y el motorizado
+  asignado, no ve "Pago del delivery en oficina", y las condiciones especiales son solo
+  lectura. El bloqueo real es server-side (`/completo` y `/estado` ignoran esos campos si
+  quien llama es motorizado), no solo visual.
+
+**Pendiente:** crear el bucket R2 con sus credenciales, y aplicar las 3 migraciones en
+producción (ver "Migraciones pendientes de aplicar en producción").
+
 ## Running it locally
 
 The project lives at `D:\courier-velox` on the dev PC `DESKTOP-E9N76IK`.
@@ -63,6 +102,29 @@ Roles: `admin`, `operador`, `visor`, `tienda`, `motorizado`. `GESTORES = ['admin
 - **Database schema changes do not travel through git.** They're applied by hand on the server (`sqlcmd` or versioned migration scripts). A migration file added to this repo does not get run automatically anywhere. Production changes go **only** as `ALTER TABLE` scripts (never as a `.bak`, see above). Note that `velox_agregar_*.sql` migration scripts are gitignored, so they exist only on the dev PC.
 - `DECISIONES.md` is the living decision log (why SQL Server over Postgres, why R2 over Cloudinary, the auth rewrite, the D-005 decimal bug, etc.) — check it for the reasoning behind non-obvious architectural choices before proposing to change them.
 - `credenciales_tiendas.md` / `credenciales_motorizados.md` are gitignored and known stale (documented in `DECISIONES.md` D-006) — don't treat them as a source of truth for who has access.
+
+## Migraciones pendientes de aplicar en producción
+
+Estos 3 scripts ya están aplicados y verificados en local (`DESKTOP-E9N76IK`), pero
+**todavía no se corrieron en el servidor**. Como los `velox_agregar_*.sql` están
+gitignored, no viajan con `git push`: hay que copiarlos al servidor y correrlos a mano
+con `sqlcmd`, **en este orden**.
+
+| # | Script | Qué hace |
+| --- | --- | --- |
+| 1 | `velox_agregar_medio_pago.sql` | Columna `medio_pago` en `ordenes`; restringe `metodo_pago` a `sin-cobro`/`contraentrega` (elimina Plin y POS migrando los datos viejos); crea la tabla `ordenes_fotos`. |
+| 2 | `velox_agregar_concurrencia.sql` | Columna `row_version` (`ROWVERSION`) en `ordenes`, para el control de concurrencia optimista. |
+| 3 | `velox_agregar_distrito_sin_definir.sql` | Distrito comodín `SIN DEFINIR` (tarifa 0, inactivo) que usan las órdenes del flujo rápido con foto. |
+
+Qué pasa si falta cada uno:
+
+- **Sin el 1**, el backend falla en cuanto alguien abre o guarda una orden (`SELECT_ORDEN`
+  consulta `medio_pago` y `ordenes_fotos`).
+- **Sin el 2**, el sistema funciona igual (el chequeo de versión es opcional y compatible
+  hacia atrás), pero dos usuarios editando la misma orden se siguen pisando en silencio.
+- **Sin el 3**, el flujo rápido con foto devuelve un error que lo dice explícitamente.
+
+Cuando se apliquen en el servidor, borrar la fila correspondiente de esta tabla.
 
 ## Reglas de trabajo
 

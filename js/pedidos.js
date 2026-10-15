@@ -13,6 +13,14 @@ var CATALOGO_DISTRITOS   = [];
 var _filtroFecha  = '';
 var _ordenesCache = []; /* caché local del día activo */
 
+/* ── FOTO DEL PRODUCTO ──
+   La foto vive comprimida en memoria hasta que la orden existe: la
+   subida necesita el id de la orden, que recién se conoce después
+   del POST (ver _subirFotoProducto). */
+var _fotoProductoBlob = null;  /* JPEG comprimido listo para subir */
+var _fotoProductoUrl  = null;  /* object URL solo para la vista previa */
+var _modoOrdenRapida  = false; /* true = solo tienda, destinatario y teléfono */
+
 /* Comboboxes buscables del modal "Agregar orden" (js/combobox.js).
    Se inicializan una sola vez por carga de página en initPedidos(). */
 var _comboTienda     = null;
@@ -124,8 +132,14 @@ function _filaOrdenPedido(o) {
       ? ' <span style="font-size:10px;color:var(--color-amber-text);background:var(--color-amber-bg);padding:1px 5px;border-radius:8px">+S/' + pagoMotoAdicional.toFixed(2) + '</span>'
       : '');
 
+  /* Si la orden tiene foto del producto, un ícono para abrirla */
+  var foto = o.foto_producto_url
+    ? ' <a href="' + o.foto_producto_url + '" target="_blank" rel="noopener" title="Ver la foto del producto"' +
+      ' style="color:var(--color-blue);text-decoration:none"><i class="ti ti-camera"></i></a>'
+    : '';
+
   return '<tr>' +
-    '<td><strong>#' + o.codigo + '</strong></td>' +
+    '<td><strong>#' + o.codigo + '</strong>' + foto + '</td>' +
     '<td>' + o.tienda + especial + '</td>' +
     '<td>' + (o.dest_nombre || '—') + '</td>' +
     '<td>' + (typeof _botonWhatsApp === 'function' ? _botonWhatsApp(o.dest_telefono, o.dest_nombre, o.dest_telefono_2) : (o.dest_telefono || '—')) + '</td>' +
@@ -164,11 +178,12 @@ async function _cargarCatalogos() {
       CATALOGO_MOTORIZADOS.push({ id: m.id, nombre: m.nombre, zona: m.zona || '' });
     });
 
-    /* Distritos desde tarifas */
+    /* Distritos desde tarifas — solo los activos: los inactivos no son
+       elegibles, y ahí vive el comodín "SIN DEFINIR" del flujo rápido */
     const rD = await fetch(API + '/tarifas');
     const tarifas = await rD.json();
     CATALOGO_DISTRITOS.length = 0;
-    tarifas.forEach(function(t) {
+    tarifas.filter(function(t){ return t.activo; }).forEach(function(t) {
       CATALOGO_DISTRITOS.push(t.distrito);
     });
 
@@ -303,7 +318,18 @@ function _initCombosOrden() {
   }, function() { onDistritoChange(); });
 }
 
-window.abrirModalOrden = function() {
+/**
+ * @param {boolean} [modoRapido] true cuando se entra desde el botón de
+ *   cámara: la foto ya está adjunta y solo se piden tienda,
+ *   destinatario y teléfono. Sin este parámetro (botón "Agregar
+ *   orden") el modal arranca sin foto y pide los campos de siempre.
+ */
+window.abrirModalOrden = function(modoRapido) {
+  _modoOrdenRapida = !!modoRapido;
+  /* En el flujo normal se arranca sin foto; en el rápido se conserva
+     la que se acaba de tomar */
+  if (!_modoOrdenRapida) _limpiarFotoProducto();
+
   var fFecha = document.getElementById('f-orden-fecha');
   if (fFecha) fFecha.value = _hoy();
 
@@ -334,6 +360,7 @@ window.abrirModalOrden = function() {
 
   var errEl = document.getElementById('orden-modal-error');
   if (errEl) errEl.style.display = 'none';
+  _pintarEstadoFotoOrden();
   document.getElementById('orden-modal-overlay').style.display = 'flex';
 };
 
@@ -380,7 +407,300 @@ window.onDistritoChange = function() {
 
 window.cerrarModalOrden = function() {
   document.getElementById('orden-modal-overlay').style.display = 'none';
+  _limpiarFotoProducto();
+  _modoOrdenRapida = false;
 };
+
+/* ════════════════════════════════════════════
+   FOTO DEL PRODUCTO — captura, vista previa y subida
+
+   Un solo ícono de cámara en el modal sirve para los dos flujos:
+   · Botón de cámara de la barra → se toma la foto y el modal se
+     abre con la foto ya adjunta (marca verde).
+   · Botón "Agregar orden" → el modal arranca sin foto (marca roja)
+     y se puede adjuntar un archivo o tomar la foto ahí mismo.
+════════════════════════════════════════════ */
+
+/* ── TAMAÑO DE LA FOTO ──
+   Mismo criterio que el resto del proyecto (DECISIONES.md D-003) */
+var _FOTO_MAX_ANCHO = 1280;
+var _FOTO_CALIDAD   = 0.7;
+
+/* Cámara en vivo: stream activo y si la captura viene del flujo rápido */
+var _camaraStream      = null;
+var _camaraFlujoRapido = false;
+
+/* Botón de cámara de la barra: abre la cámara y, con la foto tomada,
+   abre el modal en modo rápido */
+window.tomarFotoOrdenRapida = function() {
+  abrirCamaraOrden(true);
+};
+
+/* Botones de adentro del modal */
+window.tomarFotoOrden = function() {
+  abrirCamaraOrden(false);
+};
+window.adjuntarFotoOrden = function() {
+  var input = document.getElementById('f-orden-foto-archivo');
+  if (input) input.click();
+};
+
+/* ── CÁMARA EN VIVO (getUserMedia) ──
+   Funciona igual en PC (webcam) y en celular (cámara trasera). Antes
+   esto usaba input capture="environment", pero eso es solo una
+   sugerencia que las PC ignoran: ahí siempre abría el explorador de
+   archivos en vez de la cámara.
+
+   Ojo: getUserMedia exige contexto seguro (HTTPS o localhost). Si se
+   entra desde el celular por http://IP-de-la-PC:3000, el navegador la
+   bloquea — en ese caso se cae al input con capture, que en celular sí
+   abre la cámara nativa. En producción (HTTPS) funciona directo. */
+
+/* El overlay se arma una sola vez y se reutiliza */
+function _overlayCamara() {
+  var overlay = document.getElementById('camara-orden-overlay');
+  if (overlay) return overlay;
+
+  overlay = document.createElement('div');
+  overlay.id = 'camara-orden-overlay';
+  overlay.style.cssText = 'display:none;position:fixed;inset:0;background:rgba(0,0,0,0.88);z-index:1300;align-items:center;justify-content:center;padding:16px';
+  overlay.innerHTML =
+    '<div style="width:100%;max-width:520px;display:flex;flex-direction:column;gap:12px">' +
+      '<video id="camara-orden-video" autoplay playsinline muted ' +
+             'style="width:100%;max-height:68vh;background:#000;border-radius:var(--radius-md);object-fit:contain"></video>' +
+      '<div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">' +
+        '<button type="button" class="btn btn-primary" onclick="capturarFotoCamara()">' +
+          '<i class="ti ti-camera"></i> Capturar' +
+        '</button>' +
+        '<button type="button" class="btn" onclick="cerrarCamaraOrden()">' +
+          '<i class="ti ti-x"></i> Cancelar' +
+        '</button>' +
+      '</div>' +
+    '</div>';
+  document.body.appendChild(overlay);
+  return overlay;
+}
+
+/* Fallback: input nativo con capture (en celular abre la cámara) */
+function _dispararInputCamara(esFlujoRapido) {
+  var input = document.getElementById(esFlujoRapido ? 'f-orden-foto-rapida' : 'f-orden-foto-camara');
+  if (input) input.click();
+}
+
+window.abrirCamaraOrden = async function(esFlujoRapido) {
+  _camaraFlujoRapido = !!esFlujoRapido;
+
+  /* Navegador sin getUserMedia o sin contexto seguro (http por IP) */
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    _dispararInputCamara(esFlujoRapido);
+    return;
+  }
+
+  var overlay = _overlayCamara();
+  overlay.style.display = 'flex';
+  var video = document.getElementById('camara-orden-video');
+
+  try {
+    /* ideal (no exact) para que en PC no falle al no haber cámara trasera */
+    _camaraStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: 'environment' } },
+      audio: false,
+    });
+    video.srcObject = _camaraStream;
+    try { await video.play(); } catch (e) { /* autoplay ya se encarga */ }
+  } catch (err) {
+    /* Permiso denegado, cámara ocupada, o sin cámara: se usa el input */
+    cerrarCamaraOrden();
+    if (typeof showNotif === 'function') {
+      showNotif('No se pudo abrir la cámara (' + (err.name || 'error') + '). Elegí la foto a mano.', 4000);
+    }
+    _dispararInputCamara(esFlujoRapido);
+  }
+};
+
+/* Toma el frame actual del video, ya escalado, y lo deja listo */
+window.capturarFotoCamara = function() {
+  var video = document.getElementById('camara-orden-video');
+  if (!video || !video.videoWidth) {
+    if (typeof showNotif === 'function') showNotif('La cámara todavía no está lista, probá de nuevo');
+    return;
+  }
+
+  var escala = video.videoWidth > _FOTO_MAX_ANCHO ? _FOTO_MAX_ANCHO / video.videoWidth : 1;
+  var canvas = document.createElement('canvas');
+  canvas.width  = Math.round(video.videoWidth  * escala);
+  canvas.height = Math.round(video.videoHeight * escala);
+  canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+
+  var esRapido = _camaraFlujoRapido;
+  cerrarCamaraOrden();
+
+  canvas.toBlob(function(blob) {
+    if (!blob) {
+      if (typeof showNotif === 'function') showNotif('No se pudo capturar la foto');
+      return;
+    }
+    _guardarFotoEnMemoria(blob);
+    _usarFotoTomada(esRapido);
+  }, 'image/jpeg', _FOTO_CALIDAD);
+};
+
+/* Corta el stream: sin esto queda prendida la luz de la cámara */
+window.cerrarCamaraOrden = function() {
+  if (_camaraStream) {
+    _camaraStream.getTracks().forEach(function(t) { t.stop(); });
+    _camaraStream = null;
+  }
+  var video = document.getElementById('camara-orden-video');
+  if (video) video.srcObject = null;
+  var overlay = document.getElementById('camara-orden-overlay');
+  if (overlay) overlay.style.display = 'none';
+};
+
+/* Deja la foto comprimida lista para subir (la comparten la cámara en
+   vivo y el adjuntar archivo) */
+function _guardarFotoEnMemoria(blob) {
+  _limpiarFotoProducto();
+  _fotoProductoBlob = blob;
+  _fotoProductoUrl  = URL.createObjectURL(blob);
+}
+
+/* Qué hacer una vez que ya hay foto: en el flujo rápido abre el modal,
+   en el normal solo refresca el indicador */
+function _usarFotoTomada(esFlujoRapido) {
+  if (esFlujoRapido) {
+    abrirModalOrden(true);
+  } else {
+    _pintarEstadoFotoOrden();
+    if (typeof showNotif === 'function') showNotif('Foto adjunta a la orden');
+  }
+}
+
+/**
+ * Se dispara al elegir una foto con el input (adjuntar archivo, o el
+ * fallback de cámara en celular). Comprime y la deja lista en memoria.
+ * @param {HTMLInputElement} input
+ * @param {boolean} esFlujoRapido true si viene del botón de la barra:
+ *   en ese caso además abre el modal con la foto ya adjunta.
+ */
+window.onFotoProductoSeleccionada = async function(input, esFlujoRapido) {
+  var file = input.files && input.files[0];
+  input.value = ''; /* permite volver a elegir el mismo archivo */
+  if (!file) return;
+
+  try {
+    _guardarFotoEnMemoria(await comprimirImagenJPEG(file, _FOTO_MAX_ANCHO, _FOTO_CALIDAD));
+  } catch (err) {
+    if (typeof showNotif === 'function') showNotif(err.message || 'No se pudo procesar la foto');
+    return;
+  }
+
+  _usarFotoTomada(esFlujoRapido);
+};
+
+/* El ícono de cámara del modal muestra u oculta la foto adjunta */
+window.toggleVistaPreviaFotoOrden = function() {
+  var cont = document.getElementById('foto-orden-preview');
+  var img  = document.getElementById('foto-orden-preview-img');
+  if (!cont || !img) return;
+
+  if (!_fotoProductoBlob) {
+    if (typeof showNotif === 'function') showNotif('Todavía no hay foto adjunta');
+    return;
+  }
+
+  if (cont.style.display === 'block') { cont.style.display = 'none'; return; }
+  img.src = _fotoProductoUrl;
+  cont.style.display = 'block';
+};
+
+/* Marca roja = sin foto, verde = con foto */
+function _pintarEstadoFotoOrden() {
+  var hayFoto = !!_fotoProductoBlob;
+  var badge   = document.getElementById('foto-orden-badge');
+  var estado  = document.getElementById('foto-orden-estado');
+  var btnVer  = document.getElementById('btn-ver-foto-orden');
+  var hint    = document.getElementById('orden-modo-rapido-hint');
+
+  if (badge)  badge.style.background = hayFoto ? 'var(--color-green)' : 'var(--color-red)';
+  if (estado) estado.textContent = hayFoto
+    ? 'Foto adjunta — toca la cámara para verla'
+    : 'Sin foto adjunta';
+  if (btnVer) {
+    btnVer.style.color = hayFoto ? 'var(--color-green)' : 'var(--color-text-tertiary)';
+    btnVer.title = hayFoto ? 'Ver la foto adjunta' : 'Todavía no hay foto adjunta';
+  }
+  if (hint) hint.style.display = _modoOrdenRapida ? 'block' : 'none';
+
+  if (!hayFoto) {
+    var cont = document.getElementById('foto-orden-preview');
+    if (cont) cont.style.display = 'none';
+  }
+}
+
+function _limpiarFotoProducto() {
+  if (_fotoProductoUrl) URL.revokeObjectURL(_fotoProductoUrl);
+  _fotoProductoBlob = null;
+  _fotoProductoUrl  = null;
+  var cont = document.getElementById('foto-orden-preview');
+  if (cont) cont.style.display = 'none';
+}
+
+/**
+ * Sube la foto de una orden que YA existe.
+ * Primero intenta Cloudflare R2 con URL firmada (el archivo va
+ * directo del navegador a R2, el servidor no lo toca — diseño de
+ * DECISIONES.md D-003). Si R2 todavía no está configurado, el
+ * servidor responde 503 y se usa el MODO PRUEBA: los bytes van al
+ * servidor, que los guarda en disco.
+ * @returns {Promise<string>} 'r2' o 'local', según dónde quedó.
+ */
+async function _subirFotoProducto(ordenId, blob) {
+  var rPre = await fetch(API + '/ordenes/' + ordenId + '/evidencia/presigned', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ contentType: 'image/jpeg', tipo: 'foto_producto' }),
+  });
+
+  if (rPre.ok) {
+    var pre = await rPre.json();
+
+    /* Sin credentials: R2 no es nuestro servidor, no hace falta
+       (ni conviene) mandarle la cookie de sesión */
+    var rSubida = await fetch(pre.uploadUrl, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'image/jpeg' },
+      body: blob,
+      credentials: 'omit',
+    });
+    if (!rSubida.ok) throw new Error('No se pudo subir la foto al almacenamiento');
+
+    var rReg = await fetch(API + '/ordenes/' + ordenId + '/foto/registrar', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: pre.publicUrl }),
+    });
+    if (!rReg.ok) throw new Error('La foto se subió pero no se pudo asociar a la orden');
+    return 'r2';
+  }
+
+  /* 503 = R2 sin configurar todavía → modo prueba */
+  if (rPre.status !== 503) {
+    var errPre = await rPre.json().catch(function() { return {}; });
+    throw new Error(errPre.error || 'No se pudo preparar la subida de la foto');
+  }
+
+  var rLocal = await fetch(API + '/ordenes/' + ordenId + '/foto/local', {
+    method: 'POST',
+    headers: { 'Content-Type': 'image/jpeg' },
+    body: blob,
+  });
+  if (!rLocal.ok) {
+    var errLocal = await rLocal.json().catch(function() { return {}; });
+    throw new Error(errLocal.error || 'No se pudo guardar la foto');
+  }
+  return 'local';
+}
 
 window.guardarOrden = async function() {
   var fecha      = document.getElementById('f-orden-fecha').value;
@@ -403,7 +723,16 @@ window.guardarOrden = async function() {
   var obs        = document.getElementById('f-orden-obs').value.trim();
   var errEl      = document.getElementById('orden-modal-error');
 
-  if (!fecha || !tienda || !dest || !distrito) {
+  /* En el flujo rápido (botón de cámara) solo se piden tienda,
+     destinatario y teléfono: el distrito queda "SIN DEFINIR" y se
+     completa después desde "Actualizar orden" */
+  if (_modoOrdenRapida) {
+    if (!tienda || !dest || !telef) {
+      errEl.textContent = 'Tienda, destinatario y teléfono son obligatorios.';
+      errEl.style.display = 'block';
+      return;
+    }
+  } else if (!fecha || !tienda || !dest || !distrito) {
     errEl.textContent = 'Fecha, tienda, destinatario y distrito son obligatorios.';
     errEl.style.display = 'block';
     return;
@@ -411,7 +740,7 @@ window.guardarOrden = async function() {
 
   var validaciones = [
     validarTexto(dest, { obligatorio: true, min: 2, max: 100, nombreCampo: 'El nombre del destinatario' }),
-    validarTelefono(telef),
+    _modoOrdenRapida ? validarTelefonoObligatorio(telef) : validarTelefono(telef),
     validarTexto(direccion, { min: 5, max: 200, nombreCampo: 'La dirección' }),
     validarTexto(obs, { max: 300, nombreCampo: 'Las observaciones' }),
   ];
@@ -451,9 +780,22 @@ window.guardarOrden = async function() {
     }
 
     var data = await r.json();
+
+    /* La orden ya está creada: recién ahora existe el id que la subida
+       necesita. Si la foto falla, la orden NO se pierde — se avisa. */
+    var avisoFoto = '';
+    if (_fotoProductoBlob) {
+      try {
+        var donde = await _subirFotoProducto(data.id, _fotoProductoBlob);
+        if (donde === 'local') avisoFoto = ' · foto guardada en modo prueba';
+      } catch (errFoto) {
+        avisoFoto = ' · la orden se guardó, pero la foto no: ' + errFoto.message;
+      }
+    }
+
     cerrarModalOrden();
     renderPedidos();
-    if (typeof showNotif === 'function') showNotif('Orden #' + data.codigo + ' registrada');
+    if (typeof showNotif === 'function') showNotif('Orden #' + data.codigo + ' registrada' + avisoFoto, avisoFoto ? 5000 : 2500);
 
   } catch (err) {
     errEl.textContent = 'Error de conexión con el servidor.';

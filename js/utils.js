@@ -79,6 +79,44 @@ function showNotif(msg, duracion = 2500) {
 }
 
 /* ============================================================
+   COMPRESIÓN DE IMÁGENES EN EL NAVEGADOR
+   Requisito no negociable del módulo de fotos (DECISIONES.md
+   D-003): sin comprimir antes de subir, el almacenamiento sale
+   caro con el volumen de fotos del negocio. ~1280px de ancho y
+   calidad 0.7 deja archivos de ~250 KB.
+   La usan la evidencia del medio de pago (js/motorizados.js) y la
+   foto del producto al crear la orden (js/pedidos.js).
+   ============================================================ */
+function comprimirImagenJPEG(file, maxAncho, calidad) {
+  maxAncho = maxAncho || 1280;
+  calidad  = calidad  || 0.7;
+
+  return new Promise(function(resolve, reject) {
+    var img = new Image();
+    var url = URL.createObjectURL(file);
+
+    img.onload = function() {
+      URL.revokeObjectURL(url);
+      var escala = img.width > maxAncho ? maxAncho / img.width : 1;
+      var canvas = document.createElement('canvas');
+      canvas.width  = Math.round(img.width  * escala);
+      canvas.height = Math.round(img.height * escala);
+      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+      canvas.toBlob(function(blob) {
+        if (blob) resolve(blob); else reject(new Error('No se pudo procesar la imagen'));
+      }, 'image/jpeg', calidad);
+    };
+
+    img.onerror = function() {
+      URL.revokeObjectURL(url);
+      reject(new Error('No se pudo leer el archivo como imagen'));
+    };
+
+    img.src = url;
+  });
+}
+
+/* ============================================================
    REFRESCO AUTOMÁTICO COMPARTIDO
    Varios usuarios con su propio login trabajan sobre la misma
    base al mismo tiempo — esto hace que los cambios de uno

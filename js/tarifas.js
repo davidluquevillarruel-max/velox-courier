@@ -26,6 +26,9 @@ async function _cargarTarifas() {
 
 function _datosFiltrados() {
   return TARIFAS.filter(function(t) {
+    /* Los desactivados no se listan (incluye el comodín "SIN DEFINIR"
+       del flujo rápido de órdenes) */
+    if (!t.activo) return false;
     var matchTexto = !_textoFiltro || t.distrito.toLowerCase().includes(_textoFiltro.toLowerCase());
     var matchZona  = !_zonaFiltro  || t.zona === _zonaFiltro;
     return matchTexto && matchZona;
@@ -73,7 +76,7 @@ function _renderResumenZonas() {
   if (!el) return;
   var zonas = ['Norte/Este','Sur','Centro','Callao','Agencia','Otros'];
   el.innerHTML = zonas.map(function(z) {
-    var count = TARIFAS.filter(function(t){ return t.zona===z; }).length;
+    var count = TARIFAS.filter(function(t){ return t.zona===z && t.activo; }).length;
     if (!count) return '';
     return '<div class="metric"><div class="metric-label">Zona ' + z + '</div>' +
            '<div class="metric-val blue">' + count + ' distritos</div></div>';

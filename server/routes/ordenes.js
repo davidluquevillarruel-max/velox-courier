@@ -9,6 +9,7 @@ const router  = express.Router();
 const { getPool, sql } = require('../db');
 const { requireAuth, requireRol } = require('../middleware/auth');
 const { r2Habilitado, generarUrlSubidaEvidencia } = require('../r2');
+const { guardarFoto, rutaArchivo, existeFoto } = require('../almacenamiento-local');
 
 /* Todas las rutas de este archivo exigen sesión */
 router.use(requireAuth);
@@ -28,6 +29,15 @@ const PAGO_VELOX_METODOS = ['efectivo', 'yape'];
    exigen evidencia fotográfica adjunta. */
 const MEDIOS_PAGO = ['yape-motorizado', 'efectivo-motorizado', 'pago-tienda', 'pago-empresa'];
 const MEDIOS_PAGO_CON_EVIDENCIA = ['pago-tienda', 'pago-empresa'];
+
+/* Distrito comodín del flujo rápido con foto: la orden se crea sin
+   distrito elegido y se completa después (ver
+   velox_agregar_distrito_sin_definir.sql) */
+const DISTRITO_SIN_DEFINIR = 'SIN DEFINIR';
+
+/* tipo en ordenes_fotos para la foto del producto tomada al crear la
+   orden (la otra es 'evidencia_medio_pago') */
+const TIPO_FOTO_PRODUCTO = 'foto_producto';
 
 /* ────────────────────────────────────────────────────────────
    Devuelve el filtro SQL según quién pregunta.
@@ -78,6 +88,7 @@ const SELECT_ORDEN = `
     o.dest_nombre, o.dest_telefono, o.dest_telefono_2, o.dest_direccion,
     o.estado, o.condicion_especial AS condicionEspecial, o.devuelto, o.devuelto_tienda, o.metodo_pago, o.medio_pago, o.pago_velox, o.pago_velox_metodo,
     (SELECT TOP 1 url FROM ordenes_fotos WHERE id_orden = o.id AND tipo = 'evidencia_medio_pago' ORDER BY subido_en DESC) AS evidencia_url,
+    (SELECT TOP 1 url FROM ordenes_fotos WHERE id_orden = o.id AND tipo = 'foto_producto' ORDER BY subido_en DESC) AS foto_producto_url,
     o.delivery_base, o.monto_adicional, o.delivery_total,
     o.monto_cobrado, o.monto_producto,
     o.pago_moto_base, o.pago_moto_adicional, o.pago_moto_total,
@@ -182,10 +193,15 @@ router.post('/', requireRol(...GESTORES), async (req, res) => {
     `);
     const nuevoCodigo = `C-${codRes.recordset[0].siguiente}`;
 
+    /* Flujo rápido (botón de cámara): si no se eligió distrito, la
+       orden se guarda con el comodín "SIN DEFINIR" y se completa
+       después desde "Actualizar orden" */
+    const nombreDistrito = (o.distrito && String(o.distrito).trim()) || DISTRITO_SIN_DEFINIR;
+
     const lookups = await pool.request()
       .input('tienda',   sql.NVarChar, o.tienda)
       .input('origen',   sql.NVarChar, o.origen || 'GAMARRA')
-      .input('distrito', sql.NVarChar, o.distrito)
+      .input('distrito', sql.NVarChar, nombreDistrito)
       .query(`
         SELECT
           (SELECT id FROM tiendas   WHERE nombre = @tienda)   AS id_tienda,
@@ -197,7 +213,13 @@ router.post('/', requireRol(...GESTORES), async (req, res) => {
 
     if (!id_tienda)   return res.status(400).json({ error: `Tienda no encontrada: ${o.tienda}` });
     if (!id_origen)   return res.status(400).json({ error: `Origen no encontrado: ${o.origen}` });
-    if (!id_distrito) return res.status(400).json({ error: `Distrito no encontrado: ${o.distrito}` });
+    if (!id_distrito) {
+      return res.status(400).json({
+        error: nombreDistrito === DISTRITO_SIN_DEFINIR
+          ? 'Falta el distrito "SIN DEFINIR" en la base: corré velox_agregar_distrito_sin_definir.sql.'
+          : `Distrito no encontrado: ${nombreDistrito}`
+      });
+    }
 
     if (o.condicionEspecial && !CONDICIONES_ESPECIALES.includes(o.condicionEspecial)) {
       return res.status(400).json({ error: 'Condición especial no válida' });
@@ -697,8 +719,9 @@ router.post('/:id/evidencia/presigned', async (req, res) => {
       });
     }
 
-    const { contentType } = req.body;
-    const { uploadUrl, publicUrl } = await generarUrlSubidaEvidencia(req.params.id, contentType);
+    const { contentType, tipo } = req.body;
+    const carpeta = tipo === TIPO_FOTO_PRODUCTO ? 'productos' : 'evidencias';
+    const { uploadUrl, publicUrl } = await generarUrlSubidaEvidencia(req.params.id, contentType, carpeta);
 
     res.json({ uploadUrl, publicUrl });
   } catch (err) {
@@ -762,6 +785,123 @@ router.patch('/:id/medio-pago', async (req, res) => {
   } catch (err) {
     console.error('PATCH /ordenes/:id/medio-pago:', err.message);
     res.status(500).json({ error: 'Error al guardar el medio de pago' });
+  }
+});
+
+/* ════════════════════════════════════════════════════════════
+   FOTO DEL PRODUCTO (flujo rápido con cámara)
+   Dos caminos, según si R2 está configurado:
+   · R2 activo → el navegador pide una URL firmada (la ruta
+     /evidencia/presigned de arriba, con tipo 'foto_producto'),
+     sube la foto DIRECTO a R2 y después registra la URL con
+     POST /:id/foto/registrar. El servidor nunca toca el archivo
+     (diseño original, ver DECISIONES.md D-003).
+   · R2 sin configurar (MODO PRUEBA) → el navegador manda los bytes
+     a POST /:id/foto/local, que los guarda en disco y los sirve por
+     GET /:id/foto/:fotoId, siempre validando sesión.
+════════════════════════════════════════════════════════════ */
+
+/* Inserta la fila en ordenes_fotos y devuelve su id */
+async function registrarFoto(pool, ordenId, tipo, url) {
+  const r = await pool.request()
+    .input('id_orden', sql.BigInt,   ordenId)
+    .input('tipo',     sql.NVarChar, tipo)
+    .input('url',      sql.NVarChar, url)
+    .query(`INSERT INTO ordenes_fotos (id_orden, tipo, url) VALUES (@id_orden, @tipo, @url);
+            SELECT CAST(SCOPE_IDENTITY() AS INT) AS id;`);
+  return r.recordset[0].id;
+}
+
+/* ── POST /api/ordenes/:id/foto/registrar — URL ya subida a R2 ── */
+router.post('/:id/foto/registrar', async (req, res) => {
+  try {
+    const pool = await getPool();
+    if (!(await puedeTocarOrden(req.usuario, req.params.id, pool))) {
+      return res.status(403).json({ error: 'No puedes agregar fotos a esta orden' });
+    }
+
+    const { url } = req.body;
+    if (!url || typeof url !== 'string' || url.length > 500) {
+      return res.status(400).json({ error: 'URL de foto no válida' });
+    }
+
+    const fotoId = await registrarFoto(pool, req.params.id, TIPO_FOTO_PRODUCTO, url);
+    res.status(201).json({ ok: true, fotoId, url });
+  } catch (err) {
+    console.error('POST /ordenes/:id/foto/registrar:', err.message);
+    res.status(500).json({ error: 'Error al registrar la foto' });
+  }
+});
+
+/* ── POST /api/ordenes/:id/foto/local — MODO PRUEBA ────────────
+   Recibe el JPEG crudo (el navegador ya lo comprimió). Solo aplica
+   mientras R2 no esté configurado; si R2 ya está activo se rechaza,
+   para no terminar con fotos partidas entre los dos almacenamientos. */
+router.post('/:id/foto/local',
+  express.raw({ type: 'image/jpeg', limit: '6mb' }),
+  async (req, res) => {
+    try {
+      const pool = await getPool();
+      if (!(await puedeTocarOrden(req.usuario, req.params.id, pool))) {
+        return res.status(403).json({ error: 'No puedes agregar fotos a esta orden' });
+      }
+      if (r2Habilitado()) {
+        return res.status(409).json({ error: 'R2 ya está configurado: la foto debe subirse a R2, no al disco local.' });
+      }
+      if (!Buffer.isBuffer(req.body) || req.body.length === 0) {
+        return res.status(400).json({ error: 'No llegó ninguna imagen (se espera un JPEG).' });
+      }
+
+      const ordenId = req.params.id;
+
+      /* Se inserta primero para tener el id, que forma parte del
+         nombre del archivo en disco — así la ruta que lo sirve lo
+         reconstruye sola, sin guardar el nombre en otra columna */
+      const fotoId = await registrarFoto(pool, ordenId, TIPO_FOTO_PRODUCTO, '');
+      await guardarFoto(ordenId, fotoId, req.body);
+
+      const url = `/api/ordenes/${parseInt(ordenId, 10)}/foto/${fotoId}`;
+      await pool.request()
+        .input('id',  sql.Int,      fotoId)
+        .input('url', sql.NVarChar, url)
+        .query('UPDATE ordenes_fotos SET url = @url WHERE id = @id');
+
+      res.status(201).json({ ok: true, fotoId, url, modo: 'local' });
+    } catch (err) {
+      console.error('POST /ordenes/:id/foto/local:', err.message);
+      res.status(500).json({ error: 'Error al guardar la foto' });
+    }
+  }
+);
+
+/* ── GET /api/ordenes/:id/foto/:fotoId — sirve la foto local ────
+   Con sesión: la foto no queda pública como sí lo estaría en R2. */
+router.get('/:id/foto/:fotoId', async (req, res) => {
+  try {
+    const pool = await getPool();
+    if (!(await puedeTocarOrden(req.usuario, req.params.id, pool))) {
+      return res.status(403).json({ error: 'No puedes ver las fotos de esta orden' });
+    }
+
+    const ordenId = parseInt(req.params.id, 10);
+    const fotoId  = parseInt(req.params.fotoId, 10);
+    if (!ordenId || !fotoId) return res.status(400).json({ error: 'Identificador no válido' });
+
+    /* La foto tiene que pertenecer a esta orden */
+    const r = await pool.request()
+      .input('id',       sql.Int,    fotoId)
+      .input('id_orden', sql.BigInt, ordenId)
+      .query('SELECT TOP 1 1 AS x FROM ordenes_fotos WHERE id = @id AND id_orden = @id_orden');
+    if (!r.recordset[0]) return res.status(404).json({ error: 'Foto no encontrada' });
+
+    if (!existeFoto(ordenId, fotoId)) {
+      return res.status(404).json({ error: 'El archivo de la foto no está en el servidor' });
+    }
+
+    res.sendFile(rutaArchivo(ordenId, fotoId));
+  } catch (err) {
+    console.error('GET /ordenes/:id/foto/:fotoId:', err.message);
+    res.status(500).json({ error: 'Error al obtener la foto' });
   }
 });
 

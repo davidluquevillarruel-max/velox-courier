@@ -1138,7 +1138,10 @@ function _renderModalActualizarOrden(orden, tiendas, distritos, motorizados) {
   });
 
   initComboBuscable('f-orden-distrito-update', function() {
-    return distritos.map(function(d) { return { value: d.distrito, label: d.distrito }; });
+    /* Solo distritos activos: el comodín "SIN DEFINIR" del flujo rápido
+       no debe poder elegirse a mano */
+    return distritos.filter(function(d){ return d.activo; })
+      .map(function(d) { return { value: d.distrito, label: d.distrito }; });
   }, function(valor) { onDistritoChangeUpdate(valor); });
 
   /* Recalcula de una por si el valor guardado había quedado desactualizado,
@@ -1234,24 +1237,9 @@ window.onMedioPagoChangeUpdate = function() {
    D-003: ~1280px de ancho, calidad 0.7 — sin esto, cualquier proveedor
    de almacenamiento sale caro con el volumen de fotos del negocio). */
 function _comprimirImagenEvidencia(file) {
-  return new Promise(function(resolve, reject) {
-    var img = new Image();
-    var url = URL.createObjectURL(file);
-    img.onload = function() {
-      URL.revokeObjectURL(url);
-      var maxAncho = 1280;
-      var escala = img.width > maxAncho ? maxAncho / img.width : 1;
-      var canvas = document.createElement('canvas');
-      canvas.width  = Math.round(img.width * escala);
-      canvas.height = Math.round(img.height * escala);
-      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
-      canvas.toBlob(function(blob) {
-        if (blob) resolve(blob); else reject(new Error('No se pudo procesar la imagen'));
-      }, 'image/jpeg', 0.7);
-    };
-    img.onerror = function() { URL.revokeObjectURL(url); reject(new Error('No se pudo leer el archivo como imagen')); };
-    img.src = url;
-  });
+  /* La compresión vive en js/utils.js (comprimirImagenJPEG), compartida
+     con la foto del producto de js/pedidos.js */
+  return comprimirImagenJPEG(file, 1280, 0.7);
 }
 
 /* Al elegir un archivo: comprime, pide una URL firmada al servidor, y

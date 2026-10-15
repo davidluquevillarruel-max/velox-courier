@@ -58,14 +58,17 @@ const TIPOS_PERMITIDOS = {
 
 /* Genera una URL firmada de subida (PUT) válida por 5 minutos, y la
    URL pública final donde va a quedar la foto una vez subida.
-   ordenId se usa para armar una ruta legible dentro del bucket. */
-async function generarUrlSubidaEvidencia(ordenId, contentType) {
+   ordenId se usa para armar una ruta legible dentro del bucket, y
+   carpeta separa los tipos de foto ('evidencias' para el medio de
+   pago, 'productos' para la foto que se toma al crear la orden). */
+async function generarUrlSubidaEvidencia(ordenId, contentType, carpeta) {
   const ext = TIPOS_PERMITIDOS[contentType];
   if (!ext) {
     throw new Error('Tipo de imagen no permitido (usa JPEG, PNG o WEBP)');
   }
 
-  const nombreArchivo = `evidencias/orden-${ordenId}/${Date.now()}-${crypto.randomBytes(4).toString('hex')}.${ext}`;
+  const prefijo = carpeta === 'productos' ? 'productos' : 'evidencias';
+  const nombreArchivo = `${prefijo}/orden-${ordenId}/${Date.now()}-${crypto.randomBytes(4).toString('hex')}.${ext}`;
 
   const comando = new PutObjectCommand({
     Bucket: process.env.R2_BUCKET,

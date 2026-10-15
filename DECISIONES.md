@@ -4,7 +4,7 @@
 > Sirve también como contexto de arranque para Claude Code: si se copia a `CLAUDE.md`
 > en la raíz del repo, la herramienta lo lee automáticamente al iniciar.
 >
-> Última actualización: 17 de julio de 2026
+> Última actualización: 15 de octubre de 2026
 
 ---
 
@@ -57,7 +57,7 @@ servidor**. Reglas:
 
 1. **Nunca** restaurar un `.bak` de la PC encima del servidor: borra los datos reales.
 2. Para traer datos frescos a la PC, el backup va **del servidor hacia la PC**, no al revés.
-3. La PC (`DESKTOP-ERVF8UO`) es **desarrollo**; el servidor es **producción**. Son dos bases
+3. La PC (`DESKTOP-E9N76IK`) es **desarrollo**; el servidor es **producción**. Son dos bases
    distintas que no se sincronizan.
 
 > Excepción temporal (mientras NADIE use el sistema): se puede sobrescribir libremente.
@@ -110,6 +110,23 @@ rutas responden un error claro en vez de fallar. Variables que hay que agregar a
 cuando el bucket esté listo: `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`,
 `R2_BUCKET`, `R2_PUBLIC_URL`. También hay que configurar CORS en el bucket para aceptar PUT
 desde `http://localhost:3000` y `https://sistema.veloxcourierperu.com`.
+
+**Modo prueba mientras no exista el bucket:** `server/almacenamiento-local.js` guarda las
+fotos en `server/uploads_local/` (gitignored) y se sirven por
+`GET /api/ordenes/:id/foto/:fotoId` validando sesión. Es una desviación consciente del
+diseño de abajo (acá el archivo SÍ pasa por el servidor) para poder probar el flujo
+completo. El código prefiere R2 en cuanto `r2Habilitado()` da true; las fotos guardadas
+en modo prueba quedan como URLs locales y **no se migran solas**.
+
+**Dos clases de foto**, distinguidas por `ordenes_fotos.tipo`: `foto_producto` (la que se
+toma al crear la orden, flujo rápido con cámara) y `evidencia_medio_pago` (la que exigen
+los medios de pago "pago tienda" y "pago Velox").
+
+**Captura:** `getUserMedia` con vista en vivo, que funciona igual en PC (webcam) y celular
+(cámara trasera). Antes se usaba `<input capture="environment">`, pero las PC ignoran ese
+atributo y siempre abrían el explorador de archivos. `getUserMedia` exige HTTPS o
+localhost: si se entra desde el celular por `http://IP:3000` el navegador la bloquea, y
+ahí sí cae al input con `capture`, que en celular abre la cámara nativa.
 
 **Volumen real:** 4-5 fotos x 500 pedidos/día = ~2,250/día = ~810,000 almacenadas (retención 12 meses).
 

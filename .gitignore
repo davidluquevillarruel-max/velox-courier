@@ -4,3 +4,4 @@ node_modules/
 credenciales_*.md
 video/
 velox_agregar_*.sql
+server/uploads_local/

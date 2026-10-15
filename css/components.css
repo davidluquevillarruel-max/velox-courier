@@ -396,3 +396,80 @@
 .toggle-switch input:checked + .toggle-slider::before {
   transform: translateX(18px);
 }
+
+/* ── Indicador de fotos pendientes (js/indicador-fotos.js) ──
+   Pastilla fija abajo a la izquierda (abajo a la derecha están los
+   avisos de showNotif). Va por encima de los modales (z-index 1100)
+   para que el motorizado la vea con "Actualizar orden" abierto. */
+.indicador-fotos {
+  position: fixed;
+  left: 16px;
+  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  z-index: 1150;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: calc(100vw - 32px);
+  padding: 9px 14px;
+  border: 1px solid var(--color-amber-icon);
+  border-radius: 999px;
+  background: var(--color-amber-bg);
+  color: var(--color-amber-text);
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow: var(--shadow-md);
+  cursor: pointer;
+}
+.indicador-fotos i { font-size: 17px; }
+.indicador-fotos-error {
+  border-color: var(--color-red-icon);
+  background: var(--color-red-bg);
+  color: var(--color-red-text);
+}
+
+.indicador-fotos-panel {
+  position: fixed;
+  left: 16px;
+  bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+  z-index: 1150;
+  width: 340px;
+  max-width: calc(100vw - 32px);
+  max-height: 60vh;
+  overflow-y: auto;
+  padding: 14px;
+  border: 1px solid var(--color-border-tertiary);
+  border-radius: var(--radius-lg);
+  background: var(--color-bg-primary);
+  box-shadow: var(--shadow-lg);
+}
+.indicador-fotos-panel-cabecera {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.indicador-fotos-panel-cabecera button {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 18px;
+  color: var(--color-text-secondary);
+}
+.indicador-fotos-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 0;
+  border-top: 1px solid var(--color-border-tertiary);
+}
+.indicador-fotos-item-titulo { font-size: 13px; font-weight: 600; }
+.indicador-fotos-item-titulo span { font-weight: 400; color: var(--color-text-tertiary); }
+.indicador-fotos-item-detalle { font-size: 11px; color: var(--color-text-secondary); margin-top: 2px; }
+.indicador-fotos-item-error   { font-size: 11px; color: var(--color-red-text); margin-top: 2px; }
+.indicador-fotos-nota {
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  margin: 8px 0 10px;
+}

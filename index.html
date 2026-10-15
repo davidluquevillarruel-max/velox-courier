@@ -137,11 +137,17 @@
 <!-- Notificación flotante global -->
 <div class="notification" id="notif"></div>
 
+<!-- Fotos pendientes de subir (js/indicador-fotos.js): pastilla fija abajo
+     a la izquierda, oculta si la cola está vacía; al tocarla abre el panel -->
+<button type="button" class="indicador-fotos" id="indicador-fotos" style="display:none" onclick="togglePanelFotos()"></button>
+<div class="indicador-fotos-panel" id="indicador-fotos-panel" style="display:none"></div>
+
 <!-- ══════════════════════════════════════════
      SCRIPTS (orden importa)
      utils     → debe ir primero (showNotif, fecha)
      cola-fotos → después de utils (usa su fetch con cookie); antes
                   de pedidos/motorizados, que encolan las fotos
+     indicador-fotos → después de cola-fotos (pinta su estado)
      navigation → carga las páginas desde pages/
      filters   → filtrarTablaPedidos (texto + tienda + motorizado + estado)
      asignacion → asignar, desasignar
@@ -150,6 +156,7 @@
 <script src="js/validators.js"></script>
 <script src="js/utils.js"></script>
 <script src="js/cola-fotos.js"></script>
+<script src="js/indicador-fotos.js"></script>
 <script src="js/combobox.js"></script>
 <script src="js/tarifas.js"></script>
 <script src="js/caja.js"></script>

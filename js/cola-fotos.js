@@ -370,6 +370,9 @@ async function encolarFoto(ordenId, tipo, blob) {
   };
 
   var persistente = await _colaGuardar(item);
+  /* Avisar ya (el indicador de js/indicador-fotos.js la muestra al
+     instante), sin esperar a que termine el intento de subida */
+  _colaNotificarCambio();
   procesarColaFotos();  /* sin await: la subida sigue en segundo plano */
   return { idSubida: item.idSubida, persistente: persistente };
 }

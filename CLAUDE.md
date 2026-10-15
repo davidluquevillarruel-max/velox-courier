@@ -66,8 +66,12 @@ Velox Courier — internal management system for a courier/delivery company in L
 - Cola de fotos, parte 5: indicador visible de "fotos pendientes" con "Reintentar ahora"
   (`index.html` + `css/components.css`), y mostrar `evidencia_pendiente` en las listas.
 - Probar en el navegador las partes 1–3 (subida con/sin señal, sin duplicados).
-- Decidir si tienda/visor pueden ver las fotos guardadas en modo prueba (hoy reciben 403 en
-  `GET /:id/foto/:fotoId`).
+- **Siguiente:** ícono de la foto del producto para el rol tienda. El servidor ya le deja
+  ver la foto de SUS órdenes (`puedeVerFotoOrden` en `server/routes/ordenes.js`), pero
+  ninguna página que ve la tienda la muestra todavía (el ícono solo está en "Todos los
+  pedidos" y en "Actualizar orden"). Candidata: la vista de Clientes.
+- El visor sigue recibiendo 403 al abrir fotos aunque ve todas las órdenes en las listas
+  (se dejó así a propósito; revisar si algún día debe verlas).
 - Más adelante, opcional: Background Sync (service worker; solo Chrome Android).
 - Crear el bucket R2 con sus credenciales, y aplicar las 4 migraciones en producción (ver
   "Migraciones pendientes de aplicar en producción").

@@ -1013,25 +1013,50 @@ router.post('/:id/foto/local',
   }
 );
 
+/* Permiso para VER una foto (distinto de puedeTocarOrden, que es
+   para modificar la orden):
+   · admin / operador → todas
+   · motorizado       → las de sus órdenes (igual que puedeTocarOrden)
+   · tienda           → solo la foto del producto, y solo de órdenes
+                        de SU tienda. La tienda sale de la sesión y la
+                        de la orden, de la BD: nada viene del cliente.
+   · visor            → ninguna */
+async function puedeVerFotoOrden(usuario, ordenId, tipo, pool) {
+  if (usuario.rol === 'tienda') {
+    if (!usuario.id_tienda || tipo !== TIPO_FOTO_PRODUCTO) return false;
+    const r = await pool.request()
+      .input('id', sql.BigInt, ordenId)
+      .query('SELECT id_tienda FROM ordenes WHERE id = @id');
+    const fila = r.recordset[0];
+    return !!fila && fila.id_tienda === usuario.id_tienda;
+  }
+  return puedeTocarOrden(usuario, ordenId, pool);
+}
+
 /* ── GET /api/ordenes/:id/foto/:fotoId — sirve la foto local ────
-   Con sesión: la foto no queda pública como sí lo estaría en R2. */
+   Con sesión: la foto no queda pública como sí lo estaría en R2.
+   Quién puede verla: ver puedeVerFotoOrden. */
 router.get('/:id/foto/:fotoId', async (req, res) => {
   try {
     const pool = await getPool();
-    if (!(await puedeTocarOrden(req.usuario, req.params.id, pool))) {
-      return res.status(403).json({ error: 'No puedes ver las fotos de esta orden' });
-    }
 
     const ordenId = parseInt(req.params.id, 10);
     const fotoId  = parseInt(req.params.fotoId, 10);
     if (!ordenId || !fotoId) return res.status(400).json({ error: 'Identificador no válido' });
 
-    /* La foto tiene que pertenecer a esta orden */
+    /* La foto tiene que pertenecer a esta orden; el tipo hace falta
+       para decidir el permiso (la tienda solo ve la del producto) */
     const r = await pool.request()
       .input('id',       sql.Int,    fotoId)
       .input('id_orden', sql.BigInt, ordenId)
-      .query('SELECT TOP 1 1 AS x FROM ordenes_fotos WHERE id = @id AND id_orden = @id_orden');
-    if (!r.recordset[0]) return res.status(404).json({ error: 'Foto no encontrada' });
+      .query('SELECT TOP 1 tipo FROM ordenes_fotos WHERE id = @id AND id_orden = @id_orden');
+    const foto = r.recordset[0];
+
+    /* Sin permiso se responde 403 antes de decir si la foto existe */
+    if (!(await puedeVerFotoOrden(req.usuario, ordenId, foto ? foto.tipo : null, pool))) {
+      return res.status(403).json({ error: 'No puedes ver las fotos de esta orden' });
+    }
+    if (!foto) return res.status(404).json({ error: 'Foto no encontrada' });
 
     if (!existeFoto(ordenId, fotoId)) {
       return res.status(404).json({ error: 'El archivo de la foto no está en el servidor' });

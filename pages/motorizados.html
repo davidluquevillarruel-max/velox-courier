@@ -96,12 +96,14 @@
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
         <div>
           <label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px">Zona de cobertura *</label>
+          <!-- Los value tienen que coincidir con zonas.nombre en la BD (el
+               servidor rechaza una zona que no existe). "Agencia" y "Otros"
+               son zonas de tarifas, no de cobertura de un motorizado. -->
           <select id="f-moto-zona" class="filter-select" style="width:100%">
             <option value="">Seleccionar zona...</option>
-            <option value="Norte">Norte</option>
+            <option value="Norte/Este">Norte / Este</option>
             <option value="Sur">Sur</option>
             <option value="Centro">Centro</option>
-            <option value="Este">Este</option>
             <option value="Callao">Callao</option>
           </select>
         </div>

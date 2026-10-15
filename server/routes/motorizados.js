@@ -31,18 +31,26 @@ router.get('/', async (req, res) => {
   }
 });
 
+/* Busca el id de la zona por nombre. Sin zona → null (permitido).
+   Una zona que no existe devuelve undefined: antes se guardaba vacía
+   sin avisar (pasó con "Norte" y "Este" sueltos, que en la BD son una
+   sola zona "Norte/Este"), y el motorizado quedaba fuera del
+   autoasignar de su zona. */
+async function idDeZona(pool, zona) {
+  if (!zona) return null;
+  const z = await pool.request()
+    .input('zona', sql.NVarChar, zona)
+    .query(`SELECT id FROM zonas WHERE nombre = @zona`);
+  return z.recordset.length > 0 ? z.recordset[0].id : undefined;
+}
+
 /* POST /api/motorizados — solo gestores */
 router.post('/', requireRol(...GESTORES), async (req, res) => {
   try {
     const pool = await getPool();
     const m    = req.body;
-    let id_zona = null;
-    if (m.zona) {
-      const z = await pool.request()
-        .input('zona', sql.NVarChar, m.zona)
-        .query(`SELECT id FROM zonas WHERE nombre = @zona`);
-      if (z.recordset.length > 0) id_zona = z.recordset[0].id;
-    }
+    const id_zona = await idDeZona(pool, m.zona);
+    if (id_zona === undefined) return res.status(400).json({ error: 'Zona no válida' });
     const r = await pool.request()
       .input('nombre',    sql.NVarChar, m.nombre)
       .input('iniciales', sql.NVarChar, m.iniciales || m.nombre.substring(0,2).toUpperCase())
@@ -71,13 +79,8 @@ router.put('/:id', requireRol(...GESTORES), async (req, res) => {
   try {
     const pool = await getPool();
     const m    = req.body;
-    let id_zona = null;
-    if (m.zona) {
-      const z = await pool.request()
-        .input('zona', sql.NVarChar, m.zona)
-        .query(`SELECT id FROM zonas WHERE nombre = @zona`);
-      if (z.recordset.length > 0) id_zona = z.recordset[0].id;
-    }
+    const id_zona = await idDeZona(pool, m.zona);
+    if (id_zona === undefined) return res.status(400).json({ error: 'Zona no válida' });
     await pool.request()
       .input('id',        sql.Int,      req.params.id)
       .input('nombre',    sql.NVarChar, m.nombre)

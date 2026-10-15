@@ -71,8 +71,9 @@ Velox Courier — internal management system for a courier/delivery company in L
   quien llama es motorizado), no solo visual.
 
 **Pendiente:**
-- Mostrar `evidencia_pendiente` en las listas (el indicador de la cola ya está hecho).
-- Probar en el navegador las partes 1–3 (subida con/sin señal, sin duplicados).
+- Probar en el navegador todo lo de fotos (nada está probado todavía): cola con/sin señal y
+  sin duplicados, evidencia de pago por la cola, indicador y panel, marca de "evidencia
+  pendiente" en las listas, foto en "Actualizar orden" y en Clientes (rol tienda).
 - El visor sigue recibiendo 403 al abrir fotos aunque ve todas las órdenes en las listas
   (se dejó así a propósito; revisar si algún día debe verlas).
 - Más adelante, opcional: Background Sync (service worker; solo Chrome Android).

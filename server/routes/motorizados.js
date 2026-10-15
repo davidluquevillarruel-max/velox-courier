@@ -163,7 +163,11 @@ router.get('/:id/ordenes', async (req, res) => {
              t.nombre AS tienda, d.nombre AS distrito,
              o.dest_nombre, o.dest_telefono, o.dest_telefono_2, o.estado, o.metodo_pago,
              o.delivery_total, o.monto_cobrado, o.monto_producto,
-             o.pago_moto_total, o.monto_adicional, o.producto_especial
+             o.pago_moto_total, o.monto_adicional, o.producto_especial,
+             /* Mismo cálculo que SELECT_ORDEN en routes/ordenes.js */
+             CASE WHEN o.medio_pago IN ('pago-tienda', 'pago-empresa')
+                   AND NOT EXISTS (SELECT 1 FROM ordenes_fotos WHERE id_orden = o.id AND tipo = 'evidencia_medio_pago')
+                  THEN 1 ELSE 0 END AS evidencia_pendiente
       FROM ordenes o
       JOIN tiendas   t ON t.id = o.id_tienda
       JOIN distritos d ON d.id = o.id_distrito

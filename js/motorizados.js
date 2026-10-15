@@ -417,7 +417,7 @@ function _renderTablaOrdenesDetalle(ordenes) {
         : '—';
 
       return '<tr style="border-bottom:1px solid var(--color-border-tertiary)">' +
-        '<td style="padding:8px 12px"><strong>#' + o.codigo + '</strong></td>' +
+        '<td style="padding:8px 12px"><strong>#' + o.codigo + '</strong>' + _iconoEvidenciaPendiente(o) + '</td>' +
         '<td style="padding:8px 12px">' + o.tienda + '</td>' +
         '<td style="padding:8px 12px">' + (o.dest_nombre||'—') + '</td>' +
         '<td style="padding:8px 12px">' + _botonWhatsApp(o.dest_telefono, o.dest_nombre, o.dest_telefono_2) + '</td>' +

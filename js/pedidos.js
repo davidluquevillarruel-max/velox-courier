@@ -122,6 +122,17 @@ function _iconoFotoProducto(url) {
     ' style="color:var(--color-blue);text-decoration:none"><i class="ti ti-camera"></i></a>';
 }
 
+/* Marca ámbar si la orden se cobró con un medio de pago que exige foto
+   ("Pago tienda" / "Pago Velox") y la evidencia todavía no llegó al
+   servidor (sigue en la cola de algún teléfono — ver js/cola-fotos.js).
+   El dato lo calcula el servidor (evidencia_pendiente). Lo comparten
+   "Todos los pedidos" y el detalle del motorizado (js/motorizados.js). */
+function _iconoEvidenciaPendiente(o) {
+  if (!o || !o.evidencia_pendiente) return '';
+  return ' <span title="Evidencia de pago pendiente de subir" style="color:var(--color-amber)">' +
+    '<i class="ti ti-clock-exclamation"></i></span>';
+}
+
 /* Arma la fila <tr> de una orden — la usa la tabla de "Todos los
    pedidos" (renderPedidos) y la de "Pendiente devolución"
    (js/pendiente-devolucion.js), para no repetir este HTML en dos lados */
@@ -144,7 +155,7 @@ function _filaOrdenPedido(o) {
       : '');
 
   return '<tr>' +
-    '<td><strong>#' + o.codigo + '</strong>' + _iconoFotoProducto(o.foto_producto_url) + '</td>' +
+    '<td><strong>#' + o.codigo + '</strong>' + _iconoFotoProducto(o.foto_producto_url) + _iconoEvidenciaPendiente(o) + '</td>' +
     '<td>' + o.tienda + especial + '</td>' +
     '<td>' + (o.dest_nombre || '—') + '</td>' +
     '<td>' + (typeof _botonWhatsApp === 'function' ? _botonWhatsApp(o.dest_telefono, o.dest_nombre, o.dest_telefono_2) : (o.dest_telefono || '—')) + '</td>' +

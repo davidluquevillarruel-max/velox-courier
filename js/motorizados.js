@@ -657,13 +657,23 @@ window.cambiarDiaMoto = function(idx) {
 /* ════════════════════════════════════════════
    MODAL AGREGAR / EDITAR
 ════════════════════════════════════════════ */
+/* Mientras no se escriba a mano en "Número Yape", copia el teléfono.
+   Vive acá y no en pages/motorizados.html porque las páginas se
+   inyectan con innerHTML y el navegador no ejecuta sus <script>. */
+window.sincronizarYapeMoto = function() {
+  var tel  = document.getElementById('f-moto-telefono');
+  var yape = document.getElementById('f-moto-yape');
+  if (tel && yape && !yape._editadoManual) yape.value = tel.value;
+};
+
 window.abrirModalMoto = function() {
   _motoEditId = null;
   document.getElementById('moto-modal-titulo').textContent = 'Agregar motorizado';
   document.getElementById('btn-guardar-moto').innerHTML = '<i class="ti ti-plus"></i> Agregar';
-  ['f-moto-nombre','f-moto-telefono','f-moto-dni','f-moto-placa','f-moto-referencia'].forEach(function(id){
+  ['f-moto-nombre','f-moto-telefono','f-moto-yape','f-moto-dni','f-moto-placa','f-moto-referencia'].forEach(function(id){
     var el = document.getElementById(id); if (el) el.value = '';
   });
+  document.getElementById('f-moto-yape')._editadoManual = false;
   document.getElementById('f-moto-zona').value   = '';
   document.getElementById('f-moto-color').value  = 'av-blue';
   document.getElementById('f-moto-activo').value = 'true';
@@ -679,6 +689,11 @@ window.editarMoto = function(id) {
   document.getElementById('btn-guardar-moto').innerHTML = '<i class="ti ti-check"></i> Guardar cambios';
   document.getElementById('f-moto-nombre').value     = m.nombre;
   document.getElementById('f-moto-telefono').value   = m.telefono || '';
+  /* Si el Yape guardado es distinto del teléfono, se trata como
+     editado a mano: cambiar el teléfono ya no lo pisa */
+  var yapeEl = document.getElementById('f-moto-yape');
+  yapeEl.value = m.yape || '';
+  yapeEl._editadoManual = !!m.yape && m.yape !== (m.telefono || '');
   document.getElementById('f-moto-dni').value        = m.dni || '';
   document.getElementById('f-moto-placa').value      = m.placa || '';
   document.getElementById('f-moto-referencia').value = m.referencia || '';
@@ -696,6 +711,8 @@ window.cerrarModalMoto = function() {
 window.guardarMoto = async function() {
   var nombre     = document.getElementById('f-moto-nombre').value.trim();
   var telefono   = document.getElementById('f-moto-telefono').value.trim();
+  /* Vacío = el servidor copia el teléfono (routes/motorizados.js) */
+  var yape       = document.getElementById('f-moto-yape').value.trim();
   var zona       = document.getElementById('f-moto-zona').value;
   var color      = document.getElementById('f-moto-color').value;
   var activo     = document.getElementById('f-moto-activo').value === 'true';
@@ -707,13 +724,17 @@ window.guardarMoto = async function() {
   var validaciones = [
     validarTexto(nombre, { obligatorio: true, min: 2, max: 100, nombreCampo: 'El nombre del motorizado' }),
     validarTelefonoObligatorio(telefono),
+    /* Mismo formato que un teléfono, pero con su propio mensaje */
+    (yape && !/^[0-9]{9}$/.test(yape))
+      ? { ok: false, msg: 'El número Yape debe tener exactamente 9 dígitos.' }
+      : { ok: true },
     validarDNI(dni, { obligatorio: true }),
     validarPlaca(placa),
     validarTexto(referencia, { max: 200, nombreCampo: 'La referencia' }),
   ];
   if (!ejecutarValidaciones(validaciones, errEl)) return;
 
-  var body = { nombre, telefono, zona, color, activo, dni, placa, referencia,
+  var body = { nombre, telefono, yape, zona, color, activo, dni, placa, referencia,
                iniciales: _initiales(nombre) };
   var url    = API + '/motorizados' + (_motoEditId ? '/' + _motoEditId : '');
   var method = _motoEditId ? 'PUT' : 'POST';

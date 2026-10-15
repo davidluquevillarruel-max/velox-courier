@@ -76,8 +76,9 @@
             Número Yape
             <span style="font-size:10px;color:var(--color-text-tertiary);font-weight:400"> (se autocompleta)</span>
           </label>
+          <!-- Si se escribe a mano, deja de copiarse del teléfono (ver sincronizarYapeMoto en js/motorizados.js) -->
           <input id="f-moto-yape" class="search-box" style="width:100%" placeholder="Ej: 987654321" maxlength="9" inputmode="numeric"
-                 oninput="this.value=this.value.replace(/[^0-9]/g,'')" />
+                 oninput="this.value=this.value.replace(/[^0-9]/g,''); this._editadoManual = true" />
         </div>
       </div>
 
@@ -166,15 +167,3 @@
     </div>
   </div>
 </div>
-
-<script>
-window.sincronizarYapeMoto = function() {
-  var tel  = document.getElementById('f-moto-telefono');
-  var yape = document.getElementById('f-moto-yape');
-  if (tel && yape && !yape._editadoManual) yape.value = tel.value;
-};
-document.addEventListener('DOMContentLoaded', function() {
-  var yape = document.getElementById('f-moto-yape');
-  if (yape) yape.addEventListener('input', function(){ yape._editadoManual = true; });
-});
-</script>

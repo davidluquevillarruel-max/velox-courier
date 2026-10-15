@@ -153,8 +153,18 @@ window.reintentarFotosDesdeIndicador = async function() {
 };
 
 window.descartarFotoDesdeIndicador = async function(btn) {
-  if (!confirm('¿Descartar esta foto? No se va a subir y se borra del teléfono.')) return;
-  await descartarFotoEnCola(btn.getAttribute('data-id'));
+  var id   = btn.getAttribute('data-id');
+  var item = _indicadorFotosItems.find(function(it) { return it.idSubida === id; });
+
+  var mensaje = '¿Descartar esta foto? No se va a subir y se borra del teléfono.';
+  /* Una evidencia descartada deja la orden con la evidencia pendiente
+     (el medio de pago ya quedó guardado sin foto) */
+  if (item && item.tipo === 'evidencia_medio_pago') {
+    mensaje += '\n\nOjo: es una evidencia de pago. La orden va a quedar con la evidencia ' +
+      'pendiente hasta que alguien suba otra foto desde "Actualizar orden".';
+  }
+  if (!confirm(mensaje)) return;
+  await descartarFotoEnCola(id);
 };
 
 (function _iniciarIndicadorFotos() {

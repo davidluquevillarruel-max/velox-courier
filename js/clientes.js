@@ -449,7 +449,8 @@ function _filaOrdenDetalle(o, _ec, mostrarFecha) {
     : '<span style="color:var(--color-text-tertiary)">S/ 0.00</span>';
   return '<tr>' +
     (mostrarFecha ? '<td style="font-size:12px;color:var(--color-text-secondary)">' + _fechaDisplayCli(o.fecha) + '</td>' : '') +
-    '<td><strong>#'+o.codigo+'</strong></td>' +
+    /* Mismo ícono de foto que en "Todos los pedidos" (js/pedidos.js) */
+    '<td><strong>#'+o.codigo+'</strong>'+_iconoFotoProducto(o.foto_producto_url)+'</td>' +
     '<td>'+(o.dest_nombre||'—')+'</td>' +
     '<td>'+o.distrito+'</td>' +
     '<td>'+(o.motorizado||'—')+'</td>' +

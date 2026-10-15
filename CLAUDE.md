@@ -40,6 +40,11 @@ Velox Courier — internal management system for a courier/delivery company in L
   `pago-tienda`/`pago-empresa` (puede llegar después por la cola); `SELECT_ORDEN` devuelve
   `evidencia_pendiente` = 1 mientras falte. Las URLs de R2 que se registran se validan contra
   el bucket y la orden (`esUrlDeOrden` en `server/r2.js`).
+- **Foto del producto, dónde se ve** — ícono de cámara en "Todos los pedidos", en el detalle
+  de la tienda en Clientes (lo ve la tienda, solo de sus órdenes) y vista previa en
+  "Actualizar orden". El ícono es `_iconoFotoProducto()` en `js/pedidos.js`. La ruta que
+  sirve la foto local decide quién la ve con `puedeVerFotoOrden()`: la tienda solo la del
+  producto y solo de su `id_tienda` (de la sesión); el visor, ninguna.
 - **Medio de pago** — concepto separado de "método de pago": `metodo_pago` es
   `sin-cobro`/`contraentrega` (se define al crear) y `medio_pago` es cómo entró la plata
   (`yape-motorizado`, `efectivo-motorizado`, `pago-tienda`, `pago-empresa`). Los dos
@@ -66,10 +71,6 @@ Velox Courier — internal management system for a courier/delivery company in L
 - Cola de fotos, parte 5: indicador visible de "fotos pendientes" con "Reintentar ahora"
   (`index.html` + `css/components.css`), y mostrar `evidencia_pendiente` en las listas.
 - Probar en el navegador las partes 1–3 (subida con/sin señal, sin duplicados).
-- **Siguiente:** ícono de la foto del producto para el rol tienda. El servidor ya le deja
-  ver la foto de SUS órdenes (`puedeVerFotoOrden` en `server/routes/ordenes.js`), pero
-  ninguna página que ve la tienda la muestra todavía (el ícono solo está en "Todos los
-  pedidos" y en "Actualizar orden"). Candidata: la vista de Clientes.
 - El visor sigue recibiendo 403 al abrir fotos aunque ve todas las órdenes en las listas
   (se dejó así a propósito; revisar si algún día debe verlas).
 - Más adelante, opcional: Background Sync (service worker; solo Chrome Android).

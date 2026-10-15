@@ -206,7 +206,8 @@ router.get('/:id/ordenes', async (req, res) => {
              d.nombre AS distrito, m.nombre AS motorizado,
              o.dest_nombre, o.estado, o.metodo_pago,
              o.delivery_total, o.monto_adicional, o.monto_cobrado, o.monto_producto,
-             o.pago_moto_total, o.producto_especial
+             o.pago_moto_total, o.producto_especial,
+             (SELECT TOP 1 url FROM ordenes_fotos WHERE id_orden = o.id AND tipo = 'foto_producto' ORDER BY subido_en DESC) AS foto_producto_url
       FROM ordenes o
       JOIN distritos d ON d.id = o.id_distrito
       LEFT JOIN motorizados m ON m.id = o.id_motorizado

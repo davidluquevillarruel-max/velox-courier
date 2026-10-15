@@ -112,6 +112,16 @@ window.confirmarDevolucionDesdeTabla = function(ordenId, btnEl) {
   if (typeof confirmarDevolucionOrden === 'function') confirmarDevolucionOrden(ordenId, btnEl);
 };
 
+/* Ícono de cámara para abrir la foto del producto en otra pestaña.
+   Sin foto devuelve '' (no muestra nada). Lo comparten la tabla de
+   "Todos los pedidos" y el detalle de la tienda en js/clientes.js. */
+function _iconoFotoProducto(url) {
+  if (!url) return '';
+  var href = String(url).replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+  return ' <a href="' + href + '" target="_blank" rel="noopener" title="Ver la foto del producto"' +
+    ' style="color:var(--color-blue);text-decoration:none"><i class="ti ti-camera"></i></a>';
+}
+
 /* Arma la fila <tr> de una orden — la usa la tabla de "Todos los
    pedidos" (renderPedidos) y la de "Pendiente devolución"
    (js/pendiente-devolucion.js), para no repetir este HTML en dos lados */
@@ -133,14 +143,8 @@ function _filaOrdenPedido(o) {
       ? ' <span style="font-size:10px;color:var(--color-amber-text);background:var(--color-amber-bg);padding:1px 5px;border-radius:8px">+S/' + pagoMotoAdicional.toFixed(2) + '</span>'
       : '');
 
-  /* Si la orden tiene foto del producto, un ícono para abrirla */
-  var foto = o.foto_producto_url
-    ? ' <a href="' + o.foto_producto_url + '" target="_blank" rel="noopener" title="Ver la foto del producto"' +
-      ' style="color:var(--color-blue);text-decoration:none"><i class="ti ti-camera"></i></a>'
-    : '';
-
   return '<tr>' +
-    '<td><strong>#' + o.codigo + '</strong>' + foto + '</td>' +
+    '<td><strong>#' + o.codigo + '</strong>' + _iconoFotoProducto(o.foto_producto_url) + '</td>' +
     '<td>' + o.tienda + especial + '</td>' +
     '<td>' + (o.dest_nombre || '—') + '</td>' +
     '<td>' + (typeof _botonWhatsApp === 'function' ? _botonWhatsApp(o.dest_telefono, o.dest_nombre, o.dest_telefono_2) : (o.dest_telefono || '—')) + '</td>' +

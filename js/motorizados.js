@@ -778,6 +778,9 @@ var _ordenActualizarBloqueaEnProceso = false; /* true si hace falta confirmar la
    exitoso, para encadenar los guardados de una misma sesión del
    modal — ver _patchOrdenConVersion(). */
 var _ordenActualizarVersion = null;
+/* Código visible de la orden abierta (ej. "C-1234"), para que el
+   indicador de fotos diga de qué orden es cada evidencia en cola */
+var _ordenActualizarCodigo = '';
 
 /* Evidencia elegida en esta apertura del modal: JPEG comprimido en
    memoria (o null). No se sube al elegirla: al guardar la orden pasa a
@@ -894,6 +897,7 @@ function _renderModalActualizarOrden(orden, tiendas, distritos, motorizados) {
   var vecesDevuelto = parseInt(orden.devuelto) || 0;
   _ordenActualizarBloqueaEnProceso = calificaDevolucion;
   _ordenActualizarVersion = orden.version || null;
+  _ordenActualizarCodigo  = orden.codigo || '';
 
   /* Contador siempre visible, sin importar si la orden está calificando
      ahora mismo o no — es el historial de esta orden */
@@ -1577,7 +1581,7 @@ window.guardarActualizarEstadoOrden = async function() {
     var avisoEvidencia = '';
     if (_medioPagoEvidenciaBlob) {
       try {
-        var enCola = await encolarFoto(_ordenActualizarId, 'evidencia_medio_pago', _medioPagoEvidenciaBlob);
+        var enCola = await encolarFoto(_ordenActualizarId, 'evidencia_medio_pago', _medioPagoEvidenciaBlob, _ordenActualizarCodigo);
         _medioPagoEvidenciaBlob = null;
         avisoEvidencia = enCola.persistente
           ? ' · la evidencia se sube en segundo plano'

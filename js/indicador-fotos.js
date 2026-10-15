@@ -106,6 +106,8 @@ function _pintarPanelFotos() {
     return '<div class="indicador-fotos-item">' +
       '<div style="flex:1;min-width:0">' +
         '<div class="indicador-fotos-item-titulo">' + _escIndicador(_TIPOS_FOTO_LABEL[it.tipo] || 'Foto') +
+          /* Las fotos encoladas antes de guardar el código no lo tienen */
+          (it.codigoOrden ? ' · #' + _escIndicador(it.codigoOrden) : '') +
           ' <span>· ' + _haceCuanto(it.creada) + '</span></div>' +
         detalle +
       '</div>' +

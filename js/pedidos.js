@@ -755,7 +755,7 @@ window.guardarOrden = async function() {
     var avisoFoto = '';
     if (_fotoProductoBlob) {
       try {
-        var enCola = await encolarFoto(data.id, 'foto_producto', _fotoProductoBlob);
+        var enCola = await encolarFoto(data.id, 'foto_producto', _fotoProductoBlob, data.codigo);
         avisoFoto = enCola.persistente
           ? ' · la foto se sube en segundo plano'
           : ' · la foto no se pudo guardar en el teléfono: no cierres Velox hasta que suba';

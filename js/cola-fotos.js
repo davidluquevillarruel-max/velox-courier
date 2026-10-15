@@ -342,11 +342,13 @@ async function procesarColaFotos(opciones) {
  * @param {number} ordenId - La orden ya tiene que existir en el servidor.
  * @param {string} tipo    - 'foto_producto' o 'evidencia_medio_pago'.
  * @param {Blob}   blob    - JPEG ya comprimido (comprimirImagenJPEG).
+ * @param {string} [codigoOrden] - Código visible (ej. "C-1234"), solo para
+ *   mostrarlo en el indicador (js/indicador-fotos.js). Opcional.
  * @returns {Promise<{idSubida: string, persistente: boolean}>}
  *   persistente = false si no se pudo guardar en el teléfono (solo
  *   quedó en memoria: si se cierra la app antes de subir, se pierde).
  */
-async function encolarFoto(ordenId, tipo, blob) {
+async function encolarFoto(ordenId, tipo, blob, codigoOrden) {
   /* Pedir que el navegador no borre la cola si el teléfono se
      queda sin espacio. Puede decir que no; no es bloqueante. */
   if (!_colaPersistenciaPedida && navigator.storage && navigator.storage.persist) {
@@ -358,6 +360,7 @@ async function encolarFoto(ordenId, tipo, blob) {
     idSubida:       _colaNuevoId(),
     idUsuario:      _colaUsuarioActual(),
     ordenId:        parseInt(ordenId, 10),
+    codigoOrden:    codigoOrden || '',
     tipo:           tipo,
     /* ArrayBuffer y no Blob: algunos Safari viejos no guardan Blobs
        en IndexedDB (y tampoco tienen blob.arrayBuffer(), por eso Response) */
@@ -382,7 +385,7 @@ async function obtenerColaFotos() {
   var items = await _colaDelUsuario();
   return items.map(function(it) {
     return {
-      idSubida: it.idSubida, ordenId: it.ordenId, tipo: it.tipo, estado: it.estado,
+      idSubida: it.idSubida, ordenId: it.ordenId, codigoOrden: it.codigoOrden || '', tipo: it.tipo, estado: it.estado,
       intentos: it.intentos, ultimoError: it.ultimoError, creada: it.creada,
       enMemoria: !!it.enMemoria,
     };

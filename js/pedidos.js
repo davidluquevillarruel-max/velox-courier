@@ -599,20 +599,27 @@ window.onFotoProductoSeleccionada = async function(input, esFlujoRapido) {
   _usarFotoTomada(esFlujoRapido);
 };
 
-/* El ícono de cámara del modal muestra u oculta la foto adjunta */
-window.toggleVistaPreviaFotoOrden = function() {
-  var cont = document.getElementById('foto-orden-preview');
-  var img  = document.getElementById('foto-orden-preview-img');
+/* Abre o cierra la vista previa de una foto. Compartida por el modal
+   de nueva orden (foto en memoria) y por "Actualizar orden" en
+   js/motorizados.js (foto ya subida). La imagen se pide recién al
+   abrir, y solo si cambió: así no se gastan datos al abrir el modal. */
+function _toggleVistaPreviaFoto(idContenedor, idImagen, src) {
+  var cont = document.getElementById(idContenedor);
+  var img  = document.getElementById(idImagen);
   if (!cont || !img) return;
 
+  if (cont.style.display === 'block') { cont.style.display = 'none'; return; }
+  if (img.getAttribute('src') !== src) img.src = src;
+  cont.style.display = 'block';
+}
+
+/* El ícono de cámara del modal muestra u oculta la foto adjunta */
+window.toggleVistaPreviaFotoOrden = function() {
   if (!_fotoProductoBlob) {
     if (typeof showNotif === 'function') showNotif('Todavía no hay foto adjunta');
     return;
   }
-
-  if (cont.style.display === 'block') { cont.style.display = 'none'; return; }
-  img.src = _fotoProductoUrl;
-  cont.style.display = 'block';
+  _toggleVistaPreviaFoto('foto-orden-preview', 'foto-orden-preview-img', _fotoProductoUrl);
 };
 
 /* Marca roja = sin foto, verde = con foto */

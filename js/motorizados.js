@@ -924,12 +924,39 @@ function _renderModalActualizarOrden(orden, tiendas, distritos, motorizados) {
       '</div>';
   }
 
+  /* Foto del producto: el mismo ícono de cámara y la misma vista previa
+     que el modal de nueva orden (pages/pedidos.html), solo para ver.
+     Sin foto no se muestra nada. La URL va en data-src y la imagen se
+     pide recién al tocar el ícono (ver _toggleVistaPreviaFoto). */
+  var seccionFotoProducto = '';
+  if (orden.foto_producto_url) {
+    var srcFoto = String(orden.foto_producto_url).replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+    seccionFotoProducto =
+      '<div style="display:flex;align-items:center;gap:12px;background:var(--color-bg-secondary);border-radius:var(--radius-md);padding:10px 12px;margin-bottom:12px">' +
+        '<button type="button" id="btn-ver-foto-orden-update" data-src="' + srcFoto + '" onclick="toggleVistaPreviaFotoUpdate(this)" title="Ver la foto del producto" ' +
+                'style="position:relative;background:var(--color-bg-primary);border:1px solid var(--color-border-secondary);border-radius:var(--radius-md);width:46px;height:46px;flex-shrink:0;cursor:pointer;font-size:21px;color:var(--color-green)">' +
+          '<i class="ti ti-camera"></i>' +
+          '<span style="position:absolute;top:-5px;right:-5px;width:15px;height:15px;border-radius:50%;background:var(--color-green);border:2px solid var(--color-bg-secondary)"></span>' +
+        '</button>' +
+        '<div style="font-size:12px;font-weight:600;color:var(--color-text-secondary)">Foto del producto — toca la cámara para verla</div>' +
+      '</div>' +
+      '<div id="foto-orden-preview-update" style="display:none;margin-bottom:18px">' +
+        '<img id="foto-orden-preview-img-update" alt="Foto del producto" ' +
+             'onerror="fotoUpdateNoCargo()" ' +
+             'style="width:100%;max-height:320px;object-fit:contain;border-radius:var(--radius-md);display:block;background:var(--color-bg-tertiary)" />' +
+        '<div id="foto-orden-preview-error-update" style="display:none;font-size:12px;color:var(--color-text-secondary);padding:10px 12px;background:var(--color-bg-tertiary);border-radius:var(--radius-md)">' +
+          '<i class="ti ti-photo-off"></i> No se pudo cargar la foto' +
+        '</div>' +
+      '</div>';
+  }
+
   overlay.innerHTML =
     '<div style="background:var(--color-bg-primary);border-radius:var(--radius-lg);padding:24px;width:480px;max-width:95vw;box-shadow:0 8px 32px rgba(0,0,0,0.18);margin:auto">' +
       '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px">' +
         '<span style="font-size:15px;font-weight:500">Actualizar orden #' + orden.codigo + '</span>' +
         '<button onclick="cerrarActualizarEstadoOrden()" style="background:none;border:none;cursor:pointer;font-size:18px;color:var(--color-text-secondary)"><i class="ti ti-x"></i></button>' +
       '</div>' +
+      seccionFotoProducto +
       '<div style="display:flex;flex-direction:column;gap:14px">' +
 
         '<div>' +
@@ -1386,6 +1413,21 @@ window.onDistritoChangeUpdate = function(distritoSeleccionado) {
 
   if (fDeliv)    fDeliv.value    = parseFloat(d.precio_delivery).toFixed(2);
   if (fPagoMoto) fPagoMoto.value = parseFloat(d.pago_motorizado || 0).toFixed(2);
+};
+
+/* Ícono de cámara de "Actualizar orden": reusa la vista previa del
+   modal de nueva orden (_toggleVistaPreviaFoto, en js/pedidos.js) */
+window.toggleVistaPreviaFotoUpdate = function(btn) {
+  _toggleVistaPreviaFoto('foto-orden-preview-update', 'foto-orden-preview-img-update', btn.getAttribute('data-src'));
+};
+
+/* La foto no cargó (no está en el servidor, o el rol no puede verla):
+   se esconde la imagen rota y se avisa en su lugar */
+window.fotoUpdateNoCargo = function() {
+  var img = document.getElementById('foto-orden-preview-img-update');
+  var err = document.getElementById('foto-orden-preview-error-update');
+  if (img) img.style.display = 'none';
+  if (err) err.style.display = 'block';
 };
 
 window.cerrarActualizarEstadoOrden = function() {

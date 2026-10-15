@@ -145,15 +145,21 @@ async function _renderTablaResumen() {
   var lbl = document.getElementById('lbl-fecha-motos');
   if (lbl) lbl.textContent = fecha ? 'Mostrando: ' + _fechaDisplayM(fecha) : 'Mostrando: todos los días';
 
-  /* Renderizar filas async */
+  /* Renderizar filas async. Las celdas tienen que coincidir con los 13
+     encabezados de pages/motorizados.html (Motorizado, Teléfono, Yape,
+     9 columnas de números y la de acción) */
   var filas = await Promise.all(_motorizadosVisibles().map(async function(m) {
     var s = await _calcularStatsMoto(m.id, fecha);
+    var celdasContacto =
+      '<td style="font-size:12px">' + (m.telefono || '—') + '</td>' +
+      '<td style="font-size:12px">' + (m.yape || '—') + '</td>';
     if (!s) {
       return '<tr>' +
         '<td><div style="display:flex;align-items:center;gap:8px">' +
           '<div class="avatar ' + m.color_avatar + '" style="width:30px;height:30px;font-size:11px">' + m.iniciales + '</div>' +
           '<strong>' + m.nombre + '</strong></div></td>' +
-        '<td colspan="8" style="color:var(--color-text-tertiary)">Sin órdenes</td>' +
+        celdasContacto +
+        '<td colspan="9" style="color:var(--color-text-tertiary)">Sin órdenes</td>' +
         '<td class="col-accion-moto-fijo"><button class="btn btn-sm" onclick="abrirDetalleMotoHistorial(' + m.id + ')"><i class="ti ti-eye"></i></button></td>' +
       '</tr>';
     }
@@ -164,6 +170,7 @@ async function _renderTablaResumen() {
       '<td><div style="display:flex;align-items:center;gap:8px">' +
         '<div class="avatar ' + m.color_avatar + '" style="width:30px;height:30px;font-size:11px">' + m.iniciales + '</div>' +
         '<strong>' + m.nombre + '</strong></div></td>' +
+      celdasContacto +
       '<td><strong>' + s.total + '</strong></td>' +
       '<td style="color:var(--color-green);font-weight:600">' + s.entregados + '</td>' +
       '<td style="color:var(--color-red-text);font-weight:600">' + s.noEntregados + '</td>' +

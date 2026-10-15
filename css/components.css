@@ -468,6 +468,16 @@
 .indicador-fotos-item-titulo span { font-weight: 400; color: var(--color-text-tertiary); }
 .indicador-fotos-item-detalle { font-size: 11px; color: var(--color-text-secondary); margin-top: 2px; }
 .indicador-fotos-item-error   { font-size: 11px; color: var(--color-red-text); margin-top: 2px; }
+.indicador-fotos-item-acciones {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+/* En el celular el panel es angosto: los botones van uno sobre otro
+   para no aplastar el texto del error */
+@media (max-width: 480px) {
+  .indicador-fotos-item-acciones { flex-direction: column; }
+}
 .indicador-fotos-nota {
   font-size: 11px;
   color: var(--color-text-tertiary);

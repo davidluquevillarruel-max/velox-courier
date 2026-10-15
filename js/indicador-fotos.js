@@ -8,8 +8,8 @@
      navegador avisa que está desconectado).
    · Rojo: hay fotos con error, que no se reintentan solas.
 
-   Al tocarla abre un panel con la lista, "Reintentar ahora" y
-   "Descartar" para las que quedaron con error.
+   Al tocarla abre un panel con la lista y "Reintentar ahora" (todas).
+   Cada foto con error tiene además "Reintentar" y "Descartar".
 
    Se entera de los cambios por el evento 'velox:cola-fotos' que
    emite la cola; no toca IndexedDB directamente.
@@ -112,7 +112,10 @@ function _pintarPanelFotos() {
         detalle +
       '</div>' +
       (it.estado === 'error'
-        ? '<button type="button" class="btn btn-sm" data-id="' + _escIndicador(it.idSubida) + '" onclick="descartarFotoDesdeIndicador(this)">Descartar</button>'
+        ? '<div class="indicador-fotos-item-acciones">' +
+            '<button type="button" class="btn btn-sm" data-id="' + _escIndicador(it.idSubida) + '" onclick="reintentarFotoDesdeIndicador(this)">Reintentar</button>' +
+            '<button type="button" class="btn btn-sm" data-id="' + _escIndicador(it.idSubida) + '" onclick="descartarFotoDesdeIndicador(this)">Descartar</button>' +
+          '</div>'
         : '') +
     '</div>';
   }).join('');
@@ -150,6 +153,19 @@ window.reintentarFotosDesdeIndicador = async function() {
   } finally {
     /* El evento de la cola ya repinta; esto cubre el caso en que la
        pasada no cambió nada (sigue sin señal) */
+    refrescarIndicadorFotos();
+  }
+};
+
+/* "Reintentar" de una foto con error: la vuelve a la cola y la intenta
+   subir ya. Si sube, desaparece de la lista; si falla de nuevo, vuelve
+   a quedar con su error (el evento de la cola repinta el panel). */
+window.reintentarFotoDesdeIndicador = async function(btn) {
+  btn.disabled = true;
+  btn.textContent = 'Subiendo...';
+  try {
+    await reintentarColaFotos(btn.getAttribute('data-id'));
+  } finally {
     refrescarIndicadorFotos();
   }
 };

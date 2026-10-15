@@ -393,10 +393,12 @@ async function obtenerColaFotos() {
 }
 
 /* Botón "Reintentar ahora": también vuelve a probar las que
-   quedaron con error */
-async function reintentarColaFotos() {
+   quedaron con error. Con idSubida, reintenta solo esa foto (botón
+   "Reintentar" de cada foto con error en js/indicador-fotos.js). */
+async function reintentarColaFotos(idSubida) {
   var items = await _colaDelUsuario();
   for (var i = 0; i < items.length; i++) {
+    if (idSubida && items[i].idSubida !== idSubida) continue;
     if (items[i].estado === 'error' || items[i].proximoIntento) {
       items[i].estado = 'pendiente';
       items[i].proximoIntento = 0;

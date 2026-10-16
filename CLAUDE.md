@@ -10,7 +10,11 @@ Velox Courier — internal management system for a courier/delivery company in L
 
 ## Estado actual
 
-Última actualización: 15 de octubre de 2026.
+Última actualización: 16 de octubre de 2026.
+
+- **Probado en local: funciona.** Todo lo de esta sección (fotos, cola, indicador, medio
+  de pago, motorizados) se probó en local y los módulos cargan bien. Lo que **falta** es
+  probar a fondo las funciones de fotos **con corte de señal** (ver "Pendiente").
 
 - **Flujo rápido con foto (Pedidos)** — un botón de cámara al lado de "Agregar orden"
   abre la cámara del dispositivo con `getUserMedia` (sirve en PC y celular) y, con la
@@ -38,8 +42,8 @@ Velox Courier — internal management system for a courier/delivery company in L
   (`js/motorizados.js`): la evidencia se comprime al elegirla y entra a la cola recién
   cuando los PATCH de "Actualizar orden" salieron bien; para guardar basta con que la foto
   esté tomada (en memoria, ya subida, o en la cola de ese teléfono). Guardar la orden sí
-  sigue necesitando señal en ese momento. **Probado solo con `node --check`, todavía no en
-  el navegador.** Indicador visible en `js/indicador-fotos.js`: pastilla fija
+  sigue necesitando señal en ese momento. **Probado en local con señal normal; falta
+  probarlo a fondo con corte de señal.** Indicador visible en `js/indicador-fotos.js`: pastilla fija
   abajo a la izquierda (ámbar = por subir, rojo = con error), oculta si la cola está vacía;
   al tocarla, panel con la lista, "Reintentar ahora" y "Descartar" para las con error.
 - **Evidencia pendiente** — `PATCH /:id/medio-pago` ya no exige la foto al guardar
@@ -71,9 +75,11 @@ Velox Courier — internal management system for a courier/delivery company in L
   quien llama es motorizado), no solo visual.
 
 **Pendiente:**
-- Probar en el navegador todo lo de fotos (nada está probado todavía): cola con/sin señal y
-  sin duplicados, evidencia de pago por la cola, indicador y panel, marca de "evidencia
-  pendiente" en las listas, foto en "Actualizar orden" y en Clientes (rol tienda).
+- Probar a fondo las funciones de fotos **con corte de señal** (en local, con señal normal,
+  ya funcionan): que la foto quede en la cola sin señal y suba sola al volver, sin
+  duplicados; evidencia de pago que entra a la cola y la marca de "evidencia pendiente" que
+  se apaga al subir; indicador y panel (Reintentar/Descartar) con fotos atascadas; reabrir
+  Velox con fotos en cola.
 - El visor sigue recibiendo 403 al abrir fotos aunque ve todas las órdenes en las listas
   (se dejó así a propósito; revisar si algún día debe verlas).
 - Más adelante, opcional: Background Sync (service worker; solo Chrome Android).

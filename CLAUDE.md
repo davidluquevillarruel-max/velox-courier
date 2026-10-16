@@ -12,9 +12,12 @@ Velox Courier — internal management system for a courier/delivery company in L
 
 Última actualización: 16 de octubre de 2026.
 
-- **Probado en local: funciona.** Todo lo de esta sección (fotos, cola, indicador, medio
-  de pago, motorizados) se probó en local y los módulos cargan bien. Lo que **falta** es
-  probar a fondo las funciones de fotos **con corte de señal** (ver "Pendiente").
+- **Deploy completado (16 de octubre de 2026).** Todo lo de esta sección está en
+  producción (`sistema.veloxcourierperu.com`): el código bajó con `git pull`, las 4
+  migraciones (`medio_pago`, `concurrencia`, `distrito_sin_definir`, `id_subida`) están
+  aplicadas en el servidor, se corrió `npm install` (SDK de AWS para R2) y la app corre sin
+  errores. Antes se probó en local y funciona. Lo que **falta** es probar a fondo las
+  fotos **con corte de señal** (ver "Pendiente").
 
 - **Flujo rápido con foto (Pedidos)** — un botón de cámara al lado de "Agregar orden"
   abre la cámara del dispositivo con `getUserMedia` (sirve en PC y celular) y, con la
@@ -22,8 +25,9 @@ Velox Courier — internal management system for a courier/delivery company in L
   destinatario y teléfono: el distrito queda en el comodín `SIN DEFINIR` para
   completarlo después desde "Actualizar orden". El modal tiene un único ícono de cámara
   con marca roja (sin foto) o verde (con foto) que abre la vista previa.
-- **Fotos: MODO PRUEBA.** El código de R2 está completo pero **el bucket todavía no
-  existe**, así que las fotos se guardan en `server/uploads_local/` (gitignored) y se
+- **Fotos: MODO PRUEBA (también en producción).** El código de R2 está completo pero **el
+  bucket todavía no existe**, así que las fotos se guardan en `server/uploads_local/`
+  (gitignored; en producción, en el disco del servidor) y se
   sirven por `GET /api/ordenes/:id/foto/:fotoId` validando sesión. El código prefiere R2
   solo cuando las 5 variables `R2_*` estén en el `.env` (ver `server/r2.js` y
   `server/almacenamiento-local.js`). Las fotos guardadas en modo prueba **no se migran
@@ -75,16 +79,20 @@ Velox Courier — internal management system for a courier/delivery company in L
   quien llama es motorizado), no solo visual.
 
 **Pendiente:**
-- Probar a fondo las funciones de fotos **con corte de señal** (en local, con señal normal,
-  ya funcionan): que la foto quede en la cola sin señal y suba sola al volver, sin
+- **Fotos en modo prueba:** en producción se guardan en el disco del servidor
+  (`server/uploads_local/`), **no** en R2. R2 todavía no está configurado: falta crear el
+  bucket y poner las 5 variables `R2_*` en el `.env` del servidor.
+- **Checklist de entrega / al activar R2:** borrar del servidor las órdenes de prueba, sus
+  registros en `ordenes_fotos` y la carpeta `server/uploads_local/`. Las fotos de modo
+  prueba **no se migran** a R2.
+- Probar a fondo la cola de fotos **con corte de señal**, ahora desde el celular real
+  contra producción: que la foto quede en la cola sin señal y suba sola al volver, sin
   duplicados; evidencia de pago que entra a la cola y la marca de "evidencia pendiente" que
   se apaga al subir; indicador y panel (Reintentar/Descartar) con fotos atascadas; reabrir
   Velox con fotos en cola.
 - El visor sigue recibiendo 403 al abrir fotos aunque ve todas las órdenes en las listas
   (se dejó así a propósito; revisar si algún día debe verlas).
 - Más adelante, opcional: Background Sync (service worker; solo Chrome Android).
-- Crear el bucket R2 con sus credenciales, y aplicar las 4 migraciones en producción (ver
-  "Migraciones pendientes de aplicar en producción").
 
 ## Running it locally
 
@@ -144,29 +152,13 @@ Roles: `admin`, `operador`, `visor`, `tienda`, `motorizado`. `GESTORES = ['admin
 
 ## Migraciones pendientes de aplicar en producción
 
-Estos 4 scripts ya están aplicados y verificados en local (`DESKTOP-E9N76IK`), pero
-**todavía no se corrieron en el servidor**. Como los `velox_agregar_*.sql` están
-gitignored, no viajan con `git push`: hay que copiarlos al servidor y correrlos a mano
-con `sqlcmd`, **en este orden**.
+**Ninguna.** Las 4 últimas (`velox_agregar_medio_pago.sql`,
+`velox_agregar_concurrencia.sql`, `velox_agregar_distrito_sin_definir.sql`,
+`velox_agregar_id_subida.sql`) se aplicaron en el servidor el 16 de octubre de 2026.
 
-| # | Script | Qué hace |
-| --- | --- | --- |
-| 1 | `velox_agregar_medio_pago.sql` | Columna `medio_pago` en `ordenes`; restringe `metodo_pago` a `sin-cobro`/`contraentrega` (elimina Plin y POS migrando los datos viejos); crea la tabla `ordenes_fotos`. |
-| 2 | `velox_agregar_concurrencia.sql` | Columna `row_version` (`ROWVERSION`) en `ordenes`, para el control de concurrencia optimista. |
-| 3 | `velox_agregar_distrito_sin_definir.sql` | Distrito comodín `SIN DEFINIR` (tarifa 0, inactivo) que usan las órdenes del flujo rápido con foto. |
-| 4 | `velox_agregar_id_subida.sql` | Columna `id_subida` (UUID, índice único filtrado) en `ordenes_fotos`, para que los reintentos de la cola de fotos no dupliquen. Requiere la 1. |
-
-Qué pasa si falta cada uno:
-
-- **Sin el 1**, el backend falla en cuanto alguien abre o guarda una orden (`SELECT_ORDEN`
-  consulta `medio_pago` y `ordenes_fotos`).
-- **Sin el 2**, el sistema funciona igual (el chequeo de versión es opcional y compatible
-  hacia atrás), pero dos usuarios editando la misma orden se siguen pisando en silencio.
-- **Sin el 3**, el flujo rápido con foto devuelve un error que lo dice explícitamente.
-- **Sin el 4**, fallan las rutas de subida de fotos (`/foto/local`, `/foto/registrar`
-  consultan `id_subida`). El resto del sistema funciona.
-
-Cuando se apliquen en el servidor, borrar la fila correspondiente de esta tabla.
+Cuando haya una migración nueva, anotarla acá hasta que se aplique en el servidor. Como los
+`velox_agregar_*.sql` están gitignored, no viajan con `git push`: hay que copiarlos al
+servidor y correrlos a mano con `sqlcmd`, **antes** del `git pull`.
 
 ## Reglas de trabajo
 

@@ -1135,12 +1135,24 @@ router.patch('/:id/devolver', requireRol(...GESTORES), async (req, res) => {
       return res.json({ ok: true, duplicada: true, nuevoId: insertRes.recordset[0].id, nuevoCodigo });
     }
 
-    /* Reprogramado / No entregado: misma orden vuelve a en-proceso */
+    /* Reprogramado / No entregado: no se devuelve a la tienda, se
+       reintenta otro día. La misma orden vuelve a en-proceso y SIN
+       motorizado, así queda libre en Asignación. fecha_asignacion se
+       vacía con el motorizado (como al desasignar): al reasignarla,
+       /asignar le pone el día de la nueva asignación y el motorizado
+       nuevo (o el mismo) la ve ese día. ordenes.fecha no cambia (Caja). */
     await pool.request()
       .input('id', sql.BigInt, ordenId)
-      .query(`UPDATE ordenes SET devuelto = devuelto + 1, estado = 'en-proceso' WHERE id = @id`);
+      .query(`
+        UPDATE ordenes
+        SET devuelto = devuelto + 1,
+            estado = 'en-proceso',
+            id_motorizado = NULL,
+            fecha_asignacion = NULL
+        WHERE id = @id
+      `);
 
-    res.json({ ok: true, duplicada: false });
+    res.json({ ok: true, duplicada: false, aAsignacion: true });
   } catch (err) {
     console.error('PATCH /ordenes/:id/devolver:', err.message);
     res.status(500).json({ error: 'Error al procesar la devolución' });

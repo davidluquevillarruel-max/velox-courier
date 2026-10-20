@@ -967,7 +967,7 @@ function _renderModalActualizarOrden(orden, tiendas, distritos, motorizados) {
             ? 'A esta orden ya se le cobró el viaje a la tienda: se va a crear una orden nueva para reintentar la entrega.'
             : (orden.estado === 'cancelado' || orden.condicionEspecial)
             ? 'El producto no vuelve a salir a reparto: queda en almacén, pendiente de devolver a la tienda (ver la página "Devolución Tienda").'
-            : 'La orden va a volver a "En proceso" para que pueda salir de nuevo.') +
+            : 'La orden va a volver a "En proceso" y sin motorizado, a Asignación, para asignarla de nuevo otro día.') +
         '</div>' +
         '<button type="button" class="btn btn-primary btn-sm" onclick="confirmarDevolucionOrden(' + orden.id + ', this)">' +
           '<i class="ti ti-package-import"></i> Confirmar devolución' +
@@ -1445,6 +1445,8 @@ window.confirmarDevolucionOrden = async function(ordenId, btnEl) {
         ? 'Producto devuelto — se creó la orden #' + data.nuevoCodigo + ' para reintentar'
         : data.almacen
         ? 'Producto devuelto — queda en almacén, pendiente de devolver a la tienda'
+        : data.aAsignacion
+        ? 'Producto devuelto — la orden volvió a Asignación, sin motorizado'
         : 'Producto devuelto — la orden volvió a "En proceso"');
     }
 

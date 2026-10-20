@@ -19,6 +19,11 @@ Velox Courier — internal management system for a courier/delivery company in L
   quedan igual. **Queda para analizar aparte:** la Caja de motorizados agrupa el pago por
   `ordenes.fecha`, así que una orden asignada días después cae en un día que quizás ya se marcó
   pagado (pasa desde antes de este cambio).
+- **En local, sin subir: reprogramadas y no entregadas vuelven a Asignación.** Al confirmar la
+  devolución (`PATCH /:id/devolver`) pasan a `en-proceso` **sin motorizado** y con
+  `fecha_asignacion` vacía; al reasignarlas, `/asignar` les pone el día nuevo. Depende de la
+  migración `velox_agregar_fecha_asignacion.sql`. "Pendiente devolución" y "Devolución Tienda"
+  ahora refrescan suave (sin "Cargando..." y sin repintar si nada cambió).
 
 - **En local, sin subir (20 de octubre de 2026): ráfaga con tienda + "Pendiente" con
   destinatario/distrito/cobrado.** No necesita migración (todas las columnas ya existen).

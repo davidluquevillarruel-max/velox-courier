@@ -11,12 +11,20 @@
    la usan las confirmaciones de devolución para refrescar esta
    página en vivo sin volver a armar los comboboxes (si no,
    quedarían duplicados en cada refresco).
+
+   Refresco suave (como "Todos los pedidos"): el "Cargando..." y el
+   mensaje de error solo se ven en la carga inicial. Después se traen
+   los datos y recién ahí se cambian las filas, de una vez; si nada
+   cambió, la tabla no se toca (no se mueve el scroll ni lo que se
+   está por tocar), y si falla la red queda como estaba.
    ============================================================ */
+
+var _ultimoHtmlPendienteDevolucion = null;
 
 window.initPendienteDevolucion = async function() {
   if (typeof _cargarCatalogos === 'function') await _cargarCatalogos();
   _initFiltrosPendienteDevolucion();
-  await _recargarTablaPendienteDevolucion();
+  await _recargarTablaPendienteDevolucion({ inicial: true });
 
   if (typeof iniciarRefrescoAutomatico === 'function') {
     iniciarRefrescoAutomatico('tbody-pendiente-devolucion', _recargarTablaPendienteDevolucion);
@@ -39,13 +47,23 @@ function _initFiltrosPendienteDevolucion() {
   }, function() { filtrarTablaPendienteDevolucion(); });
 }
 
-window._recargarTablaPendienteDevolucion = async function() {
+/**
+ * @param {{inicial: boolean}} [opciones] - inicial = entrada a la
+ *   página: muestra "Cargando..." y, si falla, el error. Sin esto
+ *   (refresco automático, después de confirmar) no se ve nada de eso.
+ */
+window._recargarTablaPendienteDevolucion = async function(opciones) {
+  var inicial = !!(opciones && opciones.inicial);
   var tbody = document.getElementById('tbody-pendiente-devolucion');
   if (!tbody) return;
 
-  tbody.innerHTML = '<tr><td colspan="15" style="text-align:center;padding:24px;color:var(--color-text-tertiary)">' +
-    '<i class="ti ti-loader"></i> Cargando...</td></tr>';
+  if (inicial) {
+    _ultimoHtmlPendienteDevolucion = null;
+    tbody.innerHTML = '<tr><td colspan="15" style="text-align:center;padding:24px;color:var(--color-text-tertiary)">' +
+      '<i class="ti ti-loader"></i> Cargando...</td></tr>';
+  }
 
+  var html;
   try {
     var r = await fetch('/api/ordenes');
     if (!r.ok) throw new Error('No se pudieron cargar las órdenes');
@@ -59,7 +77,7 @@ window._recargarTablaPendienteDevolucion = async function() {
     if (elTotal) elTotal.textContent = filtradas.length + (filtradas.length === 1 ? ' orden' : ' órdenes');
 
     if (filtradas.length === 0) {
-      tbody.innerHTML =
+      html =
         '<tr><td colspan="15" style="padding:0;border:none">' +
           '<div class="empty-state">' +
             '<div class="empty-state-icon"><i class="ti ti-circle-check"></i></div>' +
@@ -68,12 +86,19 @@ window._recargarTablaPendienteDevolucion = async function() {
           '</div>' +
         '</td></tr>';
     } else {
-      tbody.innerHTML = filtradas.map(_filaOrdenPedido).join('');
+      html = filtradas.map(_filaOrdenPedido).join('');
     }
   } catch (err) {
-    tbody.innerHTML = '<tr><td colspan="15" style="text-align:center;padding:24px;color:#A32D2D">Error al cargar las órdenes.</td></tr>';
+    if (inicial) {
+      tbody.innerHTML = '<tr><td colspan="15" style="text-align:center;padding:24px;color:#A32D2D">Error al cargar las órdenes.</td></tr>';
+    }
     return;
   }
+
+  /* Nada cambió desde el último pintado: no se toca la tabla */
+  if (html === _ultimoHtmlPendienteDevolucion) return;
+  _ultimoHtmlPendienteDevolucion = html;
+  tbody.innerHTML = html;
 
   if (typeof filtrarTablaPendienteDevolucion === 'function') filtrarTablaPendienteDevolucion();
 };

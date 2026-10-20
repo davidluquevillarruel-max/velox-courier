@@ -3,7 +3,8 @@
    (página "Todos los pedidos")
 
    Las órdenes de foto en ráfaga (botón ⚡, ver js/pedidos.js)
-   nacen sin datos y con la marca datos_pendientes. Este botón:
+   nacen con su tienda pero sin los demás datos, y con la marca
+   datos_pendientes. Este botón:
      · Se habilita solo si hay alguna (gris si no queda ninguna).
        Se refresca cada 8 s y cada vez que la cola crea una orden.
      · Abre una ventana con una fila por orden: la foto y al
@@ -16,6 +17,10 @@
    (_CAMPOS_PENDIENTES_FORM): si se saca un campo de la lista del
    servidor, desaparece solo de la ventana; para uno nuevo hay que
    agregarlo en los dos lados.
+
+   La tienda no está en la lista: solo la piden las filas con
+   falta_tienda (órdenes creadas con la tienda comodín, de antes de
+   que la ráfaga pidiera la tienda). En las demás se ve en la cabecera.
 
    Solo admin / operador (el servidor lo exige igual).
    ============================================================ */
@@ -65,7 +70,43 @@ var _CAMPOS_PENDIENTES_FORM = {
     validar: function(v) { return validarTelefonoObligatorio(v); },
     body: 'telefDest',
   },
+  /* Al guardarlo, el servidor pone delivery y pago al motorizado con
+     la tarifa del distrito */
+  distrito: {
+    label: 'Distrito *',
+    input: function(id) {
+      return '<input id="pend-distrito-' + id + '" class="search-box" style="' + _ESTILO_INPUT_PEND + '" placeholder="Escribe para buscar distrito..." />';
+    },
+    leer: function(id) { return _valorPend('pend-distrito-' + id); },
+    validar: function(v) {
+      return CATALOGO_DISTRITOS.indexOf(v) !== -1 ? { ok: true } : { ok: false, msg: 'Elegí el distrito de la lista.' };
+    },
+    body: 'distrito',
+  },
+  /* Obligatorio, 0 vale (= sin cobro). El servidor pone el método de
+     pago (contraentrega / sin-cobro) y el valor del producto */
+  cobrado: {
+    label: 'Cobrado (S/) *',
+    input: function(id) {
+      return '<input id="pend-cobrado-' + id + '" type="number" min="0" step="0.50" inputmode="decimal" class="search-box" style="' + _ESTILO_INPUT_PEND + '" placeholder="0 si no se cobra" ' +
+        'onkeydown="if(event.key===\'Enter\')guardarPendiente(\'' + id + '\')" />';
+    },
+    leer: function(id) { return _valorPend('pend-cobrado-' + id).trim(); },
+    validar: function(v) {
+      if (v === '') return { ok: false, msg: 'Escribí el monto cobrado (0 si no se cobra).' };
+      var n = Number(v);
+      if (!isFinite(n) || n < 0) return { ok: false, msg: 'El monto cobrado no es válido.' };
+      return { ok: true, valor: Math.round(n * 100) / 100 };
+    },
+    body: 'cobrado',
+  },
 };
+
+/* Campos que pide la fila de una orden: los de la lista del servidor,
+   y antes la tienda si la orden todavía tiene la tienda comodín */
+function _camposDeFila(o) {
+  return (o.falta_tienda ? ['tienda'] : []).concat(_pendientesCampos);
+}
 
 function _valorPend(idElemento) {
   var el = document.getElementById(idElemento);
@@ -172,6 +213,7 @@ async function _sincronizarListaPendientes() {
     if (!_modalPendientesAbierto()) return;
 
     _pendientesCampos = (data.campos || []).filter(function(c) {
+      if (c === 'tienda') return false;  /* va por fila, con falta_tienda */
       if (_CAMPOS_PENDIENTES_FORM[c]) return true;
       console.warn('Ventana "Pendiente": el campo "' + c + '" no está en _CAMPOS_PENDIENTES_FORM');
       return false;
@@ -192,7 +234,7 @@ async function _sincronizarListaPendientes() {
         _pendientesOrdenes[o.id] = o;
         if (!lista.querySelector('[data-pendiente]')) lista.innerHTML = '';
         lista.insertAdjacentHTML('beforeend', _filaPendienteHTML(o, enCola[o.id]));
-        _initFilaPendiente(o.id);
+        _initFilaPendiente(o);
       } else if (o.foto_producto_url && !_pendientesOrdenes[o.id].foto_producto_url) {
         /* Llegó la foto: se cambia solo la foto, la versión de la fila no */
         _pendientesOrdenes[o.id].foto_producto_url = o.foto_producto_url;
@@ -236,9 +278,11 @@ function _filaPendienteHTML(o, subiendo) {
   var cabecera = '#' + _escPend(o.codigo) +
     ' <span style="font-weight:400;color:var(--color-text-tertiary)">· ' +
     (typeof _fechaDisplay === 'function' ? _fechaDisplay(o.fecha) : _escPend(o.fecha)) +
-    (hora ? ' · ' + _escPend(hora) : '') + '</span>';
+    (hora ? ' · ' + _escPend(hora) : '') + '</span>' +
+    (o.falta_tienda ? '' :
+      '<div style="font-size:13px;font-weight:500;margin-top:2px"><i class="ti ti-building-store"></i> ' + _escPend(o.tienda) + '</div>');
 
-  var campos = _pendientesCampos.map(function(c) {
+  var campos = _camposDeFila(o).map(function(c) {
     var def = _CAMPOS_PENDIENTES_FORM[c];
     return '<div><label style="' + _ESTILO_LABEL_PEND + '">' + def.label + '</label>' + def.input(id) + '</div>';
   }).join('');
@@ -259,12 +303,19 @@ function _filaPendienteHTML(o, subiendo) {
   '</div>';
 }
 
-/* El combobox buscable de tienda necesita el input ya en la página */
-function _initFilaPendiente(id) {
-  if (_pendientesCampos.indexOf('tienda') === -1) return;
-  initComboBuscable('pend-tienda-' + id, function() {
-    return CATALOGO_TIENDAS.map(function(t) { return { value: t.nombre, label: t.nombre }; });
-  });
+/* Los combobox buscables necesitan el input ya en la página */
+function _initFilaPendiente(o) {
+  var campos = _camposDeFila(o);
+  if (campos.indexOf('tienda') !== -1) {
+    initComboBuscable('pend-tienda-' + o.id, function() {
+      return CATALOGO_TIENDAS.map(function(t) { return { value: t.nombre, label: t.nombre }; });
+    });
+  }
+  if (campos.indexOf('distrito') !== -1) {
+    initComboBuscable('pend-distrito-' + o.id, function() {
+      return CATALOGO_DISTRITOS.map(function(d) { return { value: d, label: d }; });
+    });
+  }
 }
 
 function _quitarFilaPendiente(id) {
@@ -305,8 +356,9 @@ window.guardarPendiente = async function(id) {
   if (!orden || !btn || btn.disabled) return;
 
   var body = { ifVersion: orden.version };
-  for (var i = 0; i < _pendientesCampos.length; i++) {
-    var def = _CAMPOS_PENDIENTES_FORM[_pendientesCampos[i]];
+  var campos = _camposDeFila(orden);
+  for (var i = 0; i < campos.length; i++) {
+    var def = _CAMPOS_PENDIENTES_FORM[campos[i]];
     var valor = def.leer(id);
     var res = def.validar(valor);
     if (!res.ok) { _errorFilaPendiente(id, res.msg); return; }

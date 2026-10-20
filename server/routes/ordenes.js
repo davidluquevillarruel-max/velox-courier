@@ -44,6 +44,13 @@ const DISTRITO_SIN_DEFINIR = 'SIN DEFINIR';
    columna datos_pendientes (nace en 1), NO la tienda comodín: la
    tienda solo ocupa el lugar porque id_tienda es NOT NULL.
 
+   Desde que la ráfaga pide la tienda antes de la cámara, la orden
+   ya nace con su tienda. Igual, "tienda distinta del comodín" es un
+   chequeo FIJO (fuera de la lista): las pendientes de antes de ese
+   cambio, o las que se crearon con el comodín porque la tienda ya no
+   era válida, siguen pidiendo la tienda (falta_tienda en
+   GET /pendientes-datos).
+
    CAMPOS_PENDIENTES dice qué hay que completar para que la orden
    deje de estar pendiente. Para cambiarlos:
    · Sacar un campo → quitarlo de la lista (nada más).
@@ -53,13 +60,22 @@ const DISTRITO_SIN_DEFINIR = 'SIN DEFINIR';
    lista que devuelve GET /pendientes-datos.
 ──────────────────────────────────────────────────────────── */
 const TIENDA_SIN_DEFINIR = 'SIN DEFINIR';
-const CAMPOS_PENDIENTES = ['tienda', 'destinatario', 'telefono'];
+const CAMPOS_PENDIENTES = ['destinatario', 'distrito', 'cobrado'];
 
-/* f = fila con tienda (nombre), dest_nombre y dest_telefono */
+const tieneTiendaReal = f => !!f.tienda && f.tienda !== TIENDA_SIN_DEFINIR;
+
+/* f = fila con tienda y distrito (nombres), dest_nombre y dest_telefono */
 const CHEQUEOS_DATOS_PENDIENTES = {
-  tienda:       f => !!f.tienda && f.tienda !== TIENDA_SIN_DEFINIR,
+  tienda:       tieneTiendaReal,
   destinatario: f => !!(f.dest_nombre && f.dest_nombre.trim()),
   telefono:     f => !!(f.dest_telefono && f.dest_telefono.trim()),
+  distrito:     f => !!f.distrito && f.distrito !== DISTRITO_SIN_DEFINIR,
+  /* monto_cobrado es NOT NULL con 0 por defecto: en la base no se
+     distingue "sin llenar" de "sin cobro" (0 es válido). Lo que lo
+     hace obligatorio es PATCH /:id/completar-datos, que no guarda la
+     fila sin el monto; desde "Actualizar orden" el campo siempre está
+     a la vista y se guarda con el resto. */
+  cobrado:      () => true,
 };
 
 /* Si la orden está pendiente y ya tiene todos los CAMPOS_PENDIENTES,
@@ -70,15 +86,17 @@ async function recalcularDatosPendientes(pool, ordenId) {
   const r = await pool.request()
     .input('id', sql.BigInt, ordenId)
     .query(`
-      SELECT o.datos_pendientes, t.nombre AS tienda, o.dest_nombre, o.dest_telefono
+      SELECT o.datos_pendientes, t.nombre AS tienda, d.nombre AS distrito,
+             o.dest_nombre, o.dest_telefono
       FROM ordenes o
-      JOIN tiendas t ON t.id = o.id_tienda
+      JOIN tiendas   t ON t.id = o.id_tienda
+      JOIN distritos d ON d.id = o.id_distrito
       WHERE o.id = @id
     `);
   const f = r.recordset[0];
   if (!f || !f.datos_pendientes) return false;
 
-  const completa = CAMPOS_PENDIENTES.every(c => CHEQUEOS_DATOS_PENDIENTES[c](f));
+  const completa = tieneTiendaReal(f) && CAMPOS_PENDIENTES.every(c => CHEQUEOS_DATOS_PENDIENTES[c](f));
   if (!completa) return true;
 
   await pool.request()
@@ -273,7 +291,10 @@ router.get('/pendientes-datos', requireRol(...GESTORES), async (req, res) => {
     const result = await pool.request().query(
       `${SELECT_ORDEN} WHERE o.datos_pendientes = 1 ORDER BY o.id`
     );
-    res.json({ campos: CAMPOS_PENDIENTES, ordenes: result.recordset });
+    /* falta_tienda: orden creada con la tienda comodín (ver arriba,
+       chequeo fijo): solo esas filas muestran el buscador de tienda */
+    const ordenes = result.recordset.map(o => ({ ...o, falta_tienda: !tieneTiendaReal(o) }));
+    res.json({ campos: CAMPOS_PENDIENTES, ordenes });
   } catch (err) {
     console.error('GET /ordenes/pendientes-datos:', err.message);
     res.status(500).json({ error: 'Error al listar las órdenes pendientes' });
@@ -532,14 +553,39 @@ router.post('/rafaga', requireRol(...GESTORES), async (req, res) => {
    Ventana "Pendiente": completa los datos de una orden de ráfaga
    sin tocar nada más (por eso no se usa /completo, que pisa todos
    los campos). Los CAMPOS_PENDIENTES son obligatorios; los que no
-   estén en la lista se guardan solo si vienen.
+   estén en la lista se guardan solo si vienen. La tienda es
+   obligatoria solo si la orden todavía tiene la tienda comodín.
+
+   Al guardar distrito y cobrado se completa solo lo que depende de
+   ellos (afecta la Caja), con las mismas reglas que el formulario:
+   · Distrito → delivery y pago al motorizado con la tarifa del
+     distrito (como "Nueva orden", onDistritoChange en js/pedidos.js).
+   · Cobrado → método de pago: contraentrega si es > 0, sin-cobro
+     si es 0.
+   · Valor del producto = cobrado − (delivery + adicional), nunca
+     negativo (como "Actualizar orden", _recalcularValorProductoUpdate
+     en js/motorizados.js).
+
    Si otro usuario ya la completó (o la cambió, con ifVersion)
    responde 409 con la orden fresca. */
+const COBRADO_MAXIMO = 999999.99;  /* monto_cobrado es DECIMAL(8,2) */
+
 router.patch('/:id/completar-datos', requireRol(...GESTORES), async (req, res) => {
   try {
     const pool = await getPool();
     const b    = req.body;
     const obligatorio = c => CAMPOS_PENDIENTES.includes(c);
+
+    const actual = await pool.request()
+      .input('id', sql.BigInt, req.params.id)
+      .query(`
+        SELECT t.nombre AS tienda
+        FROM ordenes o
+        JOIN tiendas t ON t.id = o.id_tienda
+        WHERE o.id = @id
+      `);
+    if (!actual.recordset[0]) return res.status(404).json({ error: 'Orden no encontrada' });
+    const faltaTienda = !tieneTiendaReal(actual.recordset[0]);
 
     const sets    = [];
     const request = pool.request().input('id', sql.BigInt, req.params.id);
@@ -556,7 +602,7 @@ router.patch('/:id/completar-datos', requireRol(...GESTORES), async (req, res) =
       }
       request.input('id_tienda', sql.Int, t.id);
       sets.push('id_tienda = @id_tienda');
-    } else if (obligatorio('tienda')) {
+    } else if (faltaTienda || obligatorio('tienda')) {
       return res.status(400).json({ error: 'La tienda es obligatoria.' });
     }
 
@@ -582,6 +628,54 @@ router.patch('/:id/completar-datos', requireRol(...GESTORES), async (req, res) =
       sets.push('dest_telefono = @dest_tel');
     } else if (obligatorio('telefono')) {
       return res.status(400).json({ error: 'El teléfono es obligatorio.' });
+    }
+
+    /* Distrito: tiene que existir, estar activo y no ser el comodín.
+       Trae la tarifa: delivery y pago al motorizado. */
+    const distrito = typeof b.distrito === 'string' ? b.distrito.trim() : '';
+    let deliveryNuevo = false;
+    if (distrito) {
+      const dRes = await pool.request()
+        .input('distrito', sql.NVarChar, distrito)
+        .query(`SELECT id, activo, precio_delivery, pago_motorizado FROM distritos WHERE nombre = @distrito`);
+      const d = dRes.recordset[0];
+      if (!d || !d.activo || distrito === DISTRITO_SIN_DEFINIR) {
+        return res.status(400).json({ error: `Distrito no válido: ${distrito}` });
+      }
+      request
+        .input('id_distrito',   sql.Int,           d.id)
+        .input('delivery_base', sql.Decimal(10,2), parseFloat(d.precio_delivery) || 0)
+        .input('pago_moto',     sql.Decimal(10,2), parseFloat(d.pago_motorizado) || 0);
+      sets.push('id_distrito = @id_distrito', 'delivery_base = @delivery_base', 'pago_moto_base = @pago_moto');
+      deliveryNuevo = true;
+    } else if (obligatorio('distrito')) {
+      return res.status(400).json({ error: 'El distrito es obligatorio.' });
+    }
+
+    /* Cobrado: hay que escribirlo, 0 es válido (= sin cobro) */
+    const cobradoTxt = (b.cobrado === undefined || b.cobrado === null) ? '' : String(b.cobrado).trim();
+    let cobradoNuevo = false;
+    if (cobradoTxt !== '') {
+      const cobrado = Number(cobradoTxt);
+      if (!Number.isFinite(cobrado) || cobrado < 0 || cobrado > COBRADO_MAXIMO) {
+        return res.status(400).json({ error: 'El monto cobrado no es válido.' });
+      }
+      request
+        .input('cobrado', sql.Decimal(10,2), Math.round(cobrado * 100) / 100)
+        .input('metodo',  sql.NVarChar,      cobrado > 0 ? 'contraentrega' : 'sin-cobro');
+      sets.push('monto_cobrado = @cobrado', 'metodo_pago = @metodo');
+      cobradoNuevo = true;
+    } else if (obligatorio('cobrado')) {
+      return res.status(400).json({ error: 'El monto cobrado es obligatorio (0 si no se cobra).' });
+    }
+
+    /* Valor del producto con los valores NUEVOS (en un UPDATE, las
+       columnas de la derecha valen lo que tenían antes) */
+    if (deliveryNuevo || cobradoNuevo) {
+      const cobradoSql  = cobradoNuevo  ? '@cobrado'       : 'monto_cobrado';
+      const deliverySql = deliveryNuevo ? '@delivery_base' : 'delivery_base';
+      const resto = `${cobradoSql} - (${deliverySql} + monto_adicional)`;
+      sets.push(`monto_producto = CASE WHEN ${resto} > 0 THEN ${resto} ELSE 0 END`);
     }
 
     if (sets.length === 0) return res.status(400).json({ error: 'No hay datos para guardar.' });

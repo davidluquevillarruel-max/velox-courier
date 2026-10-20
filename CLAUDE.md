@@ -12,6 +12,24 @@ Velox Courier — internal management system for a courier/delivery company in L
 
 Última actualización: 20 de octubre de 2026.
 
+- **En local, sin subir (20 de octubre de 2026): ráfaga con tienda + "Pendiente" con
+  destinatario/distrito/cobrado.** No necesita migración (todas las columnas ya existen).
+  Commits `aad7979` (parte 1) y el siguiente (parte 2). Falta que el usuario lo pruebe en local.
+  - **⚡ ahora pide primero la tienda** (modal `#rafaga-tienda-overlay` en `pages/pedidos.html`,
+    mismo buscador que "Nueva orden"); recién después abre la cámara. Una tienda por ráfaga;
+    la cámara la muestra arriba del contador. La tienda viaja guardada con cada foto en la
+    cola (`item.rafaga.tienda`) y `POST /rafaga` la usa; si no viene (fotos viejas en cola) o
+    ya no es válida, usa la tienda comodín. "Terminar" abre la ventana "Pendiente" (todas).
+  - **`CAMPOS_PENDIENTES` = destinatario, distrito, cobrado.** "Tienda distinta del comodín"
+    es un chequeo **fijo** (`tieneTiendaReal`), fuera de la lista: las pendientes viejas con
+    tienda `SIN DEFINIR` llegan con `falta_tienda` y solo esas filas muestran el buscador de
+    tienda. El cobrado es obligatorio en la ventana (0 vale); en la base no se puede
+    distinguir de "sin llenar", así que su chequeo es siempre verdadero.
+  - **Al guardar la fila (`PATCH /:id/completar-datos`) el servidor completa (afecta la Caja):**
+    delivery y pago al moto con la tarifa del distrito; método `contraentrega` si cobrado > 0
+    o `sin-cobro` si es 0; valor del producto = cobrado − (delivery + adicional), mínimo 0.
+  - El teléfono ya no se pide en "Pendiente" (se completa en "Actualizar orden").
+
 - **Deploy completado (20 de octubre de 2026): foto en ráfaga + botón "Pendiente" (Pedidos)
   — en producción.** Migración `velox_agregar_rafaga.sql` aplicada en el servidor y código
   subido (commit `72fccef`). Verificado funcionando en `sistema.veloxcourierperu.com`.
@@ -26,7 +44,8 @@ Velox Courier — internal management system for a courier/delivery company in L
   - **Marca de "pendiente"**: columna propia `ordenes.datos_pendientes` (nace en 1 solo en la
     ráfaga). **No** se detecta por la tienda comodín, que solo ocupa el lugar (`id_tienda` es
     NOT NULL). Qué campos hay que completar lo define `CAMPOS_PENDIENTES` en
-    `server/routes/ordenes.js` (hoy: tienda, destinatario, teléfono); la marca se apaga en
+    `server/routes/ordenes.js` (en producción: tienda, destinatario, teléfono; en local
+    ya cambió, ver arriba); la marca se apaga en
     `recalcularDatosPendientes()` cuando están todos, ya sea desde "Pendiente" o desde
     "Actualizar orden". El usuario avisó que esos campos pueden cambiar (quizás 2, o distrito en
     vez de tienda): para sacar uno basta con quitarlo de la lista; para uno nuevo, sumarlo

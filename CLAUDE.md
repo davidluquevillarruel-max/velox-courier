@@ -12,9 +12,10 @@ Velox Courier — internal management system for a courier/delivery company in L
 
 Última actualización: 20 de octubre de 2026.
 
-- **Foto en ráfaga + botón "Pendiente" (Pedidos) — probado en local, SIN subir a producción.**
-  Para cuando llegan muchos pedidos de golpe. Antes de desplegar hay que correr
-  `velox_agregar_rafaga.sql` en el servidor (ver "Migraciones pendientes").
+- **Deploy completado (20 de octubre de 2026): foto en ráfaga + botón "Pendiente" (Pedidos)
+  — en producción.** Migración `velox_agregar_rafaga.sql` aplicada en el servidor y código
+  subido (commit `72fccef`). Verificado funcionando en `sistema.veloxcourierperu.com`.
+  Para cuando llegan muchos pedidos de golpe.
   - **Botón ⚡ amarillo** (`.btn-rafaga`, al lado de la cámara azul): la cámara queda abierta y
     cada "Capturar" crea una orden **sin datos**, con tienda y distrito comodín `SIN DEFINIR`.
     La foto va a la cola (`encolarFotoRafaga` en `js/cola-fotos.js`): la cola primero crea la
@@ -42,7 +43,7 @@ Velox Courier — internal management system for a courier/delivery company in L
   - `POST /` y `/rafaga` reintentan si dos órdenes calculan el mismo código `C-xxxx` a la vez
     (`insertarConCodigoNuevo`).
 
-- **Deploy completado (16 de octubre de 2026).** Todo lo de esta sección está en
+- **Deploy anterior (16 de octubre de 2026).** Todo lo de esta sección (salvo la ráfaga, de arriba) está en
   producción (`sistema.veloxcourierperu.com`): el código bajó con `git pull`, las 4
   migraciones (`medio_pago`, `concurrencia`, `distrito_sin_definir`, `id_subida`) están
   aplicadas en el servidor, se corrió `npm install` (SDK de AWS para R2) y la app corre sin
@@ -109,9 +110,7 @@ Velox Courier — internal management system for a courier/delivery company in L
   quien llama es motorizado), no solo visual.
 
 **Pendiente:**
-- **Desplegar la ráfaga + "Pendiente":** copiar `velox_agregar_rafaga.sql` al servidor y
-  correrlo con `sqlcmd` **antes** del `git pull` (el código nuevo usa las columnas nuevas).
-  Después, probar la ráfaga desde el celular contra producción, también con corte de señal.
+- **Configurar Cloudflare R2** (ver el punto siguiente: hoy las fotos siguen en modo prueba).
 - **Fotos en modo prueba:** en producción se guardan en el disco del servidor
   (`server/uploads_local/`), **no** en R2. R2 todavía no está configurado: falta crear el
   bucket y poner las 5 variables `R2_*` en el `.env` del servidor.
@@ -122,7 +121,8 @@ Velox Courier — internal management system for a courier/delivery company in L
   contra producción: que la foto quede en la cola sin señal y suba sola al volver, sin
   duplicados; evidencia de pago que entra a la cola y la marca de "evidencia pendiente" que
   se apaga al subir; indicador y panel (Reintentar/Descartar) con fotos atascadas; reabrir
-  Velox con fotos en cola.
+  Velox con fotos en cola. Incluye la ráfaga: fotos tomadas sin señal que crean sus
+  órdenes en orden al volver, sin duplicados.
 - El visor sigue recibiendo 403 al abrir fotos aunque ve todas las órdenes en las listas
   (se dejó así a propósito; revisar si algún día debe verlas).
 - Más adelante, opcional: Background Sync (service worker; solo Chrome Android).
@@ -185,13 +185,13 @@ Roles: `admin`, `operador`, `visor`, `tienda`, `motorizado`. `GESTORES = ['admin
 
 ## Migraciones pendientes de aplicar en producción
 
-- `velox_agregar_rafaga.sql` (foto en ráfaga + botón "Pendiente"): tienda comodín
-  `SIN DEFINIR`, columnas `ordenes.datos_pendientes` y `ordenes.id_creacion`. Aplicada en
-  local el 19 de octubre de 2026; **todavía no aplicada en el servidor**.
+Ninguna por ahora.
 
-Las 4 anteriores (`velox_agregar_medio_pago.sql`,
-`velox_agregar_concurrencia.sql`, `velox_agregar_distrito_sin_definir.sql`,
-`velox_agregar_id_subida.sql`) se aplicaron en el servidor el 16 de octubre de 2026.
+`velox_agregar_rafaga.sql` (tienda comodín `SIN DEFINIR`, columnas `ordenes.datos_pendientes`
+y `ordenes.id_creacion`) se aplicó en el servidor el 20 de octubre de 2026. Las 4 anteriores
+(`velox_agregar_medio_pago.sql`, `velox_agregar_concurrencia.sql`,
+`velox_agregar_distrito_sin_definir.sql`, `velox_agregar_id_subida.sql`) se aplicaron el 16
+de octubre de 2026.
 
 Cuando haya una migración nueva, anotarla acá hasta que se aplique en el servidor. Como los
 `velox_agregar_*.sql` están gitignored, no viajan con `git push`: hay que copiarlos al

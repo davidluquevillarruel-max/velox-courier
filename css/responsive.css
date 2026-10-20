@@ -217,7 +217,7 @@
 
 .table-wrap table thead th:first-child {
   background: var(--color-bg-secondary);
-  z-index: 2;
+  z-index: 3;
 }
 
 .table-wrap table tbody td:first-child {
@@ -244,7 +244,7 @@
 
 #tabla-pedidos-main thead th:last-child {
   background: var(--color-bg-secondary);
-  z-index: 2;
+  z-index: 3;
 }
 
 #tabla-pedidos-main tbody td:last-child {
@@ -271,7 +271,7 @@
 
 #tabla-ordenes-moto-detalle thead th:last-child {
   background: var(--color-bg-secondary);
-  z-index: 2;
+  z-index: 3;
 }
 
 #tabla-ordenes-moto-detalle tbody td:last-child {
@@ -297,7 +297,7 @@
 
 #tabla-clientes-main thead th:last-child {
   background: var(--color-bg-secondary);
-  z-index: 2;
+  z-index: 3;
 }
 
 #tabla-clientes-main tbody td:last-child {
@@ -321,7 +321,7 @@
 
 #tabla-ev-motos thead th:last-child {
   background: var(--color-bg-secondary);
-  z-index: 2;
+  z-index: 3;
 }
 
 #tabla-ev-motos tbody td:last-child {
@@ -347,7 +347,7 @@
 
 thead .col-ver-tienda-fijo {
   background: var(--color-bg-secondary);
-  z-index: 2;
+  z-index: 3;
 }
 
 tbody .col-ver-tienda-fijo {
@@ -369,7 +369,7 @@ tbody .col-ver-tienda-fijo {
 
 #tabla-pendiente-devolucion thead th:last-child {
   background: var(--color-bg-secondary);
-  z-index: 2;
+  z-index: 3;
 }
 
 #tabla-pendiente-devolucion tbody td:last-child {
@@ -411,7 +411,7 @@ tbody .col-ver-tienda-fijo {
 #tabla-devolucion-tienda thead th:last-child,
 #tabla-devolucion-tienda thead th:nth-last-child(2) {
   background: var(--color-bg-secondary);
-  z-index: 2;
+  z-index: 3;
 }
 
 #tabla-devolucion-tienda tbody td:last-child,
@@ -446,7 +446,7 @@ thead .col-accion-moto-fijo,
 thead .col-totalmoto-fijo,
 thead .col-cobrado-fijo {
   background: var(--color-bg-secondary);
-  z-index: 2;
+  z-index: 3;
 }
 
 tbody .col-accion-moto-fijo,

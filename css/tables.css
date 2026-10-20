@@ -13,11 +13,11 @@
 }
 
 /* Scrollbar visible siempre (no solo al hacer hover) — en PC con mouse,
-   el scrollbar delgado por defecto casi no se nota. */
-.table-wrap {
-  scrollbar-width: thin; /* Firefox */
-  scrollbar-color: var(--color-border-secondary) transparent; /* Firefox */
-}
+   el scrollbar delgado por defecto casi no se nota.
+   Ojo: Chrome 121+ y Edge también entienden scrollbar-width /
+   scrollbar-color, y si los ven IGNORAN los ::-webkit-scrollbar (la
+   barra quedaba fina). Por eso esas dos van solo para Firefox, que no
+   tiene ::-webkit-scrollbar. */
 .table-wrap::-webkit-scrollbar {
   height: 10px;
   width: 10px;
@@ -31,6 +31,32 @@
 }
 .table-wrap::-webkit-scrollbar-thumb:hover {
   background: var(--color-text-tertiary);
+}
+
+/* PC con mouse: barra más gruesa y con más contraste. En celular
+   (táctil) queda como arriba, para no cambiar el scroll con el dedo. */
+@media (hover: hover) and (pointer: fine) {
+  .table-wrap::-webkit-scrollbar {
+    height: 14px;
+    width: 14px;
+  }
+  .table-wrap::-webkit-scrollbar-thumb {
+    background: var(--color-text-tertiary);
+    /* Borde del color de la pista: la separa del fondo y la redondea */
+    border: 3px solid var(--color-bg-secondary);
+    border-radius: 14px;
+  }
+  .table-wrap::-webkit-scrollbar-thumb:hover {
+    background: var(--color-text-secondary);
+  }
+}
+
+/* Firefox: solo admite thin / auto de grosor; auto es la más gruesa */
+@supports not selector(::-webkit-scrollbar) {
+  .table-wrap {
+    scrollbar-width: auto;
+    scrollbar-color: var(--color-text-tertiary) var(--color-bg-secondary);
+  }
 }
 
 table {
@@ -49,6 +75,31 @@ thead th {
   border-bottom: 1px solid var(--color-border-tertiary);
   white-space: nowrap;
   letter-spacing: 0.1px;
+}
+
+/* Encabezado fijo: queda arriba al bajar por las filas. Se pega a la
+   ventana de .table-wrap (que tiene su propio scroll vertical).
+   z-index 2: por encima de las columnas fijas de las filas (1); las
+   celdas del encabezado que además son columna fija van con 3 (ver
+   css/responsive.css), para que los otros títulos no las tapen.
+   :where() deja esta regla con peso mínimo, así las de las columnas
+   fijas (algunas solo con una clase) le ganan el z-index. */
+:where(.table-wrap) thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+/* Con border-collapse, el borde de abajo de un th fijo no lo
+   acompaña al hacer scroll: la línea se dibuja con este ::after */
+.table-wrap thead th::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  border-bottom: 1px solid var(--color-border-tertiary);
+  pointer-events: none;
 }
 
 tbody td {

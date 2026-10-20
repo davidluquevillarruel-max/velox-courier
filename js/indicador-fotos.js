@@ -103,11 +103,17 @@ function _pintarPanelFotos() {
       detalle += '<div class="indicador-fotos-item-error">No se pudo guardar en el teléfono: no cierres Velox hasta que suba</div>';
     }
 
+    /* Foto en ráfaga: hasta que la cola crea la orden no hay código */
+    var titulo = it.esRafaga ? 'Foto en ráfaga' : (_TIPOS_FOTO_LABEL[it.tipo] || 'Foto');
+    var codigo = it.codigoOrden
+      ? ' · #' + _escIndicador(it.codigoOrden)
+      : (it.ordenPorCrear ? ' · orden por crear' : '');
+
     return '<div class="indicador-fotos-item">' +
       '<div style="flex:1;min-width:0">' +
-        '<div class="indicador-fotos-item-titulo">' + _escIndicador(_TIPOS_FOTO_LABEL[it.tipo] || 'Foto') +
+        '<div class="indicador-fotos-item-titulo">' + _escIndicador(titulo) +
           /* Las fotos encoladas antes de guardar el código no lo tienen */
-          (it.codigoOrden ? ' · #' + _escIndicador(it.codigoOrden) : '') +
+          codigo +
           ' <span>· ' + _haceCuanto(it.creada) + '</span></div>' +
         detalle +
       '</div>' +
@@ -180,6 +186,14 @@ window.descartarFotoDesdeIndicador = async function(btn) {
   if (item && item.tipo === 'evidencia_medio_pago') {
     mensaje += '\n\nOjo: es una evidencia de pago. La orden va a quedar con la evidencia ' +
       'pendiente hasta que alguien suba otra foto desde "Actualizar orden".';
+  }
+  /* Foto en ráfaga: si la orden todavía no se creó, descartarla no
+     deja nada; si ya se creó, la orden queda en "Pendiente" sin foto */
+  if (item && item.ordenPorCrear) {
+    mensaje += '\n\nEs una foto en ráfaga cuya orden todavía no se creó: no se va a crear.';
+  } else if (item && item.esRafaga) {
+    mensaje += '\n\nOjo: la orden ' + (item.codigoOrden ? '#' + item.codigoOrden + ' ' : '') +
+      'ya se creó y va a quedar en "Pendiente" sin foto.';
   }
   if (!confirm(mensaje)) return;
   await descartarFotoEnCola(id);

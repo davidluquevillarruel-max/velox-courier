@@ -25,10 +25,20 @@
    URL firmada nueva (vencen a los 5 min, no se guardan) y, si R2
    no está configurado (503), manda los bytes al disco local.
 
-   Avisa a la interfaz con dos eventos en window:
+   Foto en ráfaga (encolarFotoRafaga): la foto entra a la cola SIN
+   orden todavía. Al procesarla, la cola primero crea la orden
+   (POST /ordenes/rafaga) y recién después sube la foto. El orden de
+   la cola se respeta, así que los códigos salen en el orden en que
+   se tomaron las fotos. Tampoco duplica la orden: cada foto lleva un
+   idCreacion (UUID) que el servidor reconoce si el reintento llega
+   después de que la orden ya se creó (ver velox_agregar_rafaga.sql).
+
+   Avisa a la interfaz con tres eventos en window:
      · 'velox:cola-fotos'  → cambió la cola (detail: { pendientes, errores })
      · 'velox:foto-subida' → una foto llegó al servidor
                              (detail: { idSubida, ordenId, tipo, url })
+     · 'velox:orden-rafaga-creada' → la cola creó la orden de una foto
+                             en ráfaga (detail: { idSubida, ordenId, codigo })
    ============================================================ */
 
 var API = '/api';
@@ -218,6 +228,33 @@ async function _colaSubir(item) {
   return await rLocal.json();
 }
 
+/* ── Creación de la orden de una foto en ráfaga ────────────────
+   Si la respuesta se pierde, el próximo intento manda el mismo
+   idCreacion y el servidor devuelve la orden que ya había creado. */
+async function _colaCrearOrdenRafaga(item) {
+  var r = await _colaFetch(API + '/ordenes/rafaga', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      idCreacion: item.rafaga.idCreacion,
+      fecha:      item.rafaga.fecha,
+      hora:       item.rafaga.hora,
+    }),
+  }, _COLA_TIMEOUT_JSON);
+  if (!r.ok) throw await _colaErrorHttp(r, 'No se pudo crear la orden de la foto');
+  var data = await r.json();
+
+  /* Se guarda ya: si la subida de la foto falla, el reintento va
+     directo a subirla (sin volver a pedir la orden) */
+  item.ordenId     = parseInt(data.id, 10);
+  item.codigoOrden = data.codigo || '';
+  await _colaGuardar(item);
+
+  window.dispatchEvent(new CustomEvent('velox:orden-rafaga-creada', {
+    detail: { idSubida: item.idSubida, ordenId: item.ordenId, codigo: item.codigoOrden },
+  }));
+}
+
 /* ── Procesamiento de la cola ──────────────────────────────── */
 
 function _colaEsperaMs(intentos) {
@@ -268,6 +305,7 @@ async function _colaPasada(forzar) {
     if (!forzar && Math.max(item.proximoIntento || 0, _colaPausaHasta) > Date.now()) continue;
 
     try {
+      if (!item.ordenId && item.rafaga) await _colaCrearOrdenRafaga(item);
       var res = await _colaSubir(item);
       await _colaBorrar(item.idSubida);
       window.dispatchEvent(new CustomEvent('velox:foto-subida', {
@@ -349,6 +387,32 @@ async function procesarColaFotos(opciones) {
  *   quedó en memoria: si se cierra la app antes de subir, se pierde).
  */
 async function encolarFoto(ordenId, tipo, blob, codigoOrden) {
+  var item = await _colaNuevoItem(ordenId, tipo, blob, codigoOrden);
+  return _colaAgregar(item);
+}
+
+/**
+ * Foto en ráfaga: guarda la foto en el teléfono SIN orden todavía.
+ * La cola crea la orden (sin datos, "Por completar") y después sube
+ * la foto, todo en segundo plano. No espera a la red: se puede
+ * llamar una vez por foto, seguido, aunque no haya señal.
+ * @param {Blob} blob - JPEG ya comprimido.
+ * @param {{fecha: string, hora: string}} momento - Cuándo se tomó
+ *   la foto ('YYYY-MM-DD' y 'HH:MM', hora local del teléfono).
+ * @returns {Promise<{idSubida: string, persistente: boolean}>}
+ */
+async function encolarFotoRafaga(blob, momento) {
+  var item = await _colaNuevoItem(null, 'foto_producto', blob, '');
+  item.rafaga = {
+    idCreacion: _colaNuevoId(),
+    fecha:      momento && momento.fecha,
+    hora:       momento && momento.hora,
+  };
+  return _colaAgregar(item);
+}
+
+/* Arma un ítem de la cola (compartido por encolarFoto y encolarFotoRafaga) */
+async function _colaNuevoItem(ordenId, tipo, blob, codigoOrden) {
   /* Pedir que el navegador no borre la cola si el teléfono se
      queda sin espacio. Puede decir que no; no es bloqueante. */
   if (!_colaPersistenciaPedida && navigator.storage && navigator.storage.persist) {
@@ -356,10 +420,10 @@ async function encolarFoto(ordenId, tipo, blob, codigoOrden) {
     navigator.storage.persist().catch(function() {});
   }
 
-  var item = {
+  return {
     idSubida:       _colaNuevoId(),
     idUsuario:      _colaUsuarioActual(),
-    ordenId:        parseInt(ordenId, 10),
+    ordenId:        ordenId ? parseInt(ordenId, 10) : null,
     codigoOrden:    codigoOrden || '',
     tipo:           tipo,
     /* ArrayBuffer y no Blob: algunos Safari viejos no guardan Blobs
@@ -371,7 +435,9 @@ async function encolarFoto(ordenId, tipo, blob, codigoOrden) {
     estado:         'pendiente',
     ultimoError:    '',
   };
+}
 
+async function _colaAgregar(item) {
   var persistente = await _colaGuardar(item);
   /* Avisar ya (el indicador de js/indicador-fotos.js la muestra al
      instante), sin esperar a que termine el intento de subida */
@@ -388,6 +454,9 @@ async function obtenerColaFotos() {
       idSubida: it.idSubida, ordenId: it.ordenId, codigoOrden: it.codigoOrden || '', tipo: it.tipo, estado: it.estado,
       intentos: it.intentos, ultimoError: it.ultimoError, creada: it.creada,
       enMemoria: !!it.enMemoria,
+      /* Foto en ráfaga: true mientras la orden todavía no se creó */
+      ordenPorCrear: !!it.rafaga && !it.ordenId,
+      esRafaga: !!it.rafaga,
     };
   });
 }

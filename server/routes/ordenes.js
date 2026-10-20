@@ -37,6 +37,84 @@ const MEDIOS_PAGO_CON_EVIDENCIA = ['pago-tienda', 'pago-empresa'];
    velox_agregar_distrito_sin_definir.sql) */
 const DISTRITO_SIN_DEFINIR = 'SIN DEFINIR';
 
+/* ────────────────────────────────────────────────────────────
+   FOTO EN RÁFAGA (ver velox_agregar_rafaga.sql)
+   Cada foto crea una orden sin datos, con la tienda y el distrito
+   comodín. Lo que la marca como "pendiente de completar" es la
+   columna datos_pendientes (nace en 1), NO la tienda comodín: la
+   tienda solo ocupa el lugar porque id_tienda es NOT NULL.
+
+   CAMPOS_PENDIENTES dice qué hay que completar para que la orden
+   deje de estar pendiente. Para cambiarlos:
+   · Sacar un campo → quitarlo de la lista (nada más).
+   · Agregar uno nuevo → sumarlo a la lista, a
+     CHEQUEOS_DATOS_PENDIENTES y a PATCH /:id/completar-datos.
+   La ventana "Pendiente" del frontend arma sus campos con la
+   lista que devuelve GET /pendientes-datos.
+──────────────────────────────────────────────────────────── */
+const TIENDA_SIN_DEFINIR = 'SIN DEFINIR';
+const CAMPOS_PENDIENTES = ['tienda', 'destinatario', 'telefono'];
+
+/* f = fila con tienda (nombre), dest_nombre y dest_telefono */
+const CHEQUEOS_DATOS_PENDIENTES = {
+  tienda:       f => !!f.tienda && f.tienda !== TIENDA_SIN_DEFINIR,
+  destinatario: f => !!(f.dest_nombre && f.dest_nombre.trim()),
+  telefono:     f => !!(f.dest_telefono && f.dest_telefono.trim()),
+};
+
+/* Si la orden está pendiente y ya tiene todos los CAMPOS_PENDIENTES,
+   le apaga la marca. Se llama después de cualquier guardado que
+   pueda completar datos (la ventana "Pendiente" o "Actualizar
+   orden"). Devuelve si la orden sigue pendiente. */
+async function recalcularDatosPendientes(pool, ordenId) {
+  const r = await pool.request()
+    .input('id', sql.BigInt, ordenId)
+    .query(`
+      SELECT o.datos_pendientes, t.nombre AS tienda, o.dest_nombre, o.dest_telefono
+      FROM ordenes o
+      JOIN tiendas t ON t.id = o.id_tienda
+      WHERE o.id = @id
+    `);
+  const f = r.recordset[0];
+  if (!f || !f.datos_pendientes) return false;
+
+  const completa = CAMPOS_PENDIENTES.every(c => CHEQUEOS_DATOS_PENDIENTES[c](f));
+  if (!completa) return true;
+
+  await pool.request()
+    .input('id', sql.BigInt, ordenId)
+    .query(`UPDATE ordenes SET datos_pendientes = 0 WHERE id = @id`);
+  return false;
+}
+
+/* 2601 / 2627 = clave duplicada; el mensaje trae el nombre del
+   índice o restricción que chocó */
+function esDuplicado(err, nombreIndice) {
+  const numero = err && (err.number || (err.originalError && err.originalError.info && err.originalError.info.number));
+  return (numero === 2601 || numero === 2627) && String(err.message || '').includes(nombreIndice);
+}
+
+/* El código sale de MAX+1: si dos personas crean una orden en el
+   mismo instante pueden calcular el mismo, y uq_ordenes_codigo
+   rechaza al segundo. En ese caso se recalcula y se reintenta (con
+   ráfagas de 40 fotos es más probable que pase).
+   insertar(codigo) hace el INSERT y devuelve el id nuevo. */
+async function insertarConCodigoNuevo(pool, insertar) {
+  for (let intento = 1; ; intento++) {
+    const codRes = await pool.request().query(`
+      SELECT ISNULL(MAX(CAST(SUBSTRING(codigo,3,LEN(codigo)) AS INT)),1000) + 1 AS siguiente
+      FROM ordenes WHERE codigo LIKE 'C-%'
+    `);
+    const codigo = `C-${codRes.recordset[0].siguiente}`;
+    try {
+      return { id: await insertar(codigo), codigo };
+    } catch (err) {
+      if (intento < 3 && esDuplicado(err, 'uq_ordenes_codigo')) continue;
+      throw err;
+    }
+  }
+}
+
 /* tipo en ordenes_fotos para la foto del producto tomada al crear la
    orden (la otra es 'evidencia_medio_pago') */
 const TIPO_FOTO_PRODUCTO = 'foto_producto';
@@ -58,7 +136,8 @@ function leerIdSubida(valor) {
    · admin / operador / visor → ven todo
    · motorizado               → las suyas + las que no tienen a
      nadie asignado todavía (para poder autoasignarse en
-     "Asignación"; nunca las de otro motorizado)
+     "Asignación"; nunca las de otro motorizado). Nunca ve las de
+     ráfaga con datos pendientes: no hay nada que repartir todavía.
    · tienda                   → solo las de su tienda
    Se aplica en el servidor: el cliente no puede saltárselo.
 ──────────────────────────────────────────────────────────── */
@@ -66,7 +145,7 @@ function filtroPorRol(usuario, request) {
   if (usuario.rol === 'motorizado') {
     if (!usuario.id_motorizado) return { sql: 'AND 1 = 0' }; // sin vínculo: no ve nada
     request.input('scopeMoto', sql.Int, usuario.id_motorizado);
-    return { sql: 'AND (o.id_motorizado = @scopeMoto OR o.id_motorizado IS NULL)' };
+    return { sql: 'AND (o.id_motorizado = @scopeMoto OR o.id_motorizado IS NULL) AND o.datos_pendientes = 0' };
   }
   if (usuario.rol === 'tienda') {
     if (!usuario.id_tienda) return { sql: 'AND 1 = 0' };
@@ -108,6 +187,8 @@ const SELECT_ORDEN = `
     CASE WHEN o.medio_pago IN ('pago-tienda', 'pago-empresa')
           AND NOT EXISTS (SELECT 1 FROM ordenes_fotos WHERE id_orden = o.id AND tipo = 'evidencia_medio_pago')
          THEN 1 ELSE 0 END AS evidencia_pendiente,
+    /* Orden de ráfaga a la que todavía le faltan datos ("Por completar") */
+    o.datos_pendientes,
     o.delivery_base, o.monto_adicional, o.delivery_total,
     o.monto_cobrado, o.monto_producto,
     o.pago_moto_base, o.pago_moto_adicional, o.pago_moto_total,
@@ -180,6 +261,40 @@ router.get('/', async (req, res) => {
   }
 });
 
+/* ── GET /api/ordenes/pendientes-datos (admin / operador) ────
+   Órdenes de ráfaga a las que les faltan datos, de cualquier
+   fecha, la más vieja primero (en el orden en que se tomaron las
+   fotos). Devuelve también qué campos hay que completar, para que
+   la ventana "Pendiente" los arme sin tenerlos repetidos.
+   Va antes de GET /:id para que no la capture esa ruta. */
+router.get('/pendientes-datos', requireRol(...GESTORES), async (req, res) => {
+  try {
+    const pool   = await getPool();
+    const result = await pool.request().query(
+      `${SELECT_ORDEN} WHERE o.datos_pendientes = 1 ORDER BY o.id`
+    );
+    res.json({ campos: CAMPOS_PENDIENTES, ordenes: result.recordset });
+  } catch (err) {
+    console.error('GET /ordenes/pendientes-datos:', err.message);
+    res.status(500).json({ error: 'Error al listar las órdenes pendientes' });
+  }
+});
+
+/* Solo la cantidad: la consulta el botón "Pendiente" en cada
+   refresco automático, sin traer las órdenes enteras */
+router.get('/pendientes-datos/total', requireRol(...GESTORES), async (req, res) => {
+  try {
+    const pool   = await getPool();
+    const result = await pool.request().query(
+      `SELECT COUNT(*) AS total FROM ordenes WHERE datos_pendientes = 1`
+    );
+    res.json({ total: result.recordset[0].total });
+  } catch (err) {
+    console.error('GET /ordenes/pendientes-datos/total:', err.message);
+    res.status(500).json({ error: 'Error al contar las órdenes pendientes' });
+  }
+});
+
 /* ── GET /api/ordenes/:id ────────────────────────────────── */
 router.get('/:id', async (req, res) => {
   try {
@@ -206,12 +321,6 @@ router.post('/', requireRol(...GESTORES), async (req, res) => {
     const pool = await getPool();
     const o    = req.body;
 
-    const codRes = await pool.request().query(`
-      SELECT ISNULL(MAX(CAST(SUBSTRING(codigo,3,LEN(codigo)) AS INT)),1000) + 1 AS siguiente
-      FROM ordenes WHERE codigo LIKE 'C-%'
-    `);
-    const nuevoCodigo = `C-${codRes.recordset[0].siguiente}`;
-
     /* Flujo rápido (botón de cámara): si no se eligió distrito, la
        orden se guarda con el comodín "SIN DEFINIR" y se completa
        después desde "Actualizar orden" */
@@ -231,6 +340,8 @@ router.post('/', requireRol(...GESTORES), async (req, res) => {
     const { id_tienda, id_origen, id_distrito } = lookups.recordset[0];
 
     if (!id_tienda)   return res.status(400).json({ error: `Tienda no encontrada: ${o.tienda}` });
+    /* El comodín es solo para las órdenes de ráfaga (POST /rafaga) */
+    if (o.tienda === TIENDA_SIN_DEFINIR) return res.status(400).json({ error: 'Elegí una tienda.' });
     if (!id_origen)   return res.status(400).json({ error: `Origen no encontrado: ${o.origen}` });
     if (!id_distrito) {
       return res.status(400).json({
@@ -252,56 +363,245 @@ router.post('/', requireRol(...GESTORES), async (req, res) => {
       if (mRes.recordset.length > 0) id_motorizado = mRes.recordset[0].id;
     }
 
-    const insertRes = await pool.request()
-      .input('codigo',       sql.NVarChar,      nuevoCodigo)
-      .input('fecha',        sql.Date,          o.fecha)
-      .input('hora',         sql.NVarChar,      o.horaAsig || null)
-      .input('id_tienda',    sql.Int,           id_tienda)
-      .input('id_origen',    sql.Int,           id_origen)
-      .input('id_distrito',  sql.Int,           id_distrito)
-      .input('id_moto',      sql.Int,           id_motorizado)
-      .input('dest_nombre',  sql.NVarChar,      o.dest || '')
-      .input('dest_tel',     sql.NVarChar,      o.telefDest || '')
-      .input('dest_tel2',    sql.NVarChar,      o.telefDest2 || '')
-      .input('dest_dir',     sql.NVarChar,      o.direccion || '')
-      .input('estado',       sql.NVarChar,      'en-proceso')
-      .input('condicion',    sql.NVarChar,      o.condicionEspecial || null)
-      .input('pago_velox',   sql.NVarChar,      o.pagoVelox === 'pre-pagado' ? 'PAGADO' : 'PENDIENTE')
-      .input('pago_velox_metodo', sql.NVarChar, (o.pagoVelox === 'pre-pagado' && PAGO_VELOX_METODOS.includes(o.pagoVeloxMetodo)) ? o.pagoVeloxMetodo : null)
-      .input('metodo',       sql.NVarChar,      o.metodoPago || '')
-      .input('delivery',     sql.Decimal(10,2), parseFloat(o.delivery) || 0)
-      .input('adicional',    sql.Decimal(10,2), parseFloat(o.montoAdicional) || 0)
-      .input('cobrado',      sql.Decimal(10,2), parseFloat(o.montoCobrado) || 0)
-      .input('producto',     sql.Decimal(10,2), parseFloat(o.montoProducto) || 0)
-      .input('pago_moto',    sql.Decimal(10,2), parseFloat(o.pagoMotoBase) || 0)
-      .input('pago_moto_ad', sql.Decimal(10,2), parseFloat(o.pagoMotoAdic) || 0)
-      .input('especial',     sql.Bit,           o.productoEspecial ? 1 : 0)
-      .input('obs',          sql.NVarChar,      o.obs || '')
-      .query(`
-        INSERT INTO ordenes (
-          codigo, fecha, hora_asignacion,
-          id_tienda, id_origen, id_distrito, id_motorizado,
-          dest_nombre, dest_telefono, dest_telefono_2, dest_direccion,
-          estado, condicion_especial, pago_velox, pago_velox_metodo, metodo_pago,
-          delivery_base, monto_adicional, monto_cobrado, monto_producto,
-          pago_moto_base, pago_moto_adicional,
-          producto_especial, observaciones
-        ) VALUES (
-          @codigo, @fecha, @hora,
-          @id_tienda, @id_origen, @id_distrito, @id_moto,
-          @dest_nombre, @dest_tel, @dest_tel2, @dest_dir,
-          @estado, @condicion, @pago_velox, @pago_velox_metodo, @metodo,
-          @delivery, @adicional, @cobrado, @producto,
-          @pago_moto, @pago_moto_ad,
-          @especial, @obs
-        );
-        SELECT SCOPE_IDENTITY() AS id;
-      `);
+    const nueva = await insertarConCodigoNuevo(pool, async (codigo) => {
+      const insertRes = await pool.request()
+        .input('codigo',       sql.NVarChar,      codigo)
+        .input('fecha',        sql.Date,          o.fecha)
+        .input('hora',         sql.NVarChar,      o.horaAsig || null)
+        .input('id_tienda',    sql.Int,           id_tienda)
+        .input('id_origen',    sql.Int,           id_origen)
+        .input('id_distrito',  sql.Int,           id_distrito)
+        .input('id_moto',      sql.Int,           id_motorizado)
+        .input('dest_nombre',  sql.NVarChar,      o.dest || '')
+        .input('dest_tel',     sql.NVarChar,      o.telefDest || '')
+        .input('dest_tel2',    sql.NVarChar,      o.telefDest2 || '')
+        .input('dest_dir',     sql.NVarChar,      o.direccion || '')
+        .input('estado',       sql.NVarChar,      'en-proceso')
+        .input('condicion',    sql.NVarChar,      o.condicionEspecial || null)
+        .input('pago_velox',   sql.NVarChar,      o.pagoVelox === 'pre-pagado' ? 'PAGADO' : 'PENDIENTE')
+        .input('pago_velox_metodo', sql.NVarChar, (o.pagoVelox === 'pre-pagado' && PAGO_VELOX_METODOS.includes(o.pagoVeloxMetodo)) ? o.pagoVeloxMetodo : null)
+        .input('metodo',       sql.NVarChar,      o.metodoPago || '')
+        .input('delivery',     sql.Decimal(10,2), parseFloat(o.delivery) || 0)
+        .input('adicional',    sql.Decimal(10,2), parseFloat(o.montoAdicional) || 0)
+        .input('cobrado',      sql.Decimal(10,2), parseFloat(o.montoCobrado) || 0)
+        .input('producto',     sql.Decimal(10,2), parseFloat(o.montoProducto) || 0)
+        .input('pago_moto',    sql.Decimal(10,2), parseFloat(o.pagoMotoBase) || 0)
+        .input('pago_moto_ad', sql.Decimal(10,2), parseFloat(o.pagoMotoAdic) || 0)
+        .input('especial',     sql.Bit,           o.productoEspecial ? 1 : 0)
+        .input('obs',          sql.NVarChar,      o.obs || '')
+        .query(`
+          INSERT INTO ordenes (
+            codigo, fecha, hora_asignacion,
+            id_tienda, id_origen, id_distrito, id_motorizado,
+            dest_nombre, dest_telefono, dest_telefono_2, dest_direccion,
+            estado, condicion_especial, pago_velox, pago_velox_metodo, metodo_pago,
+            delivery_base, monto_adicional, monto_cobrado, monto_producto,
+            pago_moto_base, pago_moto_adicional,
+            producto_especial, observaciones
+          ) VALUES (
+            @codigo, @fecha, @hora,
+            @id_tienda, @id_origen, @id_distrito, @id_moto,
+            @dest_nombre, @dest_tel, @dest_tel2, @dest_dir,
+            @estado, @condicion, @pago_velox, @pago_velox_metodo, @metodo,
+            @delivery, @adicional, @cobrado, @producto,
+            @pago_moto, @pago_moto_ad,
+            @especial, @obs
+          );
+          SELECT SCOPE_IDENTITY() AS id;
+        `);
+      return insertRes.recordset[0].id;
+    });
 
-    res.status(201).json({ id: insertRes.recordset[0].id, codigo: nuevoCodigo });
+    res.status(201).json({ id: nueva.id, codigo: nueva.codigo });
   } catch (err) {
     console.error('POST /ordenes:', err.message);
     res.status(500).json({ error: 'Error al crear la orden' });
+  }
+});
+
+/* ── POST /api/ordenes/rafaga — Foto en ráfaga (admin / operador)
+   Crea una orden SIN datos para una foto tomada en serie: tienda y
+   distrito comodín "SIN DEFINIR", datos_pendientes = 1. La foto
+   se sube después, por la cola (js/cola-fotos.js), con el id que
+   devuelve esta ruta.
+
+   No duplica: el celular manda un idCreacion (UUID) por foto. Si
+   la orden ya se creó pero la respuesta se perdió por la señal, el
+   reintento llega con el mismo id y se devuelve la orden que ya
+   existe (200, existente: true) en vez de crear otra.
+
+   fecha / hora son las del momento de la foto (las manda el
+   celular): una foto tomada a las 23:58 que sube al otro día
+   queda con la fecha en que se tomó. */
+const REGEX_FECHA = /^\d{4}-\d{2}-\d{2}$/;
+const REGEX_HORA  = /^\d{2}:\d{2}$/;
+
+async function ordenPorIdCreacion(pool, idCreacion) {
+  const r = await pool.request()
+    .input('idCreacion', sql.UniqueIdentifier, idCreacion)
+    .query(`SELECT id, codigo FROM ordenes WHERE id_creacion = @idCreacion`);
+  return r.recordset[0] || null;
+}
+
+router.post('/rafaga', requireRol(...GESTORES), async (req, res) => {
+  try {
+    const pool = await getPool();
+    const idCreacion = (typeof req.body.idCreacion === 'string' && REGEX_UUID.test(req.body.idCreacion))
+      ? req.body.idCreacion.toLowerCase() : null;
+    if (!idCreacion) return res.status(400).json({ error: 'Falta el identificador de la foto (idCreacion).' });
+
+    const fecha = REGEX_FECHA.test(req.body.fecha || '') ? req.body.fecha : null;
+    const hora  = REGEX_HORA.test(req.body.hora || '')   ? req.body.hora  : null;
+
+    const yaExiste = await ordenPorIdCreacion(pool, idCreacion);
+    if (yaExiste) return res.json({ id: yaExiste.id, codigo: yaExiste.codigo, existente: true });
+
+    const lookups = await pool.request()
+      .input('tienda',   sql.NVarChar, TIENDA_SIN_DEFINIR)
+      .input('origen',   sql.NVarChar, 'GAMARRA')
+      .input('distrito', sql.NVarChar, DISTRITO_SIN_DEFINIR)
+      .query(`
+        SELECT
+          (SELECT id FROM tiendas   WHERE nombre = @tienda)   AS id_tienda,
+          (SELECT id FROM origenes  WHERE nombre = @origen)   AS id_origen,
+          (SELECT id FROM distritos WHERE nombre = @distrito) AS id_distrito
+      `);
+    const { id_tienda, id_origen, id_distrito } = lookups.recordset[0];
+    if (!id_tienda)   return res.status(500).json({ error: 'Falta la tienda "SIN DEFINIR" en la base: corré velox_agregar_rafaga.sql.' });
+    if (!id_distrito) return res.status(500).json({ error: 'Falta el distrito "SIN DEFINIR" en la base: corré velox_agregar_distrito_sin_definir.sql.' });
+    if (!id_origen)   return res.status(500).json({ error: 'Origen no encontrado: GAMARRA' });
+
+    try {
+      const nueva = await insertarConCodigoNuevo(pool, async (codigo) => {
+        const insertRes = await pool.request()
+          .input('codigo',      sql.NVarChar,         codigo)
+          .input('fecha',       sql.Date,             fecha)
+          .input('hora',        sql.NVarChar,         hora)
+          .input('id_tienda',   sql.Int,              id_tienda)
+          .input('id_origen',   sql.Int,              id_origen)
+          .input('id_distrito', sql.Int,              id_distrito)
+          .input('idCreacion',  sql.UniqueIdentifier, idCreacion)
+          .query(`
+            INSERT INTO ordenes (
+              codigo, fecha, hora_asignacion,
+              id_tienda, id_origen, id_distrito, id_motorizado,
+              dest_nombre, dest_telefono, dest_telefono_2, dest_direccion,
+              estado, pago_velox, metodo_pago, observaciones,
+              datos_pendientes, id_creacion
+            ) VALUES (
+              @codigo, ISNULL(@fecha, CAST(GETDATE() AS DATE)), @hora,
+              @id_tienda, @id_origen, @id_distrito, NULL,
+              '', '', '', '',
+              'en-proceso', 'PENDIENTE', 'sin-cobro', '',
+              1, @idCreacion
+            );
+            SELECT SCOPE_IDENTITY() AS id;
+          `);
+        return insertRes.recordset[0].id;
+      });
+      res.status(201).json({ id: nueva.id, codigo: nueva.codigo });
+    } catch (err) {
+      /* Dos reintentos de la misma foto llegaron a la vez: el segundo
+         choca con el índice único y devuelve la que creó el primero */
+      if (esDuplicado(err, 'ux_ordenes_id_creacion')) {
+        const creada = await ordenPorIdCreacion(pool, idCreacion);
+        if (creada) return res.json({ id: creada.id, codigo: creada.codigo, existente: true });
+      }
+      throw err;
+    }
+  } catch (err) {
+    console.error('POST /ordenes/rafaga:', err.message);
+    res.status(500).json({ error: 'Error al crear la orden de la foto' });
+  }
+});
+
+/* ── PATCH /api/ordenes/:id/completar-datos (admin / operador)
+   Ventana "Pendiente": completa los datos de una orden de ráfaga
+   sin tocar nada más (por eso no se usa /completo, que pisa todos
+   los campos). Los CAMPOS_PENDIENTES son obligatorios; los que no
+   estén en la lista se guardan solo si vienen.
+   Si otro usuario ya la completó (o la cambió, con ifVersion)
+   responde 409 con la orden fresca. */
+router.patch('/:id/completar-datos', requireRol(...GESTORES), async (req, res) => {
+  try {
+    const pool = await getPool();
+    const b    = req.body;
+    const obligatorio = c => CAMPOS_PENDIENTES.includes(c);
+
+    const sets    = [];
+    const request = pool.request().input('id', sql.BigInt, req.params.id);
+
+    /* Tienda: tiene que existir, estar activa y no ser el comodín */
+    const tienda = typeof b.tienda === 'string' ? b.tienda.trim() : '';
+    if (tienda) {
+      const tRes = await pool.request()
+        .input('tienda', sql.NVarChar, tienda)
+        .query(`SELECT id, activa FROM tiendas WHERE nombre = @tienda`);
+      const t = tRes.recordset[0];
+      if (!t || !t.activa || tienda === TIENDA_SIN_DEFINIR) {
+        return res.status(400).json({ error: `Tienda no válida: ${tienda}` });
+      }
+      request.input('id_tienda', sql.Int, t.id);
+      sets.push('id_tienda = @id_tienda');
+    } else if (obligatorio('tienda')) {
+      return res.status(400).json({ error: 'La tienda es obligatoria.' });
+    }
+
+    /* Destinatario: mismo rango que el formulario (2 a 100 letras) */
+    const dest = typeof b.dest === 'string' ? b.dest.trim() : '';
+    if (dest) {
+      if (dest.length < 2 || dest.length > 100) {
+        return res.status(400).json({ error: 'El nombre del destinatario debe tener entre 2 y 100 caracteres.' });
+      }
+      request.input('dest_nombre', sql.NVarChar, dest);
+      sets.push('dest_nombre = @dest_nombre');
+    } else if (obligatorio('destinatario')) {
+      return res.status(400).json({ error: 'El destinatario es obligatorio.' });
+    }
+
+    /* Teléfono: 9 dígitos, igual que js/validators.js */
+    const telef = typeof b.telefDest === 'string' ? b.telefDest.replace(/[\s\-()]/g, '') : '';
+    if (telef) {
+      if (!/^[0-9]{9}$/.test(telef)) {
+        return res.status(400).json({ error: 'El teléfono debe tener exactamente 9 dígitos.' });
+      }
+      request.input('dest_tel', sql.NVarChar, telef);
+      sets.push('dest_telefono = @dest_tel');
+    } else if (obligatorio('telefono')) {
+      return res.status(400).json({ error: 'El teléfono es obligatorio.' });
+    }
+
+    if (sets.length === 0) return res.status(400).json({ error: 'No hay datos para guardar.' });
+
+    const ifVersion = bufferDeVersion(b.ifVersion);
+    let whereVersion = '';
+    if (ifVersion) { request.input('ifVersion', sql.VarBinary(8), ifVersion); whereVersion = ' AND row_version = @ifVersion'; }
+
+    const result = await request.query(`
+      UPDATE ordenes
+      SET ${sets.join(', ')}, actualizado_en = GETDATE()
+      WHERE id = @id AND datos_pendientes = 1${whereVersion}
+    `);
+    if (result.rowsAffected[0] === 0) {
+      const fresca = await conflictoDeVersion(pool, req.params.id);
+      if (!fresca) return res.status(404).json({ error: 'Orden no encontrada' });
+      return res.status(409).json({
+        error: fresca.datos_pendientes
+          ? 'Esta orden fue modificada por otro usuario mientras la completabas.'
+          : 'Esta orden ya fue completada por otro usuario.',
+        orden: fresca,
+      });
+    }
+
+    const siguePendiente = await recalcularDatosPendientes(pool, req.params.id);
+    res.json({
+      ok: true,
+      datos_pendientes: siguePendiente ? 1 : 0,
+      version: await versionActualHex(pool, req.params.id),
+    });
+  } catch (err) {
+    console.error('PATCH /ordenes/:id/completar-datos:', err.message);
+    res.status(500).json({ error: 'Error al completar los datos de la orden' });
   }
 });
 
@@ -420,7 +720,19 @@ router.patch('/:id/completo', async (req, res) => {
     if (!id_tienda)   return res.status(400).json({ error: `Tienda no encontrada: ${o.tienda}` });
     if (!id_distrito) return res.status(400).json({ error: `Distrito no encontrado: ${o.distrito}` });
 
-    let delivery   = parseFloat(o.delivery)      || 0;
+    /* La tienda comodín solo puede quedar en una orden de ráfaga que
+       todavía está pendiente (se guardan otros datos sin elegir la
+       tienda aún); a una orden normal no se le puede poner */
+    if (o.tienda === TIENDA_SIN_DEFINIR) {
+      const p = await pool.request()
+        .input('id', sql.BigInt, req.params.id)
+        .query(`SELECT datos_pendientes FROM ordenes WHERE id = @id`);
+      if (!p.recordset[0] || !p.recordset[0].datos_pendientes) {
+        return res.status(400).json({ error: 'Elegí una tienda.' });
+      }
+    }
+
+    let delivery  = parseFloat(o.delivery)      || 0;
     let adicional  = parseFloat(o.montoAdicional)|| 0;
     let cobrado    = parseFloat(o.montoCobrado)  || 0;
     let producto   = parseFloat(o.montoProducto) || 0;
@@ -500,6 +812,10 @@ router.patch('/:id/completo', async (req, res) => {
       return res.status(409).json({ error: 'Esta orden fue modificada por otro usuario mientras la editabas.', orden: fresca });
     }
 
+    /* Si era una orden de ráfaga y con esto quedaron completos los
+       datos, deja de estar pendiente (también desde "Actualizar orden") */
+    await recalcularDatosPendientes(pool, req.params.id);
+
     res.json({ ok: true, version: await versionActualHex(pool, req.params.id) });
   } catch (err) {
     console.error('PATCH /ordenes/:id/completo:', err.message);
@@ -551,6 +867,18 @@ router.patch('/:id/asignar', async (req, res) => {
           .input('moto', sql.NVarChar, motorizado)
           .query(`SELECT id FROM motorizados WHERE nombre = @moto`);
         if (mRes.recordset.length > 0) id_motorizado = mRes.recordset[0].id;
+      }
+    }
+
+    /* Una orden de ráfaga con datos pendientes no se puede asignar:
+       todavía no se sabe de qué tienda es ni a quién se entrega */
+    if (id_motorizado) {
+      const p = await pool.request()
+        .input('id', sql.BigInt, req.params.id)
+        .query(`SELECT datos_pendientes FROM ordenes WHERE id = @id`);
+      if (!p.recordset[0]) return res.status(404).json({ error: 'Orden no encontrada' });
+      if (p.recordset[0].datos_pendientes) {
+        return res.status(400).json({ error: 'Esta orden todavía tiene datos por completar (ver "Pendiente").' });
       }
     }
 

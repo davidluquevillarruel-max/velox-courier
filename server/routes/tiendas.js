@@ -11,6 +11,19 @@ const { requireAuth, requireRol } = require('../middleware/auth');
 router.use(requireAuth);
 const GESTORES = ['admin', 'operador'];
 
+/* Tienda comodín de las órdenes de foto en ráfaga (ver
+   velox_agregar_rafaga.sql y routes/ordenes.js). No es una tienda
+   real: no se lista en ninguna pantalla ni se puede editar. */
+const TIENDA_SIN_DEFINIR = 'SIN DEFINIR';
+
+async function esTiendaComodin(pool, id) {
+  const r = await pool.request()
+    .input('id', sql.Int, id)
+    .input('comodin', sql.NVarChar, TIENDA_SIN_DEFINIR)
+    .query(`SELECT 1 AS si FROM tiendas WHERE id = @id AND nombre = @comodin`);
+  return r.recordset.length > 0;
+}
+
 /* Una tienda solo puede consultar su propia tienda */
 function tiendaAutorizada(usuario, idTiendaPedida) {
   if (usuario.rol !== 'tienda') return true;
@@ -23,10 +36,11 @@ router.get('/', async (req, res) => {
     const pool    = await getPool();
     const request = pool.request();
 
-    let filtro = '';
+    request.input('comodin', sql.NVarChar, TIENDA_SIN_DEFINIR);
+    let filtro = 'WHERE nombre <> @comodin';
     if (req.usuario.rol === 'tienda') {
       request.input('yo', sql.Int, req.usuario.id_tienda || -1);
-      filtro = 'WHERE id = @yo';
+      filtro += ' AND id = @yo';
     }
 
     const result = await request.query(`
@@ -55,7 +69,8 @@ router.get('/resumen', async (req, res) => {
     const request = pool.request();
 
     let filtroFecha  = '';
-    let filtroTienda = '';
+    request.input('comodin', sql.NVarChar, TIENDA_SIN_DEFINIR);
+    let filtroTienda = 'WHERE t.nombre <> @comodin';
     if (desde && hasta) {
       request.input('desde', sql.Date, desde);
       request.input('hasta', sql.Date, hasta);
@@ -66,7 +81,7 @@ router.get('/resumen', async (req, res) => {
     }
     if (req.usuario.rol === 'tienda') {
       request.input('yo', sql.Int, req.usuario.id_tienda || -1);
-      filtroTienda = 'WHERE t.id = @yo';
+      filtroTienda += ' AND t.id = @yo';
     }
 
     const result = await request.query(`
@@ -128,6 +143,9 @@ router.post('/', requireRol(...GESTORES), async (req, res) => {
 router.put('/:id', requireRol(...GESTORES), async (req, res) => {
   try {
     const pool = await getPool();
+    if (await esTiendaComodin(pool, req.params.id)) {
+      return res.status(400).json({ error: 'Esta tienda es interna del sistema y no se puede modificar.' });
+    }
     const t    = req.body;
     await pool.request()
       .input('id',        sql.Int,      req.params.id)
@@ -158,6 +176,9 @@ router.put('/:id', requireRol(...GESTORES), async (req, res) => {
 router.delete('/:id', requireRol(...GESTORES), async (req, res) => {
   try {
     const pool = await getPool();
+    if (await esTiendaComodin(pool, req.params.id)) {
+      return res.status(400).json({ error: 'Esta tienda es interna del sistema y no se puede modificar.' });
+    }
     await pool.request()
       .input('id', sql.Int, req.params.id)
       .query(`UPDATE tiendas SET activa = 0 WHERE id = @id`);
@@ -172,6 +193,9 @@ router.delete('/:id', requireRol(...GESTORES), async (req, res) => {
 router.delete('/:id/permanente', requireRol('admin'), async (req, res) => {
   try {
     const pool = await getPool();
+    if (await esTiendaComodin(pool, req.params.id)) {
+      return res.status(400).json({ error: 'Esta tienda es interna del sistema y no se puede modificar.' });
+    }
     const check = await pool.request()
       .input('id', sql.Int, req.params.id)
       .query(`SELECT COUNT(*) AS total FROM ordenes WHERE id_tienda = @id`);

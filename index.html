@@ -148,6 +148,8 @@
      cola-fotos → después de utils (usa su fetch con cookie); antes
                   de pedidos/motorizados, que encolan las fotos
      indicador-fotos → después de cola-fotos (pinta su estado)
+     ordenes-pendientes → después de pedidos (usa CATALOGO_TIENDAS,
+                  _esGestorPedidos y _fechaDisplay); botón "Pendiente"
      navigation → carga las páginas desde pages/
      filters   → filtrarTablaPedidos (texto + tienda + motorizado + estado)
      asignacion → asignar, desasignar
@@ -162,6 +164,7 @@
 <script src="js/caja.js"></script>
 <script src="js/motorizados.js"></script>
 <script src="js/pedidos.js"></script>
+<script src="js/ordenes-pendientes.js"></script>
 <script src="js/pendiente-devolucion.js"></script>
 <script src="js/devolucion-tienda.js"></script>
 <script src="js/clientes.js"></script>

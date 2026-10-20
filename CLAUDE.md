@@ -10,7 +10,37 @@ Velox Courier — internal management system for a courier/delivery company in L
 
 ## Estado actual
 
-Última actualización: 16 de octubre de 2026.
+Última actualización: 20 de octubre de 2026.
+
+- **Foto en ráfaga + botón "Pendiente" (Pedidos) — probado en local, SIN subir a producción.**
+  Para cuando llegan muchos pedidos de golpe. Antes de desplegar hay que correr
+  `velox_agregar_rafaga.sql` en el servidor (ver "Migraciones pendientes").
+  - **Botón ⚡ amarillo** (`.btn-rafaga`, al lado de la cámara azul): la cámara queda abierta y
+    cada "Capturar" crea una orden **sin datos**, con tienda y distrito comodín `SIN DEFINIR`.
+    La foto va a la cola (`encolarFotoRafaga` en `js/cola-fotos.js`): la cola primero crea la
+    orden (`POST /api/ordenes/rafaga`) y después sube la foto, así que el ritmo de la cámara
+    no depende de la señal. Sin señal, las fotos esperan en el teléfono y las órdenes se crean
+    en orden al volver. No duplica: cada foto lleva un `idCreacion` (UUID, columna
+    `ordenes.id_creacion` con índice único). Fecha/hora = las de la foto.
+  - **Marca de "pendiente"**: columna propia `ordenes.datos_pendientes` (nace en 1 solo en la
+    ráfaga). **No** se detecta por la tienda comodín, que solo ocupa el lugar (`id_tienda` es
+    NOT NULL). Qué campos hay que completar lo define `CAMPOS_PENDIENTES` en
+    `server/routes/ordenes.js` (hoy: tienda, destinatario, teléfono); la marca se apaga en
+    `recalcularDatosPendientes()` cuando están todos, ya sea desde "Pendiente" o desde
+    "Actualizar orden". El usuario avisó que esos campos pueden cambiar (quizás 2, o distrito en
+    vez de tienda): para sacar uno basta con quitarlo de la lista; para uno nuevo, sumarlo
+    también a `CHEQUEOS_DATOS_PENDIENTES`, a `PATCH /:id/completar-datos` y a
+    `_CAMPOS_PENDIENTES_FORM` en `js/ordenes-pendientes.js`.
+  - **Botón "Pendiente"** (`js/ordenes-pendientes.js`): gris si no hay pendientes, ámbar con
+    el total si hay (refresco cada 8 s + evento de la cola). La ventana lista las pendientes de
+    cualquier fecha con su foto y los campos al costado, "Guardar" por fila
+    (`PATCH /:id/completar-datos`, con `ifVersion`). Endpoints: `GET /pendientes-datos` y
+    `GET /pendientes-datos/total`. Solo admin/operador.
+  - En "Todos los pedidos" se ven con la marca "Por completar". **No** aparecen en
+    Asignación, el motorizado no las ve (`filtroPorRol`) y `/asignar` las rechaza. La tienda
+    comodín no se lista en `GET /tiendas` ni se puede editar.
+  - `POST /` y `/rafaga` reintentan si dos órdenes calculan el mismo código `C-xxxx` a la vez
+    (`insertarConCodigoNuevo`).
 
 - **Deploy completado (16 de octubre de 2026).** Todo lo de esta sección está en
   producción (`sistema.veloxcourierperu.com`): el código bajó con `git pull`, las 4
@@ -79,6 +109,9 @@ Velox Courier — internal management system for a courier/delivery company in L
   quien llama es motorizado), no solo visual.
 
 **Pendiente:**
+- **Desplegar la ráfaga + "Pendiente":** copiar `velox_agregar_rafaga.sql` al servidor y
+  correrlo con `sqlcmd` **antes** del `git pull` (el código nuevo usa las columnas nuevas).
+  Después, probar la ráfaga desde el celular contra producción, también con corte de señal.
 - **Fotos en modo prueba:** en producción se guardan en el disco del servidor
   (`server/uploads_local/`), **no** en R2. R2 todavía no está configurado: falta crear el
   bucket y poner las 5 variables `R2_*` en el `.env` del servidor.
@@ -152,7 +185,11 @@ Roles: `admin`, `operador`, `visor`, `tienda`, `motorizado`. `GESTORES = ['admin
 
 ## Migraciones pendientes de aplicar en producción
 
-**Ninguna.** Las 4 últimas (`velox_agregar_medio_pago.sql`,
+- `velox_agregar_rafaga.sql` (foto en ráfaga + botón "Pendiente"): tienda comodín
+  `SIN DEFINIR`, columnas `ordenes.datos_pendientes` y `ordenes.id_creacion`. Aplicada en
+  local el 19 de octubre de 2026; **todavía no aplicada en el servidor**.
+
+Las 4 anteriores (`velox_agregar_medio_pago.sql`,
 `velox_agregar_concurrencia.sql`, `velox_agregar_distrito_sin_definir.sql`,
 `velox_agregar_id_subida.sql`) se aplicaron en el servidor el 16 de octubre de 2026.
 

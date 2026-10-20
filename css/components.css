@@ -65,6 +65,36 @@
   background: var(--color-red-bg);
 }
 
+/* Foto en ráfaga (⚡ en "Todos los pedidos") */
+.btn-rafaga {
+  background: var(--color-amber-icon);
+  color: var(--color-amber-text);
+  border-color: var(--color-amber);
+}
+
+.btn-rafaga:hover {
+  background: var(--color-amber-bg);
+}
+
+/* "Pendiente" (al lado del ⚡): ámbar si hay órdenes por completar,
+   gris y sin clic si no queda ninguna */
+.btn-pendientes {
+  background: var(--color-amber-bg);
+  color: var(--color-amber-text);
+  border-color: var(--color-amber);
+}
+
+.btn-pendientes:hover {
+  background: var(--color-amber-icon);
+}
+
+.btn-pendientes:disabled {
+  background: var(--color-bg-secondary);
+  color: var(--color-text-tertiary);
+  border-color: var(--color-border-secondary);
+  cursor: not-allowed;
+}
+
 .btn-sm {
   padding: 4px 10px;
   font-size: 12px;

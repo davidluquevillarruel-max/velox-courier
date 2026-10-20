@@ -38,6 +38,14 @@ function _hoy() {
   return d.getFullYear() + '-' + mm + '-' + dd;
 }
 
+/* Rol de la sesión (caché de pantalla, no es la seguridad real) */
+function _esGestorPedidos() {
+  try {
+    var u = JSON.parse(localStorage.getItem('velox_usuario'));
+    return !!u && (u.rol === 'admin' || u.rol === 'operador');
+  } catch (e) { return false; }
+}
+
 function _horaActual() {
   var d = new Date();
   return ('0'+d.getHours()).slice(-2) + ':' + ('0'+d.getMinutes()).slice(-2);
@@ -154,9 +162,18 @@ function _filaOrdenPedido(o) {
       ? ' <span style="font-size:10px;color:var(--color-amber-text);background:var(--color-amber-bg);padding:1px 5px;border-radius:8px">+S/' + pagoMotoAdicional.toFixed(2) + '</span>'
       : '');
 
+  /* Orden de foto en ráfaga a la que le faltan datos: en vez de la
+     tienda comodín se muestra la marca (se completa en "Pendiente") */
+  var tiendaHTML = o.datos_pendientes
+    ? (o.tienda !== 'SIN DEFINIR' ? o.tienda + ' ' : '') +
+      '<span title="Orden de foto en ráfaga: faltan datos (botón Pendiente)" ' +
+      'style="font-size:10px;color:var(--color-amber-text);background:var(--color-amber-bg);padding:1px 6px;border-radius:8px;white-space:nowrap">' +
+      '<i class="ti ti-bolt"></i> Por completar</span>'
+    : o.tienda + especial;
+
   return '<tr>' +
     '<td><strong>#' + o.codigo + '</strong>' + _iconoFotoProducto(o.foto_producto_url) + _iconoEvidenciaPendiente(o) + '</td>' +
-    '<td>' + o.tienda + especial + '</td>' +
+    '<td>' + tiendaHTML + '</td>' +
     '<td>' + (o.dest_nombre || '—') + '</td>' +
     '<td>' + (typeof _botonWhatsApp === 'function' ? _botonWhatsApp(o.dest_telefono, o.dest_nombre, o.dest_telefono_2) : (o.dest_telefono || '—')) + '</td>' +
     '<td>' + o.distrito + '</td>' +
@@ -517,11 +534,7 @@ window.abrirCamaraOrden = async function(esFlujoRapido) {
   var video = document.getElementById('camara-orden-video');
 
   try {
-    /* ideal (no exact) para que en PC no falle al no haber cámara trasera */
-    _camaraStream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: { ideal: 'environment' } },
-      audio: false,
-    });
+    _camaraStream = await _pedirStreamCamara();
     video.srcObject = _camaraStream;
     try { await video.play(); } catch (e) { /* autoplay ya se encarga */ }
   } catch (err) {
@@ -534,19 +547,36 @@ window.abrirCamaraOrden = async function(esFlujoRapido) {
   }
 };
 
-/* Toma el frame actual del video, ya escalado, y lo deja listo */
-window.capturarFotoCamara = function() {
-  var video = document.getElementById('camara-orden-video');
-  if (!video || !video.videoWidth) {
-    if (typeof showNotif === 'function') showNotif('La cámara todavía no está lista, probá de nuevo');
-    return;
-  }
+/* Pide la cámara (la comparten la foto de la orden y la ráfaga).
+   ideal (no exact) para que en PC no falle al no haber cámara trasera */
+function _pedirStreamCamara() {
+  return navigator.mediaDevices.getUserMedia({
+    video: { facingMode: { ideal: 'environment' } },
+    audio: false,
+  });
+}
 
+/* Copia el cuadro actual del video a un canvas, ya escalado. Se
+   copia en el momento (sincrónico): así se puede cerrar la cámara
+   o tomar la siguiente foto mientras se arma el JPEG.
+   Devuelve null si la cámara todavía no está lista. */
+function _cuadroDeVideo(video) {
+  if (!video || !video.videoWidth) return null;
   var escala = video.videoWidth > _FOTO_MAX_ANCHO ? _FOTO_MAX_ANCHO / video.videoWidth : 1;
   var canvas = document.createElement('canvas');
   canvas.width  = Math.round(video.videoWidth  * escala);
   canvas.height = Math.round(video.videoHeight * escala);
   canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+  return canvas;
+}
+
+/* Toma el frame actual del video, ya escalado, y lo deja listo */
+window.capturarFotoCamara = function() {
+  var canvas = _cuadroDeVideo(document.getElementById('camara-orden-video'));
+  if (!canvas) {
+    if (typeof showNotif === 'function') showNotif('La cámara todavía no está lista, probá de nuevo');
+    return;
+  }
 
   var esRapido = _camaraFlujoRapido;
   cerrarCamaraOrden();
@@ -669,6 +699,229 @@ function _limpiarFotoProducto() {
   if (cont) cont.style.display = 'none';
 }
 
+/* ════════════════════════════════════════════
+   FOTO EN RÁFAGA (botón ⚡ amarillo)
+   La cámara queda abierta y cada "Capturar" crea una orden sin
+   datos (tienda y distrito "SIN DEFINIR", "Por completar"). La
+   foto se guarda en el teléfono y la cola (js/cola-fotos.js) crea
+   la orden y sube la foto en segundo plano: el ritmo de la cámara
+   no depende de la señal. Si no hay señal, las fotos se acumulan
+   y las órdenes se crean en orden cuando vuelve.
+   Los datos se completan después en la ventana "Pendiente".
+════════════════════════════════════════════ */
+var _rafagaStream       = null;
+var _rafagaWakeLock     = null;
+var _rafagaTomadas      = 0;
+var _rafagaIds          = {};   /* idSubida de las fotos de esta ráfaga */
+var _rafagaCreadas      = {};   /* idSubida → código, de las órdenes ya creadas */
+var _rafagaUltimoCodigo = '';
+var _rafagaAvisoMemoria = false;
+var _rafagaMiniaturaUrl = null;
+
+/* Cuándo se tomó la foto: la orden queda con esa fecha aunque se
+   cree al otro día (si recién vuelve la señal) */
+function _momentoFoto() {
+  return { fecha: _hoy(), hora: _horaActual() };
+}
+
+function _overlayRafaga() {
+  var overlay = document.getElementById('camara-rafaga-overlay');
+  if (overlay) return overlay;
+
+  overlay = document.createElement('div');
+  overlay.id = 'camara-rafaga-overlay';
+  overlay.style.cssText = 'display:none;position:fixed;inset:0;background:rgba(0,0,0,0.88);z-index:1300;align-items:center;justify-content:center;padding:16px';
+  overlay.innerHTML =
+    '<div style="width:100%;max-width:520px;display:flex;flex-direction:column;gap:12px">' +
+      '<div id="rafaga-contador" style="color:#fff;text-align:center;font-size:14px;min-height:20px"></div>' +
+      '<div style="position:relative">' +
+        '<video id="camara-rafaga-video" autoplay playsinline muted ' +
+               'style="width:100%;max-height:64vh;background:#000;border-radius:var(--radius-md);object-fit:contain;display:block"></video>' +
+        /* Destello blanco al capturar: confirma la foto sin mirar el contador */
+        '<div id="rafaga-destello" style="position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none;transition:opacity 0.25s;border-radius:var(--radius-md)"></div>' +
+        '<img id="rafaga-miniatura" alt="Última foto" ' +
+             'style="display:none;position:absolute;left:8px;bottom:8px;width:64px;height:64px;object-fit:cover;border:2px solid #fff;border-radius:var(--radius-md)">' +
+      '</div>' +
+      '<div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">' +
+        '<button type="button" class="btn btn-rafaga" onclick="capturarFotoRafaga()">' +
+          '<i class="ti ti-camera-bolt"></i> Capturar' +
+        '</button>' +
+        '<button type="button" class="btn" onclick="terminarRafaga()">' +
+          '<i class="ti ti-check"></i> Terminar' +
+        '</button>' +
+      '</div>' +
+    '</div>';
+  document.body.appendChild(overlay);
+  return overlay;
+}
+
+function _pintarContadorRafaga() {
+  var el = document.getElementById('rafaga-contador');
+  if (!el) return;
+  var creadas = Object.keys(_rafagaIds).filter(function(id) { return _rafagaCreadas[id]; }).length;
+
+  if (!_rafagaTomadas) {
+    el.textContent = 'Cada foto crea una orden. Los datos se completan después en "Pendiente".';
+    return;
+  }
+  var partes = [
+    _rafagaTomadas + (_rafagaTomadas === 1 ? ' foto' : ' fotos'),
+    creadas + (creadas === 1 ? ' orden creada' : ' órdenes creadas'),
+  ];
+  if (_rafagaUltimoCodigo) partes.push('última #' + _rafagaUltimoCodigo);
+  /* navigator.onLine solo es confiable cuando dice false */
+  if (navigator.onLine === false) partes.push('sin señal: se crean al volver');
+  el.textContent = partes.join(' · ');
+}
+
+/* La cola avisa cada vez que crea una orden de ráfaga */
+window.addEventListener('velox:orden-rafaga-creada', function(e) {
+  var d = e.detail || {};
+  _rafagaCreadas[d.idSubida] = d.codigo || true;
+  if (_rafagaIds[d.idSubida] && d.codigo) _rafagaUltimoCodigo = d.codigo;
+  _pintarContadorRafaga();
+});
+window.addEventListener('online',  _pintarContadorRafaga);
+window.addEventListener('offline', _pintarContadorRafaga);
+
+/* Que no se apague la pantalla en medio de 40 fotos (si el
+   navegador no lo soporta, no pasa nada) */
+function _pedirPantallaEncendida() {
+  if (!navigator.wakeLock || !navigator.wakeLock.request) return;
+  navigator.wakeLock.request('screen').then(function(lock) {
+    _rafagaWakeLock = lock;
+  }).catch(function() {});
+}
+
+window.abrirCamaraRafaga = async function() {
+  _rafagaTomadas = 0;
+  _rafagaIds = {};
+  _rafagaUltimoCodigo = '';
+  _rafagaAvisoMemoria = false;
+
+  /* Sin cámara en vivo (http por IP): una foto por vez con el input */
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    var input = document.getElementById('f-orden-foto-rafaga');
+    if (input) input.click();
+    return;
+  }
+
+  var overlay = _overlayRafaga();
+  var mini = document.getElementById('rafaga-miniatura');
+  if (mini) mini.style.display = 'none';
+  _pintarContadorRafaga();
+  overlay.style.display = 'flex';
+  var video = document.getElementById('camara-rafaga-video');
+
+  try {
+    _rafagaStream = await _pedirStreamCamara();
+    video.srcObject = _rafagaStream;
+    try { await video.play(); } catch (e) { /* autoplay ya se encarga */ }
+    _pedirPantallaEncendida();
+  } catch (err) {
+    _cerrarCamaraRafaga();
+    if (typeof showNotif === 'function') {
+      showNotif('No se pudo abrir la cámara (' + (err.name || 'error') + '). Tomá las fotos de a una.', 4000);
+    }
+    var inputRespaldo = document.getElementById('f-orden-foto-rafaga');
+    if (inputRespaldo) inputRespaldo.click();
+  }
+};
+
+/* Guarda una foto de la ráfaga en la cola. No espera a la red. */
+async function _encolarFotoDeRafaga(blob, momento) {
+  var r = await encolarFotoRafaga(blob, momento);
+  _rafagaIds[r.idSubida] = true;
+  if (!r.persistente && !_rafagaAvisoMemoria) {
+    _rafagaAvisoMemoria = true;
+    if (typeof showNotif === 'function') {
+      showNotif('Las fotos no se pudieron guardar en el teléfono: no cierres Velox hasta que suban.', 6000);
+    }
+  }
+}
+
+window.capturarFotoRafaga = function() {
+  var canvas = _cuadroDeVideo(document.getElementById('camara-rafaga-video'));
+  if (!canvas) {
+    if (typeof showNotif === 'function') showNotif('La cámara todavía no está lista, probá de nuevo');
+    return;
+  }
+
+  /* Se cuenta ya, sin esperar al JPEG: así se puede seguir tocando */
+  var momento = _momentoFoto();
+  _rafagaTomadas++;
+  _pintarContadorRafaga();
+  var destello = document.getElementById('rafaga-destello');
+  if (destello) {
+    destello.style.opacity = '0.7';
+    setTimeout(function() { destello.style.opacity = '0'; }, 80);
+  }
+
+  canvas.toBlob(async function(blob) {
+    try {
+      if (!blob) throw new Error('No se pudo capturar la foto');
+      var mini = document.getElementById('rafaga-miniatura');
+      if (mini) {
+        if (_rafagaMiniaturaUrl) URL.revokeObjectURL(_rafagaMiniaturaUrl);
+        _rafagaMiniaturaUrl = URL.createObjectURL(blob);
+        mini.src = _rafagaMiniaturaUrl;
+        mini.style.display = 'block';
+      }
+      await _encolarFotoDeRafaga(blob, momento);
+    } catch (err) {
+      _rafagaTomadas--;
+      if (typeof showNotif === 'function') showNotif((err && err.message) || 'No se pudo guardar la foto');
+    }
+    _pintarContadorRafaga();
+  }, 'image/jpeg', _FOTO_CALIDAD);
+};
+
+function _cerrarCamaraRafaga() {
+  if (_rafagaStream) {
+    _rafagaStream.getTracks().forEach(function(t) { t.stop(); });
+    _rafagaStream = null;
+  }
+  if (_rafagaWakeLock) {
+    _rafagaWakeLock.release().catch(function() {});
+    _rafagaWakeLock = null;
+  }
+  var video = document.getElementById('camara-rafaga-video');
+  if (video) video.srcObject = null;
+  if (_rafagaMiniaturaUrl) { URL.revokeObjectURL(_rafagaMiniaturaUrl); _rafagaMiniaturaUrl = null; }
+  var overlay = document.getElementById('camara-rafaga-overlay');
+  if (overlay) overlay.style.display = 'none';
+}
+
+window.terminarRafaga = function() {
+  var tomadas = _rafagaTomadas;
+  _cerrarCamaraRafaga();
+  if (!tomadas) return;
+
+  renderPedidos();
+  if (typeof showNotif === 'function') {
+    showNotif(tomadas + (tomadas === 1 ? ' foto tomada' : ' fotos tomadas') +
+      '. Las órdenes se crean en segundo plano; completá los datos en "Pendiente".', 5000);
+  }
+};
+
+/* Respaldo sin cámara en vivo: cada foto elegida crea su orden igual */
+window.onFotoRafagaSeleccionada = async function(input) {
+  var file = input.files && input.files[0];
+  input.value = '';
+  if (!file) return;
+
+  try {
+    var blob = await comprimirImagenJPEG(file, _FOTO_MAX_ANCHO, _FOTO_CALIDAD);
+    await _encolarFotoDeRafaga(blob, _momentoFoto());
+  } catch (err) {
+    if (typeof showNotif === 'function') showNotif(err.message || 'No se pudo procesar la foto');
+    return;
+  }
+  if (typeof showNotif === 'function') {
+    showNotif('Foto guardada: la orden se crea en segundo plano. Tocá ⚡ para la siguiente.', 3500);
+  }
+};
+
 window.guardarOrden = async function() {
   var fecha      = document.getElementById('f-orden-fecha').value;
   var tienda     = document.getElementById('f-orden-tienda').value;
@@ -790,6 +1043,15 @@ window.initPedidos = async function() {
   _marcarBotonActivoPedidos('hoy');
   _initCombosOrden();
   _initFiltrosPedidosTabla();
+
+  /* La ráfaga crea órdenes: solo admin / operador (el servidor lo
+     exige igual en POST /ordenes/rafaga; esto es solo para no
+     mostrar un botón que va a fallar) */
+  var btnRafaga = document.getElementById('btn-rafaga-pedidos');
+  if (btnRafaga && !_esGestorPedidos()) btnRafaga.style.display = 'none';
+  /* Botón "Pendiente" (js/ordenes-pendientes.js) */
+  if (typeof initBotonPendientes === 'function') initBotonPendientes();
+
   await renderPedidos();
 
   /* Repinta la tabla sola cada 8s, así los cambios de otros usuarios

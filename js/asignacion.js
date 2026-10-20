@@ -61,7 +61,12 @@ async function _cargarDatosAsignacion() {
       fetch(API + '/motorizados'),
       fetch(API + '/tiendas'),
     ]);
-    ORDENES_ASIG     = await rO.json();
+    /* Las órdenes de foto en ráfaga con datos pendientes no se
+       reparten hasta que se completan (botón "Pendiente" en "Todos
+       los pedidos"). El servidor ya rechaza asignarlas y al
+       motorizado ni se las manda; esto las saca de la pantalla
+       para admin / operador. */
+    ORDENES_ASIG     = (await rO.json()).filter(function(o) { return !o.datos_pendientes; });
     MOTORIZADOS_ASIG = await rM.json();
     TIENDAS_ASIG      = (await rT.json()).filter(function(t){ return t.activa; });
   } catch (err) {

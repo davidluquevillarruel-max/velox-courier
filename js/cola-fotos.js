@@ -27,7 +27,8 @@
 
    Foto en ráfaga (encolarFotoRafaga): la foto entra a la cola SIN
    orden todavía. Al procesarla, la cola primero crea la orden
-   (POST /ordenes/rafaga) y recién después sube la foto. El orden de
+   (POST /ordenes/rafaga, con la tienda elegida al empezar la ráfaga,
+   que viaja guardada con la foto) y recién después sube la foto. El orden de
    la cola se respeta, así que los códigos salen en el orden en que
    se tomaron las fotos. Tampoco duplica la orden: cada foto lleva un
    idCreacion (UUID) que el servidor reconoce si el reintento llega
@@ -239,6 +240,9 @@ async function _colaCrearOrdenRafaga(item) {
       idCreacion: item.rafaga.idCreacion,
       fecha:      item.rafaga.fecha,
       hora:       item.rafaga.hora,
+      /* Las fotos que quedaron del flujo viejo no traen tienda: el
+         servidor usa la tienda comodín */
+      tienda:     item.rafaga.tienda || '',
     }),
   }, _COLA_TIMEOUT_JSON);
   if (!r.ok) throw await _colaErrorHttp(r, 'No se pudo crear la orden de la foto');
@@ -399,14 +403,17 @@ async function encolarFoto(ordenId, tipo, blob, codigoOrden) {
  * @param {Blob} blob - JPEG ya comprimido.
  * @param {{fecha: string, hora: string}} momento - Cuándo se tomó
  *   la foto ('YYYY-MM-DD' y 'HH:MM', hora local del teléfono).
+ * @param {string} tienda - Nombre de la tienda elegida al empezar la
+ *   ráfaga: todas las órdenes de esa ráfaga se crean con ella.
  * @returns {Promise<{idSubida: string, persistente: boolean}>}
  */
-async function encolarFotoRafaga(blob, momento) {
+async function encolarFotoRafaga(blob, momento, tienda) {
   var item = await _colaNuevoItem(null, 'foto_producto', blob, '');
   item.rafaga = {
     idCreacion: _colaNuevoId(),
     fecha:      momento && momento.fecha,
     hora:       momento && momento.hora,
+    tienda:     tienda || '',
   };
   return _colaAgregar(item);
 }

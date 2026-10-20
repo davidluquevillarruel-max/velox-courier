@@ -418,6 +418,45 @@
 </div>
 
 <!-- ══════════════════════════════════════════
+     MODAL — Tienda de la ráfaga (botón ⚡)
+     Se elige ANTES de abrir la cámara: todas las órdenes de esa
+     ráfaga se crean con esta tienda (ver js/pedidos.js).
+════════════════════════════════════════════ -->
+<div id="rafaga-tienda-overlay"
+     style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.40);z-index:1000;align-items:flex-start;justify-content:center;overflow-y:auto;padding:40px 0">
+
+  <div style="background:var(--color-bg-primary);border-radius:var(--radius-lg);padding:28px;width:420px;max-width:95vw;box-shadow:var(--shadow-lg);margin:auto">
+
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+      <span style="font-size:16px;font-weight:600"><i class="ti ti-camera-bolt"></i> Foto en ráfaga</span>
+      <button onclick="cerrarSelectorTiendaRafaga()"
+              style="background:none;border:none;cursor:pointer;font-size:20px;color:var(--color-text-secondary);line-height:1">
+        <i class="ti ti-x"></i>
+      </button>
+    </div>
+    <div style="font-size:12px;color:var(--color-text-secondary);margin-bottom:16px">
+      Todas las fotos de esta ráfaga se crean con la tienda que elijas. Para otra tienda, terminá y volvé a tocar ⚡.
+    </div>
+
+    <div>
+      <label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px;font-weight:500">Tienda *</label>
+      <input id="f-rafaga-tienda" class="search-box" style="width:100%;border-radius:var(--radius-md);padding:8px 12px" placeholder="Escribe para buscar tienda..."
+             onkeydown="if(event.key==='Enter')confirmarTiendaRafaga()" />
+    </div>
+
+    <div id="rafaga-tienda-error" style="display:none;margin-top:12px;color:var(--color-red-text);font-size:12px;padding:6px 10px;background:var(--color-red-bg);border-radius:var(--radius-md)"></div>
+
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:20px">
+      <button class="btn btn-sm" onclick="cerrarSelectorTiendaRafaga()">Cancelar</button>
+      <button class="btn btn-rafaga btn-sm" onclick="confirmarTiendaRafaga()">
+        <i class="ti ti-camera"></i> Abrir cámara
+      </button>
+    </div>
+
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════
      MODAL — Órdenes por completar (botón "Pendiente")
      Una fila por orden de foto en ráfaga: la foto y al costado los
      campos que faltan, con "Guardar" por fila. Las filas las arma

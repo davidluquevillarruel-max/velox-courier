@@ -420,8 +420,13 @@ router.post('/', requireRol(...GESTORES), async (req, res) => {
 });
 
 /* ── POST /api/ordenes/rafaga — Foto en ráfaga (admin / operador)
-   Crea una orden SIN datos para una foto tomada en serie: tienda y
-   distrito comodín "SIN DEFINIR", datos_pendientes = 1. La foto
+   Crea una orden SIN datos para una foto tomada en serie, con la
+   tienda elegida al empezar la ráfaga, distrito comodín
+   "SIN DEFINIR" y datos_pendientes = 1. Si no viene tienda (fotos
+   que quedaron en la cola de un celular con el flujo viejo) o la
+   tienda ya no es válida (se desactivó entre la foto y la subida),
+   la orden se crea igual con la tienda comodín, para no perder la
+   foto: la ventana "Pendiente" pide la tienda en esas filas. La foto
    se sube después, por la cola (js/cola-fotos.js), con el id que
    devuelve esta ruta.
 
@@ -456,18 +461,26 @@ router.post('/rafaga', requireRol(...GESTORES), async (req, res) => {
     const yaExiste = await ordenPorIdCreacion(pool, idCreacion);
     if (yaExiste) return res.json({ id: yaExiste.id, codigo: yaExiste.codigo, existente: true });
 
+    const tiendaPedida = typeof req.body.tienda === 'string' ? req.body.tienda.trim() : '';
+
     const lookups = await pool.request()
       .input('tienda',   sql.NVarChar, TIENDA_SIN_DEFINIR)
+      .input('pedida',   sql.NVarChar, tiendaPedida)
       .input('origen',   sql.NVarChar, 'GAMARRA')
       .input('distrito', sql.NVarChar, DISTRITO_SIN_DEFINIR)
       .query(`
         SELECT
-          (SELECT id FROM tiendas   WHERE nombre = @tienda)   AS id_tienda,
+          (SELECT id FROM tiendas   WHERE nombre = @tienda)   AS id_comodin,
+          (SELECT id FROM tiendas   WHERE nombre = @pedida AND activa = 1 AND nombre <> @tienda) AS id_pedida,
           (SELECT id FROM origenes  WHERE nombre = @origen)   AS id_origen,
           (SELECT id FROM distritos WHERE nombre = @distrito) AS id_distrito
       `);
-    const { id_tienda, id_origen, id_distrito } = lookups.recordset[0];
+    const { id_comodin, id_pedida, id_origen, id_distrito } = lookups.recordset[0];
+    const id_tienda = id_pedida || id_comodin;
     if (!id_tienda)   return res.status(500).json({ error: 'Falta la tienda "SIN DEFINIR" en la base: corré velox_agregar_rafaga.sql.' });
+    if (tiendaPedida && !id_pedida) {
+      console.warn(`POST /ordenes/rafaga: tienda no válida "${tiendaPedida}", se usa el comodín`);
+    }
     if (!id_distrito) return res.status(500).json({ error: 'Falta el distrito "SIN DEFINIR" en la base: corré velox_agregar_distrito_sin_definir.sql.' });
     if (!id_origen)   return res.status(500).json({ error: 'Origen no encontrado: GAMARRA' });
 

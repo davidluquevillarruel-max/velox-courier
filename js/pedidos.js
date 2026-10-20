@@ -701,14 +701,18 @@ function _limpiarFotoProducto() {
 
 /* ════════════════════════════════════════════
    FOTO EN RÁFAGA (botón ⚡ amarillo)
-   La cámara queda abierta y cada "Capturar" crea una orden sin
-   datos (tienda y distrito "SIN DEFINIR", "Por completar"). La
+   Primero se elige la tienda (una por ráfaga); después la cámara
+   queda abierta y cada "Capturar" crea una orden con ESA tienda y
+   sin los demás datos (distrito "SIN DEFINIR", "Por completar"). La
    foto se guarda en el teléfono y la cola (js/cola-fotos.js) crea
    la orden y sube la foto en segundo plano: el ritmo de la cámara
    no depende de la señal. Si no hay señal, las fotos se acumulan
    y las órdenes se crean en orden cuando vuelve.
-   Los datos se completan después en la ventana "Pendiente".
+   Los datos se completan después en la ventana "Pendiente", que se
+   abre sola al tocar "Terminar".
 ════════════════════════════════════════════ */
+var _rafagaTienda       = '';   /* tienda elegida para esta ráfaga */
+var _comboTiendaRafaga  = null;
 var _rafagaStream       = null;
 var _rafagaWakeLock     = null;
 var _rafagaTomadas      = 0;
@@ -733,6 +737,8 @@ function _overlayRafaga() {
   overlay.style.cssText = 'display:none;position:fixed;inset:0;background:rgba(0,0,0,0.88);z-index:1300;align-items:center;justify-content:center;padding:16px';
   overlay.innerHTML =
     '<div style="width:100%;max-width:520px;display:flex;flex-direction:column;gap:12px">' +
+      /* La tienda bien a la vista: todas las fotos van con ella */
+      '<div id="rafaga-tienda-camara" style="color:#fff;text-align:center;font-size:17px;font-weight:600"></div>' +
       '<div id="rafaga-contador" style="color:#fff;text-align:center;font-size:14px;min-height:20px"></div>' +
       '<div style="position:relative">' +
         '<video id="camara-rafaga-video" autoplay playsinline muted ' +
@@ -756,6 +762,8 @@ function _overlayRafaga() {
 }
 
 function _pintarContadorRafaga() {
+  var elTienda = document.getElementById('rafaga-tienda-camara');
+  if (elTienda) elTienda.textContent = 'Tienda: ' + _rafagaTienda;
   var el = document.getElementById('rafaga-contador');
   if (!el) return;
   var creadas = Object.keys(_rafagaIds).filter(function(id) { return _rafagaCreadas[id]; }).length;
@@ -793,7 +801,46 @@ function _pedirPantallaEncendida() {
   }).catch(function() {});
 }
 
-window.abrirCamaraRafaga = async function() {
+/* Botón ⚡: primero la tienda, después la cámara */
+window.abrirCamaraRafaga = function() {
+  if (!_comboTiendaRafaga) {
+    _comboTiendaRafaga = initComboBuscable('f-rafaga-tienda', function() {
+      return CATALOGO_TIENDAS.map(function(t) { return { value: t.nombre, label: t.nombre }; });
+    });
+  }
+  /* Con cámara en vivo arranca vacío, para elegirla a conciencia en
+     cada ráfaga. Sin cámara en vivo (una foto por toque de ⚡) se
+     repite la última, así no hay que buscarla en cada foto. */
+  var sinCamaraEnVivo = !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia;
+  if (sinCamaraEnVivo && _rafagaTienda) _comboTiendaRafaga.setValor(_rafagaTienda);
+  else _comboTiendaRafaga.limpiar();
+
+  var errEl = document.getElementById('rafaga-tienda-error');
+  if (errEl) errEl.style.display = 'none';
+  document.getElementById('rafaga-tienda-overlay').style.display = 'flex';
+};
+
+window.cerrarSelectorTiendaRafaga = function() {
+  document.getElementById('rafaga-tienda-overlay').style.display = 'none';
+};
+
+window.confirmarTiendaRafaga = function() {
+  var tienda = document.getElementById('f-rafaga-tienda').value;
+  var valida = CATALOGO_TIENDAS.some(function(t) { return t.nombre === tienda; });
+  if (!valida) {
+    var errEl = document.getElementById('rafaga-tienda-error');
+    errEl.textContent = 'Elegí la tienda de la lista.';
+    errEl.style.display = 'block';
+    return;
+  }
+  _rafagaTienda = tienda;
+  cerrarSelectorTiendaRafaga();
+  /* Sin await: el respaldo sin cámara en vivo hace input.click() antes
+     del primer await, todavía dentro del toque del usuario */
+  _iniciarCamaraRafaga();
+};
+
+async function _iniciarCamaraRafaga() {
   _rafagaTomadas = 0;
   _rafagaIds = {};
   _rafagaUltimoCodigo = '';
@@ -830,7 +877,7 @@ window.abrirCamaraRafaga = async function() {
 
 /* Guarda una foto de la ráfaga en la cola. No espera a la red. */
 async function _encolarFotoDeRafaga(blob, momento) {
-  var r = await encolarFotoRafaga(blob, momento);
+  var r = await encolarFotoRafaga(blob, momento, _rafagaTienda);
   _rafagaIds[r.idSubida] = true;
   if (!r.persistente && !_rafagaAvisoMemoria) {
     _rafagaAvisoMemoria = true;
@@ -898,9 +945,13 @@ window.terminarRafaga = function() {
   if (!tomadas) return;
 
   renderPedidos();
+  /* Todas las pendientes (de esta ráfaga y de antes), con su foto y
+     su tienda. Las órdenes que la cola todavía no creó (sin señal)
+     aparecen solas a medida que se crean. */
+  if (typeof abrirPendientes === 'function') abrirPendientes();
   if (typeof showNotif === 'function') {
     showNotif(tomadas + (tomadas === 1 ? ' foto tomada' : ' fotos tomadas') +
-      '. Las órdenes se crean en segundo plano; completá los datos en "Pendiente".', 5000);
+      ' de ' + _rafagaTienda + '. Las órdenes se crean en segundo plano.', 5000);
   }
 };
 

@@ -44,6 +44,25 @@ function _fechaDisplayM(yyyymmdd) {
   return p[2] + ' ' + meses[parseInt(p[1])-1] + ' ' + p[0];
 }
 
+/* Día de trabajo de una orden: el día en que se le asignó al
+   motorizado (fecha_trabajo, la calcula GET /motorizados/:id/ordenes);
+   si no tiene, el de creación. La fecha de la orden (o.fecha) es la
+   que usan la Caja y los reportes, y no cambia. */
+function _fechaTrabajoM(o) {
+  return o.fecha_trabajo || o.fecha;
+}
+
+/* Celda "Fecha" del detalle: el día de trabajo y, si la orden se creó
+   otro día, ese día en gris debajo (para ubicarla en Caja / Pedidos) */
+function _celdaFechaTrabajoM(o) {
+  var dia = _fechaTrabajoM(o);
+  var html = _fechaDisplayM(dia);
+  if (o.fecha && o.fecha !== dia) {
+    html += '<div style="font-size:10px;color:var(--color-text-tertiary)">creada el ' + _fechaDisplayM(o.fecha) + '</div>';
+  }
+  return html;
+}
+
 /* ════════════════════════════════════════════
    CARGAR MOTORIZADOS DESDE LA API
 ════════════════════════════════════════════ */
@@ -436,7 +455,7 @@ function _renderTablaOrdenesDetalle(ordenes) {
         '<td style="padding:8px 12px;color:var(--color-amber-text);font-weight:600">' + pagoMotoStr + '</td>' +
         '<td style="padding:8px 12px">' + totalMotoStr + '</td>' +
         '<td style="padding:8px 12px">' + especial + '</td>' +
-        '<td style="padding:8px 12px;font-size:11px;color:var(--color-text-secondary)">' + _fechaDisplayM(o.fecha) + '</td>' +
+        '<td style="padding:8px 12px;font-size:11px;color:var(--color-text-secondary);white-space:nowrap">' + _celdaFechaTrabajoM(o) + '</td>' +
         '<td style="padding:8px 12px"><div style="display:flex;gap:4px;flex-wrap:wrap">' +
           '<button class="btn btn-sm" onclick="abrirActualizarEstadoOrden(' + o.id + ')"><i class="ti ti-refresh"></i> Actualizar</button>' +
           (!esMoto && !_ESTADOS_NO_REASIGNABLES.includes(o.estado)
@@ -562,11 +581,13 @@ window.renderDetalleMoto = async function(motoId) {
   var r = await fetch(API + '/motorizados/' + motoId + '/ordenes');
   var todasOrdenes = await r.json();
 
-  /* Agrupar por fecha */
+  /* Agrupar por día de trabajo (el día en que se le asignó; ver
+     _fechaTrabajoM), no por el día en que se creó la orden */
   var mapaFecha = {};
   todasOrdenes.forEach(function(o) {
-    if (!mapaFecha[o.fecha]) mapaFecha[o.fecha] = [];
-    mapaFecha[o.fecha].push(o);
+    var dia = _fechaTrabajoM(o);
+    if (!mapaFecha[dia]) mapaFecha[dia] = [];
+    mapaFecha[dia].push(o);
   });
   var fechas = Object.keys(mapaFecha).sort().reverse();
 

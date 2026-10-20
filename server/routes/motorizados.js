@@ -161,8 +161,13 @@ router.get('/:id/ordenes', async (req, res) => {
 
     const pool  = await getPool();
     const fecha = req.query.fecha;
+    /* El día de trabajo del motorizado es el día en que se le asignó
+       la orden (fecha_asignacion, ver velox_agregar_fecha_asignacion.sql);
+       si no tiene, el de creación. "fecha" sigue siendo la de la orden
+       (la que usan la Caja y los reportes). */
     let query = `
       SELECT o.id, o.codigo, CONVERT(varchar,o.fecha,23) AS fecha,
+             CONVERT(varchar, ISNULL(o.fecha_asignacion, o.fecha), 23) AS fecha_trabajo,
              t.nombre AS tienda, d.nombre AS distrito,
              o.dest_nombre, o.dest_telefono, o.dest_telefono_2, o.estado, o.metodo_pago,
              o.delivery_total, o.monto_cobrado, o.monto_producto,
@@ -176,8 +181,8 @@ router.get('/:id/ordenes', async (req, res) => {
       JOIN distritos d ON d.id = o.id_distrito
       WHERE o.id_motorizado = @id
     `;
-    if (fecha) query += ` AND o.fecha = @fecha`;
-    query += ` ORDER BY o.fecha DESC, o.id`;
+    if (fecha) query += ` AND ISNULL(o.fecha_asignacion, o.fecha) = @fecha`;
+    query += ` ORDER BY ISNULL(o.fecha_asignacion, o.fecha) DESC, o.id`;
     const request = pool.request().input('id', sql.Int, req.params.id);
     if (fecha) request.input('fecha', sql.Date, fecha);
     const result = await request.query(query);

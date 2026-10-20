@@ -12,6 +12,14 @@ Velox Courier — internal management system for a courier/delivery company in L
 
 Última actualización: 20 de octubre de 2026.
 
+- **En local, sin subir: el motorizado ve sus órdenes el día en que se le asignaron.** Columna
+  nueva `ordenes.fecha_asignacion` (migración pendiente, ver abajo), la llena `/asignar`. La
+  página Motorizados (resumen, tarjetas y detalle, para todos los roles) usa
+  `ISNULL(fecha_asignacion, fecha)`; `ordenes.fecha` no cambia, así que la Caja y los reportes
+  quedan igual. **Queda para analizar aparte:** la Caja de motorizados agrupa el pago por
+  `ordenes.fecha`, así que una orden asignada días después cae en un día que quizás ya se marcó
+  pagado (pasa desde antes de este cambio).
+
 - **En local, sin subir (20 de octubre de 2026): ráfaga con tienda + "Pendiente" con
   destinatario/distrito/cobrado.** No necesita migración (todas las columnas ya existen).
   Commits `aad7979` (parte 1) y el siguiente (parte 2). Falta que el usuario lo pruebe en local.
@@ -204,7 +212,11 @@ Roles: `admin`, `operador`, `visor`, `tienda`, `motorizado`. `GESTORES = ['admin
 
 ## Migraciones pendientes de aplicar en producción
 
-Ninguna por ahora.
+- `velox_agregar_fecha_asignacion.sql` — columna `ordenes.fecha_asignacion` (DATE NULL), que
+  llena `PATCH /:id/asignar` (hoy en hora de Lima). La página Motorizados filtra por
+  `ISNULL(fecha_asignacion, fecha)`; la Caja y los reportes siguen con `ordenes.fecha`.
+  Aplicada en local el 20 de octubre de 2026. **Correrla en el servidor antes del `git pull`**:
+  sin la columna, `/asignar` y `GET /motorizados/:id/ordenes` fallan.
 
 `velox_agregar_rafaga.sql` (tienda comodín `SIN DEFINIR`, columnas `ordenes.datos_pendientes`
 y `ordenes.id_creacion`) se aplicó en el servidor el 20 de octubre de 2026. Las 4 anteriores

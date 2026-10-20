@@ -105,6 +105,13 @@ async function recalcularDatosPendientes(pool, ordenId) {
   return false;
 }
 
+/* Fecha de hoy en Lima ('YYYY-MM-DD'). No se usa GETDATE(): el
+   servidor de producción puede estar en UTC, y una asignación
+   después de las 19:00 de Lima quedaría con el día siguiente. */
+function hoyEnLima() {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Lima' }).format(new Date());
+}
+
 /* 2601 / 2627 = clave duplicada; el mensaje trae el nombre del
    índice o restricción que chocó */
 function esDuplicado(err, nombreIndice) {
@@ -992,11 +999,28 @@ router.patch('/:id/asignar', async (req, res) => {
     const ifVersion = bufferDeVersion(req.body.ifVersion);
     const request = pool.request()
       .input('id',   sql.BigInt, req.params.id)
-      .input('moto', sql.Int,    id_motorizado);
+      .input('moto', sql.Int,    id_motorizado)
+      .input('hoy',  sql.Date,   hoyEnLima());
     let whereVersion = '';
     if (ifVersion) { request.input('ifVersion', sql.VarBinary(8), ifVersion); whereVersion = ' AND row_version = @ifVersion'; }
 
-    const result = await request.query(`UPDATE ordenes SET id_motorizado = @moto WHERE id = @id${whereVersion}`);
+    /* fecha_asignacion (ver velox_agregar_fecha_asignacion.sql): el
+       día en que el motorizado la va a entregar, para la página
+       Motorizados. La fecha de la orden (Caja, reportes) no se toca.
+       · Otro motorizado (o la orden no tenía) → hoy.
+       · El mismo motorizado de nuevo → se conserva.
+       · Desasignar → NULL.
+       En un UPDATE, id_motorizado de la derecha es el valor de antes. */
+    const result = await request.query(`
+      UPDATE ordenes
+      SET fecha_asignacion = CASE
+            WHEN @moto IS NULL          THEN NULL
+            WHEN id_motorizado = @moto  THEN fecha_asignacion
+            ELSE @hoy
+          END,
+          id_motorizado = @moto
+      WHERE id = @id${whereVersion}
+    `);
     if (ifVersion && result.rowsAffected[0] === 0) {
       const fresca = await conflictoDeVersion(pool, req.params.id);
       if (!fresca) return res.status(404).json({ error: 'Orden no encontrada' });

@@ -22,8 +22,39 @@ Velox Courier — internal management system for a courier/delivery company in L
   Ojo: el servidor usa R2 apenas las 5 variables tienen **cualquier** valor; si una falta o
   está vacía, vuelve al modo prueba (`uploads_local/`). Pasos para producción en "Pendiente".
 
+- **Importación de órdenes desde Excel (22 de octubre de 2026, commit `c15090d`).** En local se
+  borraron las órdenes de ejemplo y se cargó el día real 20/10/2026 desde
+  `D:\subir sist velox.xlsx` (274 órdenes: 241 entregado, 28 reprogramado, 5 cancelado). Backup
+  previo en la carpeta `Backup` de SQL Server: `velox_courier_antes_import_20261022.bak`. Tres
+  scripts en `server/scripts/`:
+  - `limpiar_ordenes.sql` — borra `ordenes_fotos`, `caja_pagos_motorizados`,
+    `caja_pagos_tiendas` y `ordenes`, y reinicia el identity (la próxima orden es la id 1). No
+    toca tiendas, motorizados, usuarios, distritos, zonas ni orígenes. Las fotos (R2 o
+    `uploads_local/`) quedan huérfanas: solo se borran sus filas.
+  - `importar-ordenes-excel.js` — sin flags solo valida (nombres que no existen + filas raras) y
+    no escribe nada. Con `--insertar --fecha-asignacion=YYYY-MM-DD` crea las tiendas,
+    motorizados y distritos que falten e inserta todo en **una transacción** (todo o nada).
+    Resuelve los ids por nombre al correr (sin mayúsculas, tildes ni espacios de más), así que
+    sirve igual en el servidor. Los montos salen como en el sistema: delivery y pago al moto con
+    la tarifa del distrito, valor del producto = cobrado − (delivery + adicional), mínimo 0.
+    Reglas fijas: "Expres AGENCIA" / "Expres LIMA" no son motorizados (van sin motorizado y con
+    pago al moto en 0); un distrito nuevo solo se crea si tiene su tarifa en `DISTRITOS_NUEVOS`;
+    se niega a importar si ya hay órdenes de ese día (salvo `--forzar`).
+  - `leer-xlsx.js` — lector de `.xlsx` sin dependencias (el `.xlsx` es un zip con XML).
+
+  **Antes de correrlos en el servidor (lo hace el usuario):**
+  1. `limpiar_ordenes.sql` borra **TODAS** las órdenes de producción, no solo las de un día, y
+     también los pagos de caja ya marcados. Hacer backup del servidor antes y confirmar que es
+     lo que se quiere.
+  2. Verificar que la columna `ordenes.fecha_asignacion` exista antes de importar (ya se
+     verificó aplicada en producción): sin ella el INSERT falla.
+  3. `velox_user` no alcanza para el backup ni para `DBCC CHECKIDENT`: correr el `.sql` con un
+     usuario con más permisos. Con `sqlcmd`, el script ya pone `QUOTED_IDENTIFIER ON` (sin eso
+     el DELETE falla por el índice filtrado de `id_creacion`).
+  4. Correr primero el import sin flags y revisar la validación antes de `--insertar`.
+
 - **En local, sin subir: el motorizado ve sus órdenes el día en que se le asignaron.** Columna
-  nueva `ordenes.fecha_asignacion` (migración pendiente, ver abajo), la llena `/asignar`. La
+  nueva `ordenes.fecha_asignacion` (migración ya aplicada en producción, ver abajo), la llena `/asignar`. La
   página Motorizados (resumen, tarjetas y detalle, para todos los roles) usa
   `ISNULL(fecha_asignacion, fecha)`; `ordenes.fecha` no cambia, así que la Caja y los reportes
   quedan igual. **Queda para analizar aparte:** la Caja de motorizados agrupa el pago por
@@ -232,13 +263,12 @@ Roles: `admin`, `operador`, `visor`, `tienda`, `motorizado`. `GESTORES = ['admin
 
 ## Migraciones pendientes de aplicar en producción
 
-- `velox_agregar_fecha_asignacion.sql` — columna `ordenes.fecha_asignacion` (DATE NULL), que
-  llena `PATCH /:id/asignar` (hoy en hora de Lima). La página Motorizados filtra por
-  `ISNULL(fecha_asignacion, fecha)`; la Caja y los reportes siguen con `ordenes.fecha`.
-  Aplicada en local el 20 de octubre de 2026. **Correrla en el servidor antes del `git pull`**:
-  sin la columna, `/asignar` y `GET /motorizados/:id/ordenes` fallan.
+Ninguna por ahora.
 
-`velox_agregar_rafaga.sql` (tienda comodín `SIN DEFINIR`, columnas `ordenes.datos_pendientes`
+`velox_agregar_fecha_asignacion.sql` (columna `ordenes.fecha_asignacion`, DATE NULL, que llena
+`PATCH /:id/asignar`; la página Motorizados filtra por `ISNULL(fecha_asignacion, fecha)`) se
+aplicó en local el 20 de octubre de 2026 y ya está aplicada en producción (confirmado por el
+usuario el 22 de octubre de 2026). `velox_agregar_rafaga.sql` (tienda comodín `SIN DEFINIR`, columnas `ordenes.datos_pendientes`
 y `ordenes.id_creacion`) se aplicó en el servidor el 20 de octubre de 2026. Las 4 anteriores
 (`velox_agregar_medio_pago.sql`, `velox_agregar_concurrencia.sql`,
 `velox_agregar_distrito_sin_definir.sql`, `velox_agregar_id_subida.sql`) se aplicaron el 16

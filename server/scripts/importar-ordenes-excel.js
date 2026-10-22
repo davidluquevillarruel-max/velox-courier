@@ -27,10 +27,6 @@ require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 const { getPool, sql } = require('../db');
 const { leerPrimeraHoja, fechaDeSerieExcel } = require('./leer-xlsx');
 
-/* "Expres AGENCIA" / "Expres LIMA" no son motorizados: la orden se
-   importa con el motorizado vacío (NULL) y no se crean */
-const MOTORIZADOS_SIN_ASIGNAR = ['EXPRES AGENCIA', 'EXPRES LIMA'];
-
 /* Distritos que se pueden crear si faltan: la tarifa no se puede
    adivinar, así que un distrito que falte y no esté acá frena todo */
 const DISTRITOS_NUEVOS = {
@@ -145,9 +141,7 @@ function validar(filas, cat) {
     revisarNombre(r, 'tienda',   cat.tiendas,   faltan.tiendas);
     revisarNombre(r, 'distrito', cat.distritos, faltan.distritos);
     revisarNombre(r, 'origen',   cat.origenes,  faltan.origenes);
-    if (!MOTORIZADOS_SIN_ASIGNAR.includes(normalizar(r.motorizado))) {
-      revisarNombre(r, 'motorizado', cat.motorizados, faltan.motorizados);
-    }
+    revisarNombre(r, 'motorizado', cat.motorizados, faltan.motorizados);
 
     if (!(r.fecha && /^\d{4}-\d{2}-\d{2}$/.test(r.fecha))) aviso(r, 'fecha no válida', JSON.stringify(r.fecha));
 
@@ -259,17 +253,15 @@ function armarOrden(r, cat, fechaAsignacion) {
   const tienda   = uno(cat.tiendas, r.tienda);
   const distrito = uno(cat.distritos, r.distrito);
   const origen   = uno(cat.origenes, r.origen || 'GAMARRA');
-  const sinMoto  = esVacio(r.motorizado) || MOTORIZADOS_SIN_ASIGNAR.includes(normalizar(r.motorizado));
-  const moto     = sinMoto ? null : uno(cat.motorizados, r.motorizado);
+  const moto     = esVacio(r.motorizado) ? null : uno(cat.motorizados, r.motorizado);
 
   const cobrado   = redondear(Number(r.cobrado) || 0);
   const delivery  = redondear(Number(distrito.precio_delivery) || 0);
   const adicional = redondear(Number(r.montoAdicional) || 0);
-  /* Sin motorizado (agencia / Expres): no la entregó un moto nuestro,
-     así que no hay pago al moto, ni base ni adicional (decisión del
-     22/10/2026) */
-  const pagoMoto   = moto ? redondear(Number(distrito.pago_motorizado) || 0) : 0;
-  const pagoMotoAd = (moto && normalizar(r.pagoMotoAdicSi) === 'SI') ? redondear(Number(r.pagoMotoAdic) || 0) : 0;
+  /* Pago al moto como en el formulario: tarifa del distrito + el
+     adicional del Excel (puede ser negativo, se respeta tal cual) */
+  const pagoMoto   = redondear(Number(distrito.pago_motorizado) || 0);
+  const pagoMotoAd = normalizar(r.pagoMotoAdicSi) === 'SI' ? redondear(Number(r.pagoMotoAdic) || 0) : 0;
 
   const resto = cobrado - (delivery + adicional);
 
@@ -444,6 +436,12 @@ async function main() {
   }
 }
 
-main()
-  .then(() => process.exit(0))
-  .catch(err => { console.error('\n❌', err.message); process.exit(1); });
+/* Exportado para poder comparar una base ya importada contra lo que
+   calcularía el script (sin correr main) */
+module.exports = { leerExcel, cargarCatalogos, armarOrden, normalizar, crearMotorizado };
+
+if (require.main === module) {
+  main()
+    .then(() => process.exit(0))
+    .catch(err => { console.error('\n❌', err.message); process.exit(1); });
+}

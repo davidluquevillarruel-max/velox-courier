@@ -37,9 +37,11 @@ Velox Courier — internal management system for a courier/delivery company in L
     Resuelve los ids por nombre al correr (sin mayúsculas, tildes ni espacios de más), así que
     sirve igual en el servidor. Los montos salen como en el sistema: delivery y pago al moto con
     la tarifa del distrito, valor del producto = cobrado − (delivery + adicional), mínimo 0.
-    Reglas fijas: "Expres AGENCIA" / "Expres LIMA" no son motorizados (van sin motorizado y con
-    pago al moto en 0); un distrito nuevo solo se crea si tiene su tarifa en `DISTRITOS_NUEVOS`;
-    se niega a importar si ya hay órdenes de ese día (salvo `--forzar`).
+    El pago al moto es la tarifa del distrito + el adicional del Excel (negativos incluidos).
+    "Expres LIMA" y "Expres AGENCIA" son motorizados reales (en local: id 25 y 26; el "Expres"
+    id 6 es otro y no se usa); si faltan se crean como cualquier otro, solo con nombre e
+    inicial. Un distrito nuevo solo se crea si tiene su tarifa en `DISTRITOS_NUEVOS`; se niega
+    a importar si ya hay órdenes de ese día (salvo `--forzar`).
   - `leer-xlsx.js` — lector de `.xlsx` sin dependencias (el `.xlsx` es un zip con XML).
 
   **Antes de correrlos en el servidor (lo hace el usuario):**

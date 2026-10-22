@@ -10,7 +10,17 @@ Velox Courier — internal management system for a courier/delivery company in L
 
 ## Estado actual
 
-Última actualización: 20 de octubre de 2026.
+Última actualización: 22 de octubre de 2026.
+
+- **R2 (Cloudflare): configurado y funcionando EN LOCAL; en producción sigue el modo prueba.**
+  Cuenta R2 creada, bucket `velox-fotos`, las 5 variables `R2_*` puestas en el `server/.env`
+  local (nunca en el repo), URL pública `pub-b64e...r2.dev`. CORS del bucket configurado para
+  `http://localhost:3000` y `https://sistema.veloxcourierperu.com` (métodos PUT y GET,
+  encabezado `content-type`: el navegador sube directo a R2 desde `js/cola-fotos.js`).
+  Probado el 21 de octubre de 2026: las fotos (incluida la ráfaga) suben a R2, se ven con su
+  URL pública y quedan registradas en `ordenes_fotos` con la URL de R2, sin duplicados.
+  Ojo: el servidor usa R2 apenas las 5 variables tienen **cualquier** valor; si una falta o
+  está vacía, vuelve al modo prueba (`uploads_local/`). Pasos para producción en "Pendiente".
 
 - **En local, sin subir: el motorizado ve sus órdenes el día en que se le asignaron.** Columna
   nueva `ordenes.fecha_asignacion` (migración pendiente, ver abajo), la llena `/asignar`. La
@@ -88,9 +98,9 @@ Velox Courier — internal management system for a courier/delivery company in L
   destinatario y teléfono: el distrito queda en el comodín `SIN DEFINIR` para
   completarlo después desde "Actualizar orden". El modal tiene un único ícono de cámara
   con marca roja (sin foto) o verde (con foto) que abre la vista previa.
-- **Fotos: MODO PRUEBA (también en producción).** El código de R2 está completo pero **el
-  bucket todavía no existe**, así que las fotos se guardan en `server/uploads_local/`
-  (gitignored; en producción, en el disco del servidor) y se
+- **Fotos: MODO PRUEBA en producción** (en local ya se usa R2, ver arriba). Mientras el
+  `.env` del servidor no tenga las variables `R2_*`, las fotos se guardan en
+  `server/uploads_local/` (gitignored; en producción, en el disco del servidor) y se
   sirven por `GET /api/ordenes/:id/foto/:fotoId` validando sesión. El código prefiere R2
   solo cuando las 5 variables `R2_*` estén en el `.env` (ver `server/r2.js` y
   `server/almacenamiento-local.js`). Las fotos guardadas en modo prueba **no se migran
@@ -142,13 +152,18 @@ Velox Courier — internal management system for a courier/delivery company in L
   quien llama es motorizado), no solo visual.
 
 **Pendiente:**
-- **Configurar Cloudflare R2** (ver el punto siguiente: hoy las fotos siguen en modo prueba).
-- **Fotos en modo prueba:** en producción se guardan en el disco del servidor
-  (`server/uploads_local/`), **no** en R2. R2 todavía no está configurado: falta crear el
-  bucket y poner las 5 variables `R2_*` en el `.env` del servidor.
-- **Checklist de entrega / al activar R2:** borrar del servidor las órdenes de prueba, sus
-  registros en `ordenes_fotos` y la carpeta `server/uploads_local/`. Las fotos de modo
-  prueba **no se migran** a R2.
+- **Activar R2 en producción** (próximo paso, lo hace el usuario en el servidor):
+  1. Checklist de limpieza en el servidor: borrar las órdenes de prueba, sus registros en
+     `ordenes_fotos` y la carpeta `server/uploads_local/`. Las fotos de modo prueba **no se
+     migran** a R2.
+  2. Poner las 5 variables `R2_*` en el `.env` del **servidor** y `pm2 restart velox`.
+  3. Probar que una foto suba a R2 desde producción (que su URL empiece con
+     `pub-b64e...r2.dev/productos/`).
+  4. Hay 3 fotos de prueba en el bucket (`productos/orden-0/`) que se pueden borrar.
+- Opcional, más adelante: conectar un dominio propio (`fotos.veloxcourierperu.com`) al bucket
+  en vez de la URL `r2.dev`, que tiene límite de velocidad; después cambiar `R2_PUBLIC_URL`.
+- **Función grande pendiente: rediseño de la vista del motorizado** (botón EMPEZAR + flujo de
+  entrega con fotos). Solo se habló, no se empezó.
 - Probar a fondo la cola de fotos **con corte de señal**, ahora desde el celular real
   contra producción: que la foto quede en la cola sin señal y suba sola al volver, sin
   duplicados; evidencia de pago que entra a la cola y la marca de "evidencia pendiente" que

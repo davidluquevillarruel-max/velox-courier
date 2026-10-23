@@ -22,6 +22,17 @@ Velox Courier — internal management system for a courier/delivery company in L
   Ojo: el servidor usa R2 apenas las 5 variables tienen **cualquier** valor; si una falta o
   está vacía, vuelve al modo prueba (`uploads_local/`). Pasos para producción en "Pendiente".
 
+- **Descargar Excel / CSV en "Todos los pedidos" (23 de octubre de 2026, commit `55613a7`, en
+  local, sin subir).** `js/exportar-pedidos.js` exporta solo las filas **visibles** de la tabla
+  (cada `<tr>` lleva `data-id`; se cruzan con `_ordenesCache`), así respeta la fecha y todos los
+  filtros. Mismas 15 columnas y orden que el Excel de importación, para poder reimportarlo
+  (probado ida y vuelta). Sin librerías: el `.xlsx` es un zip sin comprimir armado a mano
+  (fecha como fecha real `dd/mm/yyyy`); el CSV va con BOM UTF-8 y **separado por `;`**, porque
+  en Windows es-PE el separador de listas es `;` y con comas Excel lo abre en una sola columna.
+  REPROGRAMADOS PARA HOY = "SI" si las observaciones dicen "Reprogramado para hoy" o si
+  `fecha_asignacion` > `fecha`; por eso `SELECT_ORDEN` ahora devuelve `fecha_asignacion`. Al
+  subirlo: `git pull` + `pm2 restart velox`, sin migración.
+
 - **Importación de órdenes desde Excel (22 de octubre de 2026, commit `c15090d`).** En local se
   borraron las órdenes de ejemplo y se cargó el día real 20/10/2026 desde
   `D:\subir sist velox.xlsx` (274 órdenes: 241 entregado, 28 reprogramado, 5 cancelado). Backup

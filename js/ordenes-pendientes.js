@@ -93,9 +93,9 @@ var _CAMPOS_PENDIENTES_FORM = {
     },
     leer: function(id) { return _valorPend('pend-cobrado-' + id).trim(); },
     validar: function(v) {
-      if (v === '') return { ok: false, msg: 'Escribí el monto cobrado (0 si no se cobra).' };
+      if (v === '') return { ok: false, msg: 'Escribí el monto por cobrar (0 si no se cobra).' };
       var n = Number(v);
-      if (!isFinite(n) || n < 0) return { ok: false, msg: 'El monto cobrado no es válido.' };
+      if (!isFinite(n) || n < 0) return { ok: false, msg: 'El monto por cobrar no es válido.' };
       return { ok: true, valor: Math.round(n * 100) / 100 };
     },
     body: 'cobrado',

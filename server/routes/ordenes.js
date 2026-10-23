@@ -671,7 +671,7 @@ router.patch('/:id/completar-datos', requireRol(...GESTORES), async (req, res) =
     if (cobradoTxt !== '') {
       const cobrado = Number(cobradoTxt);
       if (!Number.isFinite(cobrado) || cobrado < 0 || cobrado > COBRADO_MAXIMO) {
-        return res.status(400).json({ error: 'El monto cobrado no es válido.' });
+        return res.status(400).json({ error: 'El monto por cobrar no es válido.' });
       }
       request
         .input('cobrado', sql.Decimal(10,2), Math.round(cobrado * 100) / 100)
@@ -679,7 +679,7 @@ router.patch('/:id/completar-datos', requireRol(...GESTORES), async (req, res) =
       sets.push('monto_cobrado = @cobrado', 'metodo_pago = @metodo');
       cobradoNuevo = true;
     } else if (obligatorio('cobrado')) {
-      return res.status(400).json({ error: 'El monto cobrado es obligatorio (0 si no se cobra).' });
+      return res.status(400).json({ error: 'El monto por cobrar es obligatorio (0 si no se cobra).' });
     }
 
     /* Valor del producto con los valores NUEVOS (en un UPDATE, las

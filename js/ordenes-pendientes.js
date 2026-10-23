@@ -86,7 +86,7 @@ var _CAMPOS_PENDIENTES_FORM = {
   /* Obligatorio, 0 vale (= sin cobro). El servidor pone el método de
      pago (contraentrega / sin-cobro) y el valor del producto */
   cobrado: {
-    label: 'Cobrado (S/) *',
+    label: 'Por cobrar (S/) *',
     input: function(id) {
       return '<input id="pend-cobrado-' + id + '" type="number" min="0" step="0.50" inputmode="decimal" class="search-box" style="' + _ESTILO_INPUT_PEND + '" placeholder="0 si no se cobra" ' +
         'onkeydown="if(event.key===\'Enter\')guardarPendiente(\'' + id + '\')" />';

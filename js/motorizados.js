@@ -1149,7 +1149,7 @@ function _renderModalActualizarOrden(orden, tiendas, distritos, motorizados) {
         '<div style="font-size:12px;color:var(--color-text-secondary);font-weight:600;margin-top:4px">Montos (S/)</div>' +
         '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">' +
           '<div>' +
-            '<label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px">Cobrado</label>' +
+            '<label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px">Por cobrar</label>' +
             '<input id="f-orden-cobrado-update" type="number" step="0.01" min="0" class="search-box" style="width:100%;background:var(--color-green-bg)" value="' + (orden.monto_cobrado||0) + '" oninput="_recalcularValorProductoUpdate()" />' +
           '</div>' +
           '<div>' +

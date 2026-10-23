@@ -198,6 +198,7 @@ const SELECT_ORDEN = `
     o.id, o.codigo, CONVERT(varchar,o.fecha,23) AS fecha,
     CONVERT(varchar(20), o.row_version, 1) AS version,
     o.hora_asignacion,
+    CONVERT(varchar, o.fecha_asignacion, 23) AS fecha_asignacion,
     t.nombre  AS tienda,
     ori.nombre AS origen,
     d.nombre  AS distrito,

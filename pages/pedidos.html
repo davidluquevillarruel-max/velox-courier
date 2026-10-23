@@ -172,6 +172,14 @@
         <option value="devuelto">Devuelto</option>
       </select>
 
+      <!-- Exportar lo que se ve en la tabla (js/exportar-pedidos.js) -->
+      <button class="btn btn-sm" onclick="exportarPedidos('xlsx')" title="Descarga las órdenes que se ven en la tabla">
+        <i class="ti ti-file-spreadsheet"></i> Descargar Excel
+      </button>
+      <button class="btn btn-sm" onclick="exportarPedidos('csv')" title="Descarga las órdenes que se ven en la tabla">
+        <i class="ti ti-file-text"></i> Descargar CSV
+      </button>
+
     </div>
   </div>
   <div class="table-wrap">

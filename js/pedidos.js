@@ -171,7 +171,9 @@ function _filaOrdenPedido(o) {
       '<i class="ti ti-bolt"></i> Por completar</span>'
     : o.tienda + especial;
 
-  return '<tr>' +
+  /* data-id: lo usa "Descargar Excel/CSV" (js/exportar-pedidos.js)
+     para saber qué órdenes están visibles con los filtros */
+  return '<tr data-id="' + o.id + '">' +
     '<td><strong>#' + o.codigo + '</strong>' + _iconoFotoProducto(o.foto_producto_url) + _iconoEvidenciaPendiente(o) + '</td>' +
     '<td>' + tiendaHTML + '</td>' +
     '<td>' + (o.dest_nombre || '—') + '</td>' +

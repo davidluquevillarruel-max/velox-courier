@@ -20,6 +20,13 @@
     <input class="search-box" id="moto-select"
            style="width:100%" placeholder="Escribe para buscar motorizado..." />
   </div>
+  <!-- Día de reparto para lo que se asigne desde acá (solo gestores,
+       ver initAsignacion). La orden pasa a verse ese día en Pedidos,
+       en Motorizados y en la Caja. -->
+  <label id="bloque-fecha-reparto-asig" style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--color-text-secondary)">
+    Fecha de reparto
+    <input type="date" id="f-fecha-reparto-asig" class="search-box" style="width:auto" />
+  </label>
   <span style="font-size:13px;color:var(--color-text-secondary)">
     Selecciona un motorizado para ver sus órdenes asignadas
   </span>

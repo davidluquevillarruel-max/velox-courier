@@ -199,6 +199,9 @@ const SELECT_ORDEN = `
     CONVERT(varchar(20), o.row_version, 1) AS version,
     o.hora_asignacion,
     CONVERT(varchar, o.fecha_asignacion, 23) AS fecha_asignacion,
+    /* Día que manda (lista, motorizado, Caja): fecha_asignacion o,
+       sin asignar, la de creación (ver velox_agregar_fecha_reparto.sql) */
+    CONVERT(varchar, o.fecha_reparto, 23) AS fecha_reparto,
     t.nombre  AS tienda,
     ori.nombre AS origen,
     d.nombre  AS distrito,
@@ -263,7 +266,9 @@ async function conflictoDeVersion(pool, ordenId) {
   return fresh.recordset[0] || null;
 }
 
-/* ── GET /api/ordenes?fecha=YYYY-MM-DD ───────────────────── */
+/* ── GET /api/ordenes?fecha=YYYY-MM-DD ───────────────────────
+   "fecha" es el día de REPARTO (fecha_reparto), no el de creación:
+   una orden creada el 20 y asignada para el 21 sale el 21. */
 router.get('/', async (req, res) => {
   try {
     const pool    = await getPool();
@@ -273,12 +278,12 @@ router.get('/', async (req, res) => {
     let where = 'WHERE 1 = 1';
     if (fecha) {
       request.input('fecha', sql.Date, fecha);
-      where += ' AND o.fecha = @fecha';
+      where += ' AND o.fecha_reparto = @fecha';
     }
     where += ' ' + filtroPorRol(req.usuario, request).sql;
 
     const result = await request.query(
-      `${SELECT_ORDEN} ${where} ORDER BY o.fecha DESC, o.id DESC`
+      `${SELECT_ORDEN} ${where} ORDER BY o.fecha_reparto DESC, o.id DESC`
     );
     res.json(result.recordset);
   } catch (err) {
@@ -938,9 +943,78 @@ router.patch('/:id/completo', async (req, res) => {
   }
 });
 
+/* ────────────────────────────────────────────────────────────
+   FECHA DE REPARTO (ver velox_agregar_fecha_reparto.sql)
+   El día que manda para la lista, el motorizado y la Caja es
+   fecha_reparto = fecha_asignacion o, sin asignar, la de creación.
+──────────────────────────────────────────────────────────── */
+const DIAS_REPARTO_ADELANTE = 7; /* hasta cuántos días después de hoy se puede asignar */
+
+function sumarDias(yyyymmdd, dias) {
+  const d = new Date(`${yyyymmdd}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + dias);
+  return d.toISOString().slice(0, 10);
+}
+
+/* 'YYYY-MM-DD' → 'DD/MM/YYYY' para los mensajes */
+const fechaDMY = f => f.split('-').reverse().join('/');
+
+/* Si la orden suma plata en la Caja, cambiarla de día o de
+   motorizado cambiaría el monto de un día que ya se marcó pagado.
+   Mismas condiciones que las consultas de routes/caja.js:
+   · Caja de tiendas: entregado / ausente, o cancelado pre-pagado
+   · Caja de motorizados: entregado / ausente
+   antes / despues = { id_tienda, id_motorizado, fecha_reparto }.
+   Devuelve el mensaje de error, o null si se puede. */
+async function bloqueoPorDiaPagado(pool, orden, antes, despues) {
+  const cambiaDia  = antes.fecha_reparto !== despues.fecha_reparto;
+  const cambiaMoto = (antes.id_motorizado || null) !== (despues.id_motorizado || null);
+  if (!cambiaDia && !cambiaMoto) return null;
+
+  const sumaTienda = ['entregado', 'ausente'].includes(orden.estado) ||
+    (orden.estado === 'cancelado' && orden.pago_velox === 'PAGADO');
+  const sumaMoto   = ['entregado', 'ausente'].includes(orden.estado);
+
+  if (sumaTienda && cambiaDia) {
+    for (const dia of [antes.fecha_reparto, despues.fecha_reparto]) {
+      const r = await pool.request()
+        .input('tienda', sql.Int, orden.id_tienda)
+        .input('dia', sql.Date, dia)
+        .query(`
+          SELECT t.nombre FROM caja_pagos_tiendas cp JOIN tiendas t ON t.id = cp.id_tienda
+          WHERE cp.id_tienda = @tienda AND cp.fecha_ciclo = @dia AND cp.pagado = 1
+        `);
+      if (r.recordset[0]) {
+        return `El ${fechaDMY(dia)} ya está marcado como pagado en la Caja de la tienda ${r.recordset[0].nombre}: ` +
+               'mover esta orden cambiaría el monto que ya se pagó.';
+      }
+    }
+  }
+  if (sumaMoto) {
+    const pares = [];
+    if (antes.id_motorizado)   pares.push([antes.id_motorizado, antes.fecha_reparto]);
+    if (despues.id_motorizado) pares.push([despues.id_motorizado, despues.fecha_reparto]);
+    for (const [moto, dia] of pares) {
+      const r = await pool.request()
+        .input('moto', sql.Int, moto)
+        .input('dia', sql.Date, dia)
+        .query(`
+          SELECT m.nombre FROM caja_pagos_motorizados cm JOIN motorizados m ON m.id = cm.id_motorizado
+          WHERE cm.id_motorizado = @moto AND cm.fecha_dia = @dia AND cm.pagado = 1
+        `);
+      if (r.recordset[0]) {
+        return `El ${fechaDMY(dia)} ya está marcado como pagado en la Caja del motorizado ${r.recordset[0].nombre}: ` +
+               'mover esta orden cambiaría el monto que ya se pagó.';
+      }
+    }
+  }
+  return null;
+}
+
 /* ── PATCH /api/ordenes/:id/asignar ──────────────────────────
    Gestores: pueden asignar cualquier orden a cualquier motorizado,
-   o desasignarla (motorizado vacío).
+   o desasignarla (motorizado vacío), y elegir el día de reparto
+   (fechaReparto, opcional).
    Motorizado: solo puede autoasignarse una orden que esté libre —
    el servidor ignora cualquier nombre que mande el cliente y usa
    el de su propia sesión. No puede desasignar ni tocar una orden
@@ -985,41 +1059,71 @@ router.patch('/:id/asignar', async (req, res) => {
       }
     }
 
+    const actualRes = await pool.request()
+      .input('id', sql.BigInt, req.params.id)
+      .query(`
+        SELECT id_tienda, id_motorizado, estado, pago_velox, datos_pendientes,
+               CONVERT(varchar, fecha, 23)            AS fecha,
+               CONVERT(varchar, fecha_asignacion, 23) AS fecha_asignacion,
+               CONVERT(varchar, fecha_reparto, 23)    AS fecha_reparto
+        FROM ordenes WHERE id = @id
+      `);
+    const actual = actualRes.recordset[0];
+    if (!actual) return res.status(404).json({ error: 'Orden no encontrada' });
+
     /* Una orden de ráfaga con datos pendientes no se puede asignar:
        todavía no se sabe de qué tienda es ni a quién se entrega */
+    if (id_motorizado && actual.datos_pendientes) {
+      return res.status(400).json({ error: 'Esta orden todavía tiene datos por completar (ver "Pendiente").' });
+    }
+
+    /* fecha_asignacion = día de reparto (lo que manda para la lista,
+       el motorizado y la Caja; ordenes.fecha, la de creación, no se toca):
+       · Desasignar → NULL (vuelve a verse en su día de creación).
+       · Gestor que manda fechaReparto → ese día, entre el de creación
+         y hoy + DIAS_REPARTO_ADELANTE.
+       · Si no → se conserva la que tenía; si no tenía, hoy (Lima). El
+         motorizado que se autoasigna siempre cae acá (la orden está
+         libre, sin fecha): hoy.
+       Pasarla de un motorizado a otro ya no la mueve de día: para
+       reprogramarla se elige la fecha. */
+    const hoy = hoyEnLima();
+    let fechaAsignacion = null;
     if (id_motorizado) {
-      const p = await pool.request()
-        .input('id', sql.BigInt, req.params.id)
-        .query(`SELECT datos_pendientes FROM ordenes WHERE id = @id`);
-      if (!p.recordset[0]) return res.status(404).json({ error: 'Orden no encontrada' });
-      if (p.recordset[0].datos_pendientes) {
-        return res.status(400).json({ error: 'Esta orden todavía tiene datos por completar (ver "Pendiente").' });
+      const pedida = esGestor && typeof req.body.fechaReparto === 'string' ? req.body.fechaReparto.trim() : '';
+      if (pedida) {
+        const limite = sumarDias(hoy, DIAS_REPARTO_ADELANTE);
+        if (!REGEX_FECHA.test(pedida) || Number.isNaN(Date.parse(pedida))) {
+          return res.status(400).json({ error: 'La fecha de reparto no es válida.' });
+        }
+        if (pedida < actual.fecha || pedida > limite) {
+          return res.status(400).json({
+            error: `La fecha de reparto tiene que estar entre el ${fechaDMY(actual.fecha)} (creación de la orden) y el ${fechaDMY(limite)}.`
+          });
+        }
+        fechaAsignacion = pedida;
+      } else {
+        fechaAsignacion = actual.fecha_asignacion || hoy;
       }
     }
 
+    const bloqueo = await bloqueoPorDiaPagado(pool, actual,
+      { id_motorizado: actual.id_motorizado, fecha_reparto: actual.fecha_reparto },
+      { id_motorizado, fecha_reparto: fechaAsignacion || actual.fecha });
+    if (bloqueo) return res.status(400).json({ error: bloqueo, diaPagado: true });
+
     const ifVersion = bufferDeVersion(req.body.ifVersion);
     const request = pool.request()
-      .input('id',   sql.BigInt, req.params.id)
-      .input('moto', sql.Int,    id_motorizado)
-      .input('hoy',  sql.Date,   hoyEnLima());
+      .input('id',    sql.BigInt, req.params.id)
+      .input('moto',  sql.Int,    id_motorizado)
+      .input('fasig', sql.Date,   fechaAsignacion);
     let whereVersion = '';
     if (ifVersion) { request.input('ifVersion', sql.VarBinary(8), ifVersion); whereVersion = ' AND row_version = @ifVersion'; }
 
-    /* fecha_asignacion (ver velox_agregar_fecha_asignacion.sql): el
-       día en que el motorizado la va a entregar, para la página
-       Motorizados. La fecha de la orden (Caja, reportes) no se toca.
-       · Otro motorizado (o la orden no tenía) → hoy.
-       · El mismo motorizado de nuevo → se conserva.
-       · Desasignar → NULL.
-       En un UPDATE, id_motorizado de la derecha es el valor de antes. */
     const result = await request.query(`
       UPDATE ordenes
-      SET fecha_asignacion = CASE
-            WHEN @moto IS NULL          THEN NULL
-            WHEN id_motorizado = @moto  THEN fecha_asignacion
-            ELSE @hoy
-          END,
-          id_motorizado = @moto
+      SET fecha_asignacion = @fasig,
+          id_motorizado    = @moto
       WHERE id = @id${whereVersion}
     `);
     if (ifVersion && result.rowsAffected[0] === 0) {
@@ -1116,6 +1220,9 @@ router.patch('/:id/devolver', requireRol(...GESTORES), async (req, res) => {
         .input('especial',     sql.Bit,           orden.producto_especial)
         .input('obs',          sql.NVarChar,      orden.observaciones)
         .input('reprog_de',    sql.BigInt,        orden.id)
+        /* Hoy en Lima: GETDATE() del servidor (UTC) daba el día
+           siguiente después de las 19:00 */
+        .input('hoy',          sql.Date,          hoyEnLima())
         .query(`
           INSERT INTO ordenes (
             codigo, fecha, id_tienda, id_origen, id_distrito, id_motorizado,
@@ -1124,7 +1231,7 @@ router.patch('/:id/devolver', requireRol(...GESTORES), async (req, res) => {
             delivery_base, pago_moto_base,
             producto_especial, observaciones, reprogramado_de
           ) VALUES (
-            @codigo, CAST(GETDATE() AS DATE), @id_tienda, @id_origen, @id_distrito, NULL,
+            @codigo, @hoy, @id_tienda, @id_origen, @id_distrito, NULL,
             @dest_nombre, @dest_tel, @dest_tel2, @dest_dir,
             'en-proceso', @metodo, @pago_velox,
             @delivery, @pago_moto,

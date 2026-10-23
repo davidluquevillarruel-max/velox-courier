@@ -10,7 +10,7 @@ Velox Courier — internal management system for a courier/delivery company in L
 
 ## Estado actual
 
-Última actualización: 22 de octubre de 2026.
+Última actualización: 23 de octubre de 2026.
 
 - **R2 (Cloudflare): configurado y funcionando EN LOCAL; en producción sigue el modo prueba.**
   Cuenta R2 creada, bucket `velox-fotos`, las 5 variables `R2_*` puestas en el `server/.env`
@@ -21,6 +21,35 @@ Velox Courier — internal management system for a courier/delivery company in L
   URL pública y quedan registradas en `ordenes_fotos` con la URL de R2, sin duplicados.
   Ojo: el servidor usa R2 apenas las 5 variables tienen **cualquier** valor; si una falta o
   está vacía, vuelve al modo prueba (`uploads_local/`). Pasos para producción en "Pendiente".
+
+- **Fecha de reparto (23 de octubre de 2026, en local, sin subir; ver D-009 en `DECISIONES.md`).**
+  La fecha que manda es el día en que la orden sale a entregar, no el de creación: **entrega del
+  día = cobro del día**. Columna calculada `ordenes.fecha_reparto = ISNULL(fecha_asignacion,
+  fecha)` (migración `velox_agregar_fecha_reparto.sql`, ver abajo). La usan "Todos los
+  pedidos" (`GET /ordenes?fecha=`), la página Motorizados, **toda la Caja** (tiendas,
+  motorizados, liquidez, caja real incluido el prepago, y los dos "Marcar pagado"), Clientes y
+  el dashboard. `ordenes.fecha` (creación) no cambia: queda como dato histórico, se muestra en
+  gris ("creada el …") y es la columna FECHA DE CREACION del export/import. Sin asignar, la
+  orden se ve en su día de creación.
+  - `PATCH /asignar` acepta `fechaReparto` (solo gestores): entre el día de creación y hoy + 7
+    (`DIAS_REPARTO_ADELANTE`). Sin fecha: conserva la que tenía; si no tenía, hoy (Lima). El
+    motorizado que se autoasigna siempre queda con hoy. **Pasar una orden a otro motorizado ya
+    no la mueve de día** (antes iba a hoy): para reprogramarla se elige la fecha.
+  - **Días ya pagados:** si la orden suma en la Caja (entregado / ausente, o cancelado
+    pre-pagado) y cambia de día o de motorizado, y el día de origen o destino ya está pagado
+    para su tienda o su motorizado, `/asignar` responde 400 (`diaPagado: true`) con el motivo.
+    Las reprogramadas / en proceso no suman, se mueven siempre. La Caja no tiene "desmarcar".
+  - Pantallas: selector "Fecha de reparto" en Asignación (para asignar pendientes y
+    autoasignar; "Reasignar" conserva el día) y campo en "Actualizar orden" (oculto para el
+    motorizado). En ese modal `/asignar` ahora va **primero**, así un rechazo no deja nada
+    guardado a medias.
+  - La copia que crea "ausente" al confirmar la devolución usa la fecha de Lima (antes
+    `GETDATE()` del servidor, que en UTC daba el día siguiente después de las 19:00).
+  - Con los datos importados: el 20/10 pasa de 231 a 274 órdenes (las 43 creadas del 13 al 19
+    se repartieron el 20) y los días 13–19 quedan vacíos.
+  - **Antes de subir:** correr en producción `server/scripts/revisar_dias_pagados_fecha_reparto.sql`
+    (solo lectura): lista las órdenes que cambiarían de día en días ya pagados y cómo cambiaría
+    el monto de cada uno. Si sale vacío, se puede subir sin sorpresas en la Caja.
 
 - **Descargar Excel / CSV en "Todos los pedidos" (23 de octubre de 2026, commit `55613a7`, en
   local, sin subir).** `js/exportar-pedidos.js` exporta solo las filas **visibles** de la tabla
@@ -68,14 +97,13 @@ Velox Courier — internal management system for a courier/delivery company in L
 
 - **En local, sin subir: el motorizado ve sus órdenes el día en que se le asignaron.** Columna
   nueva `ordenes.fecha_asignacion` (migración ya aplicada en producción, ver abajo), la llena `/asignar`. La
-  página Motorizados (resumen, tarjetas y detalle, para todos los roles) usa
-  `ISNULL(fecha_asignacion, fecha)`; `ordenes.fecha` no cambia, así que la Caja y los reportes
-  quedan igual. **Queda para analizar aparte:** la Caja de motorizados agrupa el pago por
-  `ordenes.fecha`, así que una orden asignada días después cae en un día que quizás ya se marcó
-  pagado (pasa desde antes de este cambio).
+  página Motorizados (resumen, tarjetas y detalle, para todos los roles) la usa. Desde el
+  cambio "Fecha de reparto" (arriba) también la usan la Caja y el resto de las pantallas, vía
+  `ordenes.fecha_reparto`: el pendiente de que la Caja agrupaba por `ordenes.fecha` quedó resuelto.
 - **En local, sin subir: reprogramadas y no entregadas vuelven a Asignación.** Al confirmar la
   devolución (`PATCH /:id/devolver`) pasan a `en-proceso` **sin motorizado** y con
-  `fecha_asignacion` vacía; al reasignarlas, `/asignar` les pone el día nuevo. Depende de la
+  `fecha_asignacion` vacía (vuelven a verse en su día de creación); al reasignarlas, `/asignar`
+  les pone el día elegido (o hoy). Depende de la
   migración `velox_agregar_fecha_asignacion.sql`. "Pendiente devolución" y "Devolución Tienda"
   ahora refrescan suave (sin "Cargando..." y sin repintar si nada cambió).
 
@@ -276,7 +304,11 @@ Roles: `admin`, `operador`, `visor`, `tienda`, `motorizado`. `GESTORES = ['admin
 
 ## Migraciones pendientes de aplicar en producción
 
-Ninguna por ahora.
+- `velox_agregar_fecha_reparto.sql` — columna calculada `ordenes.fecha_reparto =
+  ISNULL(fecha_asignacion, fecha)` (PERSISTED) + índice `ix_ordenes_fecha_reparto`. No toca
+  datos. Aplicada en local el 23 de octubre de 2026. **Correrla en el servidor antes del
+  `git pull`** (con `sqlcmd -I`): sin la columna fallan `GET /ordenes`, la Caja y `/asignar`.
+  Antes, correr la consulta `server/scripts/revisar_dias_pagados_fecha_reparto.sql`.
 
 `velox_agregar_fecha_asignacion.sql` (columna `ordenes.fecha_asignacion`, DATE NULL, que llena
 `PATCH /:id/asignar`; la página Motorizados filtra por `ISNULL(fecha_asignacion, fecha)`) se

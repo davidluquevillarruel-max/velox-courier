@@ -71,6 +71,12 @@ async function _cargarTiendas() {
   } catch(err) { console.error('Error cargando tiendas:', err); }
 }
 
+/* Día de una orden para agrupar y filtrar: el de reparto (GET
+   /tiendas/:id/ordenes ya filtra por ese día; o.fecha es la de creación) */
+function _diaCli(o) {
+  return o.fecha_reparto || o.fecha;
+}
+
 /* ── Calcular stats de tienda desde API ── */
 async function _calcularStatsTienda(idTienda, fecha) {
   try {
@@ -448,7 +454,7 @@ function _filaOrdenDetalle(o, _ec, mostrarFecha) {
       : '<span class="balance-zero">S/ 0.00</span>')
     : '<span style="color:var(--color-text-tertiary)">S/ 0.00</span>';
   return '<tr>' +
-    (mostrarFecha ? '<td style="font-size:12px;color:var(--color-text-secondary)">' + _fechaDisplayCli(o.fecha) + '</td>' : '') +
+    (mostrarFecha ? '<td style="font-size:12px;color:var(--color-text-secondary)">' + _fechaDisplayCli(_diaCli(o)) + '</td>' : '') +
     /* Mismo ícono de foto que en "Todos los pedidos" (js/pedidos.js) */
     '<td><strong>#'+o.codigo+'</strong>'+_iconoFotoProducto(o.foto_producto_url)+'</td>' +
     '<td>'+(o.dest_nombre||'—')+'</td>' +
@@ -529,8 +535,9 @@ window.renderDetalleTienda = async function(tiendaId) {
   /* Agrupar por fecha */
   var mapaFecha = {};
   ordenes.forEach(function(o) {
-    if (!mapaFecha[o.fecha]) mapaFecha[o.fecha] = [];
-    mapaFecha[o.fecha].push(o);
+    var dia = _diaCli(o);
+    if (!mapaFecha[dia]) mapaFecha[dia] = [];
+    mapaFecha[dia].push(o);
   });
   var fechas = Object.keys(mapaFecha).sort().reverse();
   if (_filtroDesdeClientes && _filtroDesdeClientes === _filtroHastaClientes && mapaFecha[_filtroDesdeClientes]) {
@@ -622,8 +629,8 @@ window.renderDetalleTienda = async function(tiendaId) {
   if (hayFiltroDetalle) {
     /* ── Vista agrupada: todo el rango en un solo bloque + tabla con columna Fecha ── */
     var ordsPeriodo = ordenes
-      .filter(function(o){ return o.fecha >= _filtroDesdeDetalle && o.fecha <= _filtroHastaDetalle; })
-      .sort(function(a,b){ return a.fecha < b.fecha ? 1 : a.fecha > b.fecha ? -1 : 0; });
+      .filter(function(o){ return _diaCli(o) >= _filtroDesdeDetalle && _diaCli(o) <= _filtroHastaDetalle; })
+      .sort(function(a,b){ return _diaCli(a) < _diaCli(b) ? 1 : _diaCli(a) > _diaCli(b) ? -1 : 0; });
 
     if (ordsPeriodo.length === 0) {
       html += '<div style="padding:40px;text-align:center;color:var(--color-text-tertiary)">Sin órdenes en este período.</div>';

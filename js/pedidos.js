@@ -51,6 +51,23 @@ function _horaActual() {
   return ('0'+d.getHours()).slice(-2) + ':' + ('0'+d.getMinutes()).slice(-2);
 }
 
+/* Día de reparto de la orden (GET /ordenes lo manda como
+   fecha_reparto: el de asignación o, sin asignar, el de creación) */
+function _fechaRepartoOrden(o) {
+  return o.fecha_reparto || o.fecha;
+}
+
+/* Celda "Fecha": el día de reparto y, si se creó otro día, ese día
+   en gris debajo (mismo formato que la página Motorizados) */
+function _celdaFechaOrden(o) {
+  var dia  = _fechaRepartoOrden(o);
+  var html = _fechaDisplay(dia);
+  if (o.fecha && o.fecha !== dia) {
+    html += '<div style="font-size:10px;color:var(--color-text-tertiary)">creada el ' + _fechaDisplay(o.fecha) + '</div>';
+  }
+  return html;
+}
+
 function _fechaDisplay(yyyymmdd) {
   if (!yyyymmdd) return '—';
   var p = yyyymmdd.split('-');
@@ -187,7 +204,7 @@ function _filaOrdenPedido(o) {
     '<td>' + (o.hora_asignacion || '—') + '</td>' +
     '<td>' + deliveryHTML + '</td>' +
     '<td>' + pagoMotoHTML + '</td>' +
-    '<td style="font-size:12px;color:var(--color-text-secondary)">' + _fechaDisplay(o.fecha) + '</td>' +
+    '<td style="font-size:12px;color:var(--color-text-secondary)">' + _celdaFechaOrden(o) + '</td>' +
     '<td><button class="btn btn-sm" onclick="abrirActualizarEstadoOrden(' + o.id + ')"><i class="ti ti-refresh"></i> Actualizar</button></td>' +
   '</tr>';
 }

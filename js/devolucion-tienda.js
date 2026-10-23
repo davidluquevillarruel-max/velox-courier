@@ -105,7 +105,7 @@ window._recargarTablaDevolucionTienda = async function(opciones) {
           '<td>' + o.distrito + '</td>' +
           '<td>' + (o.motorizado || '<span style="color:var(--color-text-tertiary)">Sin asignar</span>') + '</td>' +
           '<td>' + _motivoDevolucionTienda(o) + '</td>' +
-          '<td style="font-size:12px;color:var(--color-text-secondary)">' + (typeof _fechaDisplay === 'function' ? _fechaDisplay(o.fecha) : o.fecha) + '</td>' +
+          '<td style="font-size:12px;color:var(--color-text-secondary)">' + (typeof _celdaFechaOrden === 'function' ? _celdaFechaOrden(o) : (o.fecha_reparto || o.fecha)) + '</td>' +
           '<td>' + (typeof _badgeSubEstado === 'function' ? _badgeSubEstado(o) : 'En almacén') + '</td>' +
           '<td><button class="btn btn-primary btn-sm" onclick="confirmarDevolucionTienda(' + o.id + ', this)">' +
             '<i class="ti ti-check"></i> Devuelto</button></td>' +

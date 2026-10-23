@@ -2,6 +2,12 @@
    routes/caja.js
    Protegido: TODO el módulo de caja es solo para gestores
    (admin / operador). Tiendas y motorizados no acceden aquí.
+
+   El "día" de la caja es la FECHA DE REPARTO (ordenes.fecha_reparto,
+   ver velox_agregar_fecha_reparto.sql), no la de creación: entrega
+   del día = cobro del día. En las respuestas, "fecha" es ese día; las
+   marcas de pagado (caja_pagos_tiendas.fecha_ciclo /
+   caja_pagos_motorizados.fecha_dia) también lo son.
    ============================================================ */
 const express = require('express');
 const router  = express.Router();
@@ -19,9 +25,9 @@ router.get('/tiendas', async (req, res) => {
     const { desde, hasta } = req.query;
 
     let where = '';
-    if (desde && hasta) where = `WHERE o.fecha BETWEEN @desde AND @hasta`;
-    else if (desde)     where = `WHERE o.fecha >= @desde`;
-    else if (hasta)     where = `WHERE o.fecha <= @hasta`;
+    if (desde && hasta) where = `WHERE o.fecha_reparto BETWEEN @desde AND @hasta`;
+    else if (desde)     where = `WHERE o.fecha_reparto >= @desde`;
+    else if (hasta)     where = `WHERE o.fecha_reparto <= @hasta`;
 
     const request = pool.request();
     if (desde) request.input('desde', sql.Date, desde);
@@ -30,7 +36,7 @@ router.get('/tiendas', async (req, res) => {
     const result = await request.query(`
       WITH base AS (
         SELECT
-          o.id_tienda, o.fecha,
+          o.id_tienda, o.fecha_reparto AS fecha,
           /* Delivery cobrable: solo si aún no se pagó por adelantado en
              oficina (pago_velox). Si ya era PAGADO, ese delivery no
              vuelve a sumar acá — ya se cobró aparte. */
@@ -98,7 +104,7 @@ router.post('/tiendas/pagar', async (req, res) => {
               ELSE 0
             END AS cobrado_ef
           FROM ordenes
-          WHERE id_tienda = @id_tienda AND fecha = @fecha_ciclo
+          WHERE id_tienda = @id_tienda AND fecha_reparto = @fecha_ciclo
         )
         SELECT
           SUM(CASE WHEN cobrable > cobrado_ef THEN cobrable - cobrado_ef ELSE 0 END) AS monto_cobrar,
@@ -145,9 +151,9 @@ router.get('/liquidez', async (req, res) => {
     const { desde, hasta } = req.query;
 
     let where = '';
-    if (desde && hasta) where = `WHERE o.fecha BETWEEN @desde AND @hasta`;
-    else if (desde)     where = `WHERE o.fecha >= @desde`;
-    else if (hasta)     where = `WHERE o.fecha <= @hasta`;
+    if (desde && hasta) where = `WHERE o.fecha_reparto BETWEEN @desde AND @hasta`;
+    else if (desde)     where = `WHERE o.fecha_reparto >= @desde`;
+    else if (hasta)     where = `WHERE o.fecha_reparto <= @hasta`;
 
     const request = pool.request();
     if (desde) request.input('desde', sql.Date, desde);
@@ -155,7 +161,7 @@ router.get('/liquidez', async (req, res) => {
 
     const result = await request.query(`
       SELECT
-        CONVERT(varchar, o.fecha, 23) AS fecha,
+        CONVERT(varchar, o.fecha_reparto, 23) AS fecha,
         COUNT(*) AS pedidos,
         SUM(CASE WHEN o.estado IN ('entregado','ausente')
                  THEN (o.delivery_base + o.monto_adicional) ELSE 0 END)       AS bruto,
@@ -175,8 +181,8 @@ router.get('/liquidez', async (req, res) => {
                    ELSE 0 END)                                                 AS liquido_neto
       FROM ordenes o
       ${where}
-      GROUP BY o.fecha
-      ORDER BY o.fecha DESC
+      GROUP BY o.fecha_reparto
+      ORDER BY o.fecha_reparto DESC
     `);
     res.json(result.recordset);
   } catch (err) {
@@ -202,18 +208,18 @@ router.get('/real', async (req, res) => {
     if (desde && hasta) {
       filtroTiendas = 'AND cp.fecha_ciclo BETWEEN @desde AND @hasta';
       filtroMotos   = 'AND cm.fecha_dia BETWEEN @desde AND @hasta';
-      filtroPrepago = 'AND o.fecha BETWEEN @desde AND @hasta';
+      filtroPrepago = 'AND o.fecha_reparto BETWEEN @desde AND @hasta';
       request.input('desde', sql.Date, desde);
       request.input('hasta', sql.Date, hasta);
     } else if (desde) {
       filtroTiendas = 'AND cp.fecha_ciclo >= @desde';
       filtroMotos   = 'AND cm.fecha_dia >= @desde';
-      filtroPrepago = 'AND o.fecha >= @desde';
+      filtroPrepago = 'AND o.fecha_reparto >= @desde';
       request.input('desde', sql.Date, desde);
     } else if (hasta) {
       filtroTiendas = 'AND cp.fecha_ciclo <= @hasta';
       filtroMotos   = 'AND cm.fecha_dia <= @hasta';
-      filtroPrepago = 'AND o.fecha <= @hasta';
+      filtroPrepago = 'AND o.fecha_reparto <= @hasta';
       request.input('hasta', sql.Date, hasta);
     }
 
@@ -260,21 +266,21 @@ router.get('/motorizados', async (req, res) => {
     let filtroFecha = '';
     const request = pool.request();
     if (desde && hasta) {
-      filtroFecha = 'AND o.fecha BETWEEN @desde AND @hasta';
+      filtroFecha = 'AND o.fecha_reparto BETWEEN @desde AND @hasta';
       request.input('desde', sql.Date, desde);
       request.input('hasta', sql.Date, hasta);
     } else if (desde) {
-      filtroFecha = 'AND o.fecha >= @desde';
+      filtroFecha = 'AND o.fecha_reparto >= @desde';
       request.input('desde', sql.Date, desde);
     } else if (hasta) {
-      filtroFecha = 'AND o.fecha <= @hasta';
+      filtroFecha = 'AND o.fecha_reparto <= @hasta';
       request.input('hasta', sql.Date, hasta);
     }
 
     const result = await request.query(`
       SELECT
         m.id AS id_motorizado, m.nombre AS motorizado,
-        CONVERT(varchar, o.fecha, 23) AS fecha,
+        CONVERT(varchar, o.fecha_reparto, 23) AS fecha,
         SUM(CASE WHEN o.estado='entregado' THEN 1 ELSE 0 END) AS entregas,
         SUM(CASE WHEN o.estado IN ('entregado','ausente')
                  THEN (o.pago_moto_base + o.pago_moto_adicional) ELSE 0 END)  AS pago_moto,
@@ -285,14 +291,14 @@ router.get('/motorizados', async (req, res) => {
       FROM ordenes o
       JOIN motorizados m ON m.id = o.id_motorizado
       LEFT JOIN caja_pagos_motorizados cm
-             ON cm.id_motorizado = m.id AND cm.fecha_dia = o.fecha
+             ON cm.id_motorizado = m.id AND cm.fecha_dia = o.fecha_reparto
       WHERE o.id_motorizado IS NOT NULL ${filtroFecha}
-      GROUP BY m.id, m.nombre, o.fecha, cm.pagado, cm.fecha_pago
+      GROUP BY m.id, m.nombre, o.fecha_reparto, cm.pagado, cm.fecha_pago
       HAVING SUM(CASE WHEN o.estado IN ('entregado','ausente')
                       THEN (o.pago_moto_base + o.pago_moto_adicional) ELSE 0 END) > 0
           OR SUM(CASE WHEN o.estado IN ('entregado','ausente')
                       THEN o.monto_cobrado ELSE 0 END) > 0
-      ORDER BY m.nombre, o.fecha DESC
+      ORDER BY m.nombre, o.fecha_reparto DESC
     `);
     res.json(result.recordset);
   } catch (err) {
@@ -325,7 +331,7 @@ router.post('/motorizados/pagar', async (req, res) => {
             SUM(CASE WHEN estado IN ('entregado','ausente') THEN monto_cobrado ELSE 0 END),
             1, CAST(GETDATE() AS DATE)
           FROM ordenes
-          WHERE id_motorizado=@id_moto AND fecha=@fecha_dia;
+          WHERE id_motorizado=@id_moto AND fecha_reparto=@fecha_dia;
       `);
 
     res.json({ ok: true });

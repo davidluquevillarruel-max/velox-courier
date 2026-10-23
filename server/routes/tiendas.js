@@ -74,10 +74,10 @@ router.get('/resumen', async (req, res) => {
     if (desde && hasta) {
       request.input('desde', sql.Date, desde);
       request.input('hasta', sql.Date, hasta);
-      filtroFecha = 'AND o.fecha BETWEEN @desde AND @hasta';
+      filtroFecha = 'AND o.fecha_reparto BETWEEN @desde AND @hasta';
     } else if (fecha) {
       request.input('fecha', sql.Date, fecha);
-      filtroFecha = 'AND o.fecha = @fecha';
+      filtroFecha = 'AND o.fecha_reparto = @fecha';
     }
     if (req.usuario.rol === 'tienda') {
       request.input('yo', sql.Int, req.usuario.id_tienda || -1);
@@ -227,6 +227,7 @@ router.get('/:id/ordenes', async (req, res) => {
     const hasta = req.query.hasta;
     let query = `
       SELECT o.id, o.codigo, CONVERT(varchar,o.fecha,23) AS fecha,
+             CONVERT(varchar,o.fecha_reparto,23) AS fecha_reparto,
              d.nombre AS distrito, m.nombre AS motorizado,
              o.dest_nombre, o.estado, o.metodo_pago,
              o.delivery_total, o.monto_adicional, o.monto_cobrado, o.monto_producto,
@@ -239,14 +240,14 @@ router.get('/:id/ordenes', async (req, res) => {
     `;
     const request = pool.request().input('id', sql.Int, req.params.id);
     if (desde && hasta) {
-      query += ` AND o.fecha BETWEEN @desde AND @hasta`;
+      query += ` AND o.fecha_reparto BETWEEN @desde AND @hasta`;
       request.input('desde', sql.Date, desde);
       request.input('hasta', sql.Date, hasta);
     } else if (fecha) {
-      query += ` AND o.fecha = @fecha`;
+      query += ` AND o.fecha_reparto = @fecha`;
       request.input('fecha', sql.Date, fecha);
     }
-    query += ` ORDER BY o.fecha DESC, o.id`;
+    query += ` ORDER BY o.fecha_reparto DESC, o.id`;
     const result = await request.query(query);
     res.json(result.recordset);
   } catch (err) {

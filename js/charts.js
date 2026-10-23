@@ -65,8 +65,10 @@ async function _cargarDatosEvidencias() {
 /* Filtrar órdenes según rango activo */
 function _ordenesFiltradas() {
   return _evOrdenes.filter(function(o) {
-    if (_filtroEvidenciaDesde && o.fecha < _filtroEvidenciaDesde) return false;
-    if (_filtroEvidenciaHasta && o.fecha > _filtroEvidenciaHasta) return false;
+    /* Por día de reparto (el de asignación o, sin asignar, el de creación) */
+    var dia = o.fecha_reparto || o.fecha;
+    if (_filtroEvidenciaDesde && dia < _filtroEvidenciaDesde) return false;
+    if (_filtroEvidenciaHasta && dia > _filtroEvidenciaHasta) return false;
     /* Si es sesión motorizado, solo sus órdenes */
     if (_filtroEvidenciaMoto && o.motorizado &&
         o.motorizado.trim().toUpperCase() !== _filtroEvidenciaMoto.trim().toUpperCase()) return false;
@@ -128,10 +130,11 @@ function _calcularPorFechaEv() {
   var ords = _ordenesFiltradas();
   var mapaFecha = {};
   ords.forEach(function(o) {
-    if (!mapaFecha[o.fecha]) mapaFecha[o.fecha] = { entregados:0, noEntregados:0, reprogramados:0 };
-    if (o.estado === 'entregado')    mapaFecha[o.fecha].entregados++;
-    if (o.estado === 'no-entregado' || o.estado === 'ausente') mapaFecha[o.fecha].noEntregados++;
-    if (o.estado === 'reprogramado') mapaFecha[o.fecha].reprogramados++;
+    var dia = o.fecha_reparto || o.fecha;
+    if (!mapaFecha[dia]) mapaFecha[dia] = { entregados:0, noEntregados:0, reprogramados:0 };
+    if (o.estado === 'entregado')    mapaFecha[dia].entregados++;
+    if (o.estado === 'no-entregado' || o.estado === 'ausente') mapaFecha[dia].noEntregados++;
+    if (o.estado === 'reprogramado') mapaFecha[dia].reprogramados++;
   });
   var fechas = Object.keys(mapaFecha).sort();
   /* Limitar a últimos 14 días si hay muchos */

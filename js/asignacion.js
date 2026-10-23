@@ -97,7 +97,12 @@ window.initAsignacion = async function() {
     }
     var btnAuto = document.getElementById('btn-autoasignar');
     if (btnAuto) btnAuto.style.display = 'none';
+    /* El motorizado que se autoasigna siempre reparte hoy (lo decide
+       el servidor): no elige fecha */
+    var bloqueFecha = document.getElementById('bloque-fecha-reparto-asig');
+    if (bloqueFecha) bloqueFecha.style.display = 'none';
   }
+  _initFechaRepartoAsig();
 
   _renderPoolPendientes();
   _renderPoolAsignados();
@@ -142,6 +147,35 @@ function _hoyAsig() {
   var mm = ('0'+(d.getMonth()+1)).slice(-2);
   var dd = ('0'+d.getDate()).slice(-2);
   return d.getFullYear() + '-' + mm + '-' + dd;
+}
+
+/* Fecha de reparto para lo que se asigne desde esta página: hoy por
+   defecto, hasta 7 días adelante (el servidor valida igual, y además
+   que no sea antes de la creación de cada orden) */
+function _initFechaRepartoAsig() {
+  var inp = document.getElementById('f-fecha-reparto-asig');
+  if (!inp) return;
+  var max = new Date();
+  max.setDate(max.getDate() + 7);
+  inp.max = max.getFullYear() + '-' + ('0'+(max.getMonth()+1)).slice(-2) + '-' + ('0'+max.getDate()).slice(-2);
+  if (!inp.value) inp.value = _hoyAsig();
+}
+
+/* Cuerpo del PATCH /asignar: el motorizado y, si la eligió un
+   gestor, la fecha de reparto (el motorizado no la manda) */
+function _cuerpoAsignar(nombreMoto) {
+  var cuerpo = { motorizado: nombreMoto };
+  var bloque = document.getElementById('bloque-fecha-reparto-asig');
+  var inp    = document.getElementById('f-fecha-reparto-asig');
+  if (inp && inp.value && !(bloque && bloque.style.display === 'none')) cuerpo.fechaReparto = inp.value;
+  return cuerpo;
+}
+
+/* Mensaje del servidor si lo hay (fecha fuera de rango, día ya pagado
+   en la Caja...), si no el genérico */
+async function _errorAsignar(r, generico) {
+  var data = await r.json().catch(function() { return {}; });
+  return new Error(data.error || generico);
 }
 
 /* Pendiente = sin motorizado asignado (independientemente del estado).
@@ -364,9 +398,9 @@ window.asignarOrden = async function(ordenId) {
     var r = await fetch(API + '/ordenes/' + ordenId + '/asignar', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ motorizado: nombreMoto }),
+      body: JSON.stringify(_cuerpoAsignar(nombreMoto)),
     });
-    if (!r.ok) throw new Error('No se pudo asignar');
+    if (!r.ok) throw await _errorAsignar(r, 'Error al asignar el pedido');
 
     /* Volver a cargar desde la BD para reflejar el cambio real */
     await _cargarDatosAsignacion();
@@ -375,7 +409,7 @@ window.asignarOrden = async function(ordenId) {
     _actualizarContadores();
     if (typeof showNotif === 'function') showNotif('#' + ordenId + ' asignado a ' + nombreMoto);
   } catch (err) {
-    if (typeof showNotif === 'function') showNotif('Error al asignar el pedido');
+    if (typeof showNotif === 'function') showNotif(err.message || 'Error al asignar el pedido', 5000);
   }
 };
 
@@ -389,7 +423,7 @@ window.desasignarOrden = async function(ordenId) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ motorizado: null }),
     });
-    if (!r.ok) throw new Error('No se pudo desasignar');
+    if (!r.ok) throw await _errorAsignar(r, 'Error al desasignar el pedido');
 
     await _cargarDatosAsignacion();
     _renderPoolPendientes();
@@ -397,7 +431,7 @@ window.desasignarOrden = async function(ordenId) {
     _actualizarContadores();
     if (typeof showNotif === 'function') showNotif('#' + ordenId + ' desasignado');
   } catch (err) {
-    if (typeof showNotif === 'function') showNotif('Error al desasignar el pedido');
+    if (typeof showNotif === 'function') showNotif(err.message || 'Error al desasignar el pedido', 5000);
   }
 };
 
@@ -440,19 +474,29 @@ window.autoAsignar = async function() {
   });
 
   try {
-    await Promise.all(asignaciones.map(function(a) {
+    var respuestas = await Promise.all(asignaciones.map(function(a) {
       return fetch(API + '/ordenes/' + a.ordenId + '/asignar', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ motorizado: a.nombreMoto }),
+        body: JSON.stringify(_cuerpoAsignar(a.nombreMoto)),
       });
     }));
+    /* Alguna puede rechazarse (p. ej. la fecha de reparto es anterior a
+       la creación de esa orden): se avisa cuántas, no se dan por hechas */
+    var rechazadas = respuestas.filter(function(r) { return !r.ok; });
+    var mensaje = rechazadas.length
+      ? (await _errorAsignar(rechazadas[0], 'Error al autoasignar')).message
+      : '';
 
     await _cargarDatosAsignacion();
     _renderPoolPendientes();
     _renderPoolAsignados();
     _actualizarContadores();
-    if (typeof showNotif === 'function') showNotif(asignaciones.length + ' pedidos autoasignados');
+    if (typeof showNotif === 'function') {
+      showNotif(rechazadas.length
+        ? (asignaciones.length - rechazadas.length) + ' autoasignados, ' + rechazadas.length + ' no: ' + mensaje
+        : asignaciones.length + ' pedidos autoasignados', rechazadas.length ? 6000 : undefined);
+    }
   } catch (err) {
     if (typeof showNotif === 'function') showNotif('Error al autoasignar');
   }
@@ -519,9 +563,11 @@ window.confirmarReasignar = async function(nuevoMotoNombre) {
     var r = await fetch(API + '/ordenes/' + orden.id + '/asignar', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
+      /* Sin fecha: pasarla a otro motorizado conserva su día de
+         reparto (para cambiarlo, "Actualizar orden") */
       body: JSON.stringify({ motorizado: nuevoMotoNombre }),
     });
-    if (!r.ok) throw new Error('No se pudo reasignar');
+    if (!r.ok) throw await _errorAsignar(r, 'Error al reasignar el pedido');
 
     cerrarModalReasignar();
     await _cargarDatosAsignacion();
@@ -532,7 +578,7 @@ window.confirmarReasignar = async function(nuevoMotoNombre) {
       showNotif('#' + orden.codigo + ' reasignado a ' + nuevoMotoNombre);
     }
   } catch (err) {
-    if (typeof showNotif === 'function') showNotif('Error al reasignar el pedido');
+    if (typeof showNotif === 'function') showNotif(err.message || 'Error al reasignar el pedido', 5000);
   }
 };
 

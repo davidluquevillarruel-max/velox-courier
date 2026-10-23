@@ -309,7 +309,7 @@ window.verDetalleTiendaCaja = async function(nombreTienda) {
         '<td class="'+saldoClass+'">'+
           (tieneCobro?(saldo>0?'S/ '+saldo.toFixed(2):saldo<0?'− S/ '+Math.abs(saldo).toFixed(2):'S/ 0.00'):'<span style="color:var(--color-text-tertiary)">S/ 0.00</span>')+
         '</td>' +
-        '<td style="font-size:12px;color:var(--color-text-secondary)">'+_fechaDisplayCaja(o.fecha)+'</td>' +
+        '<td style="font-size:12px;color:var(--color-text-secondary)">'+_fechaDisplayCaja(o.fecha_reparto || o.fecha)+'</td>' +
         '<td><button class="btn btn-sm" onclick="editarOrdenDesdeCaja('+o.id+')" title="Editar orden"><i class="ti ti-pencil"></i></button></td>' +
       '</tr>';
     }).join('') || '<tr><td colspan="9" style="text-align:center;padding:20px;color:var(--color-text-tertiary)">Sin órdenes</td></tr>';

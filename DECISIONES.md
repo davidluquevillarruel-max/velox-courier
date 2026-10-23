@@ -275,6 +275,39 @@ el navegador decide cuándo correrlo y agrega otra capa; queda como mejora opcio
 
 ---
 
+## D-009 · Fecha de reparto: la Caja y las listas van por el día de entrega, no por el de creación
+
+**Estado:** Implementado y probado en local (23 de octubre de 2026), sin subir. Requiere la
+migración `velox_agregar_fecha_reparto.sql`.
+
+**Problema.** Todo el sistema agrupaba por `ordenes.fecha` (el día en que se creó la orden),
+salvo la página Motorizados. Una orden creada el 20, reprogramada y entregada el 21 cobraba en
+el 20: el día de la Caja no coincidía con el día en que pasó la plata, y podía caer en un día ya
+marcado pagado.
+
+**Decisión: una sola "fecha de reparto"** = `ISNULL(fecha_asignacion, fecha)`, como columna
+calculada `PERSISTED` con índice (la regla vive en un solo lugar en vez de repetirse en ~15
+consultas). Asignada → el día de reparto elegido; sin asignar → el de creación. `fecha` queda
+como dato histórico y no se toca. La usan "Todos los pedidos", Motorizados, toda la Caja
+(incluido el prepago, por decisión del usuario), Clientes y el dashboard.
+
+- **Elegir el día al asignar** (`PATCH /asignar`, `fechaReparto`, solo gestores): desde la
+  creación hasta hoy + 7 (se permiten días pasados, para cargar tarde un reparto ya hecho). Sin
+  fecha se conserva la que tenía: pasar una orden a otro motorizado ya no la mueve a hoy.
+- **Días ya pagados en la Caja: se bloquea** mover (de día o de motorizado) una orden que suma en
+  la Caja si el día de origen o de destino ya está pagado para esa tienda o motorizado. No se
+  bloquea lo que no suma (reprogramadas, en proceso), porque no cambia ningún monto pagado.
+- **Descartado: repetir `ISNULL(...)` en cada consulta** (sin migración). Era más rápido de
+  subir, pero cualquier cambio de la regla habría que acordarse de hacerlo en todos lados.
+
+**Límites aceptados.** El bloqueo de días pagados se revisa antes del UPDATE, no en la misma
+transacción (dos gestores al mismo instante podrían colarlo; es improbable). Cambiar el
+*estado* de una orden en un día ya pagado sigue sin bloquearse, como antes (no es parte de este
+cambio). Al confirmar la devolución de una reprogramada vuelve a su día de creación hasta que se
+reasigne, como pidió el usuario: el día del intento fallido no guarda rastro de ella.
+
+---
+
 ## Costos de operación
 
 | Concepto | Mensual |

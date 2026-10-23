@@ -44,10 +44,10 @@ function _fechaDisplayM(yyyymmdd) {
   return p[2] + ' ' + meses[parseInt(p[1])-1] + ' ' + p[0];
 }
 
-/* Día de trabajo de una orden: el día en que se le asignó al
-   motorizado (fecha_trabajo, la calcula GET /motorizados/:id/ordenes);
-   si no tiene, el de creación. La fecha de la orden (o.fecha) es la
-   que usan la Caja y los reportes, y no cambia. */
+/* Día de trabajo de una orden: su fecha de reparto (fecha_trabajo,
+   la calcula GET /motorizados/:id/ordenes con ordenes.fecha_reparto),
+   el mismo día que usan Pedidos y la Caja. o.fecha es la de creación,
+   que no cambia. */
 function _fechaTrabajoM(o) {
   return o.fecha_trabajo || o.fecha;
 }
@@ -538,9 +538,13 @@ window.confirmarReasignarDetalle = async function(nuevoMotoNombre) {
     var r = await fetch(API + '/ordenes/' + _reasignandoOrdenIdDet + '/asignar', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
+      /* Sin fecha: conserva su día de reparto (ver PATCH /asignar) */
       body: JSON.stringify({ motorizado: nuevoMotoNombre }),
     });
-    if (!r.ok) throw new Error('No se pudo reasignar');
+    if (!r.ok) {
+      var dataErr = await r.json().catch(function() { return {}; });
+      throw new Error(dataErr.error || 'Error al reasignar el pedido');
+    }
 
     var motoOrigen = _motoDetalleAbiertoId;
     cerrarModalReasignarDetalle();
@@ -550,7 +554,7 @@ window.confirmarReasignarDetalle = async function(nuevoMotoNombre) {
     if (motoOrigen) abrirDetalleMotoHistorial(motoOrigen);
     if (typeof _renderTablaResumen === 'function') _renderTablaResumen();
   } catch (err) {
-    if (typeof showNotif === 'function') showNotif('Error al reasignar el pedido');
+    if (typeof showNotif === 'function') showNotif(err.message || 'Error al reasignar el pedido', 5000);
   }
 };
 
@@ -1179,6 +1183,14 @@ function _renderModalActualizarOrden(orden, tiendas, distritos, motorizados) {
           '<input id="f-orden-motorizado-update" class="search-box" style="width:100%" placeholder="Escribe para buscar motorizado..." value="' + (orden.motorizado||'').replace(/"/g,'&quot;') + '" />' +
         '</div>' +
 
+        /* Día de reparto: el que manda en Pedidos, Motorizados y la Caja.
+           Con motorizado, el que ya tiene; sin motorizado, hoy (es el
+           día que tomaría al asignarla). Solo gestores (ver más abajo). */
+        '<div id="bloque-fecha-reparto-update">' +
+          '<label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px">Fecha de reparto <span style="font-weight:400;color:var(--color-text-tertiary)">(creada el ' + _fechaDisplayM(orden.fecha) + ')</span></label>' +
+          '<input id="f-orden-fecha-reparto-update" type="date" class="search-box" style="width:100%" min="' + orden.fecha + '" value="' + (orden.motorizado ? (orden.fecha_reparto || orden.fecha) : _hoy()) + '" />' +
+        '</div>' +
+
         '<div>' +
           '<label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px">Observaciones</label>' +
           '<input id="f-orden-obs-update" class="search-box" style="width:100%" maxlength="300" value="' + (orden.observaciones||'') + '" />' +
@@ -1271,6 +1283,8 @@ function _renderModalActualizarOrden(orden, tiendas, distritos, motorizados) {
        no solo se bloquea (a diferencia de los campos de arriba) */
     var bloquePrepago = document.getElementById('bloque-prepago-update');
     if (bloquePrepago) bloquePrepago.style.display = 'none';
+    var bloqueFechaReparto = document.getElementById('bloque-fecha-reparto-update');
+    if (bloqueFechaReparto) bloqueFechaReparto.style.display = 'none';
 
     /* Si la orden ya tiene una condición especial, no puede guardar
        nada de esta orden sin antes confirmar "Recibido" */
@@ -1543,6 +1557,7 @@ window.guardarActualizarEstadoOrden = async function() {
   var dest        = document.getElementById('f-orden-dest-update').value.trim();
   var distrito    = document.getElementById('f-orden-distrito-update').value;
   var motorizado  = document.getElementById('f-orden-motorizado-update').value;
+  var fechaReparto = document.getElementById('f-orden-fecha-reparto-update').value;
   var direccion   = document.getElementById('f-orden-direccion-update').value.trim();
   var telefono    = document.getElementById('f-orden-telefono-update').value.trim();
   var telefono2   = document.getElementById('f-orden-telefono2-update').value.trim();
@@ -1599,6 +1614,18 @@ window.guardarActualizarEstadoOrden = async function() {
   }
 
   try {
+    /* /asignar va PRIMERO: si rechaza la fecha de reparto (fuera de
+       rango, o un día ya pagado en la Caja) no se guarda nada a medias.
+       Un motorizado no puede reasignar (el campo queda bloqueado en
+       pantalla) — directamente no se manda este PATCH: el servidor
+       igual lo rechazaría (una orden que ya tiene motorizado no se
+       puede "autoasignar" de nuevo), así evitamos ese error confuso. */
+    if (!_esSesionMotorizado()) {
+      var cuerpoAsignar = { motorizado: motorizado || null };
+      if (motorizado && fechaReparto) cuerpoAsignar.fechaReparto = fechaReparto;
+      await _patchOrdenConVersion(API + '/ordenes/' + _ordenActualizarId + '/asignar', cuerpoAsignar);
+    }
+
     await _patchOrdenConVersion(API + '/ordenes/' + _ordenActualizarId + '/completo', {
       tienda: tienda, dest: dest, distrito: distrito, direccion: direccion,
       telefDest: telefono, telefDest2: telefono2,
@@ -1607,16 +1634,6 @@ window.guardarActualizarEstadoOrden = async function() {
       pagoVelox: prepagado, pagoVeloxMetodo: prepagadoMetodo,
       obs: obs,
     });
-
-    /* Un motorizado no puede reasignar (el campo queda bloqueado en
-       pantalla) — directamente no se manda este PATCH: el servidor
-       igual lo rechazaría (una orden que ya tiene motorizado no se
-       puede "autoasignar" de nuevo), así evitamos ese error confuso. */
-    if (!_esSesionMotorizado()) {
-      await _patchOrdenConVersion(API + '/ordenes/' + _ordenActualizarId + '/asignar', {
-        motorizado: motorizado || null,
-      });
-    }
 
     await _patchOrdenConVersion(API + '/ordenes/' + _ordenActualizarId + '/estado', {
       estado: estado, metodoPago: metodoPago, condicionEspecial: condicionEspecial,

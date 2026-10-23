@@ -12,6 +12,25 @@ Velox Courier — internal management system for a courier/delivery company in L
 
 Última actualización: 23 de octubre de 2026.
 
+- **Resumen de la sesión del 22–23 de octubre de 2026 — todo en local, commiteado, SIN push.
+  Producción intacta.** El detalle de cada punto está más abajo.
+  - Limpieza de las órdenes de ejemplo + import de las **274 órdenes reales del 20/10/2026**
+    (241 entregado, 28 reprogramado, 5 cancelado; todas con fecha de reparto 20/10).
+  - Botón **Descargar Excel / CSV** en "Todos los pedidos".
+  - **Fecha de reparto**: Pedidos, la vista del motorizado y la Caja trabajan por el día de
+    reparto, no por el de creación. De paso se arregló el bug UTC de la copia de "ausente".
+  - Etiqueta **"Por cobrar"** (antes "Cobrado") en los campos donde se carga el monto ("Nueva
+    orden", "Actualizar orden", ventana "Pendiente") y en sus mensajes de error (frontend y
+    `PATCH /completar-datos`). En la Caja, Motorizados, Clientes y el dashboard sigue "Cobrado":
+    ahí es plata ya cobrada (solo entregadas / ausentes). "Total por cobrar" de la Caja es otra
+    cosa (lo que la tienda le debe a Velox) y no se tocó.
+  - Scripts en `server/scripts/`: `limpiar_ordenes.sql`, `importar-ordenes-excel.js`,
+    `leer-xlsx.js`, `revisar_dias_pagados_fecha_reparto.sql`. Migración nueva (gitignored, solo
+    en la PC): `velox_agregar_fecha_reparto.sql`.
+  - Backups locales en la carpeta `Backup` de SQL Server:
+    `velox_courier_antes_import_20261022.bak` y `velox_courier_antes_fecha_reparto_20261023.bak`.
+  - **Para subir todo a producción** ver "Pendiente" → "Subir a producción".
+
 - **R2 (Cloudflare): configurado y funcionando EN LOCAL; en producción sigue el modo prueba.**
   Cuenta R2 creada, bucket `velox-fotos`, las 5 variables `R2_*` puestas en el `server/.env`
   local (nunca en el repo), URL pública `pub-b64e...r2.dev`. CORS del bucket configurado para
@@ -224,7 +243,25 @@ Velox Courier — internal management system for a courier/delivery company in L
   quien llama es motorizado), no solo visual.
 
 **Pendiente:**
-- **Activar R2 en producción** (próximo paso, lo hace el usuario en el servidor):
+- **Subir a producción lo de la sesión del 22–23/10** (lo hace el usuario en el servidor, en
+  este orden):
+  1. **Backup** de la base de producción.
+  2. Correr `server/scripts/revisar_dias_pagados_fecha_reparto.sql` (solo lectura) y revisar el
+     resultado. Como en el paso 6 se borran todas las órdenes y los pagos de caja, sirve sobre
+     todo para saber qué había antes de borrar.
+  3. Verificar que exista `ordenes.fecha_asignacion` (la migración ya está aplicada en
+     producción; solo confirmarlo).
+  4. Copiar y correr `velox_agregar_fecha_reparto.sql` con `sqlcmd -I` y un usuario con
+     permisos de `ALTER` (**no** `velox_user`, que no los tiene).
+  5. `git pull` + `pm2 restart velox`.
+  6. Repetir la limpieza + import de las 274 órdenes: `limpiar_ordenes.sql` (borra **todas** las
+     órdenes, sus fotos registradas y los pagos de caja; usuario con permisos, no `velox_user`),
+     después `node scripts/importar-ordenes-excel.js "<excel>"` sin flags para revisar la
+     validación, y recién ahí con `--insertar --fecha-asignacion=2026-10-20`. Hay que copiar el
+     Excel al servidor.
+- **Seguir revisando la Caja** (con la fecha de reparto ya aplicada).
+- **Activar R2 en producción** (lo hace el usuario en el servidor; el borrado de órdenes y de
+  `ordenes_fotos` del paso 1 ya lo cubre `limpiar_ordenes.sql` de arriba):
   1. Checklist de limpieza en el servidor: borrar las órdenes de prueba, sus registros en
      `ordenes_fotos` y la carpeta `server/uploads_local/`. Las fotos de modo prueba **no se
      migran** a R2.

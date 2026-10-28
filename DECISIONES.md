@@ -4,7 +4,7 @@
 > Sirve también como contexto de arranque para Claude Code: si se copia a `CLAUDE.md`
 > en la raíz del repo, la herramienta lo lee automáticamente al iniciar.
 >
-> Última actualización: 15 de octubre de 2026
+> Última actualización: 27 de octubre de 2026
 
 ---
 
@@ -14,7 +14,7 @@
 | --- | --- | --- |
 | **1** | Infraestructura y despliegue (servidor, BD, SSL, dominio) | Completada |
 | **2** | Autenticación y autorización server-side | Completada |
-| **3** | Módulo de fotos (Cloudflare R2) | Código listo — falta crear el bucket R2 |
+| **3** | Módulo de fotos (Cloudflare R2) | Completada — R2 activo en producción (27/10/2026) |
 | **4** | Rotación de contraseñas + limpieza periódica + web institucional | Pendiente |
 
 **El sistema está en producción y es seguro para repartir accesos.**
@@ -34,6 +34,7 @@ URL: `https://sistema.veloxcourierperu.com`
 | App | Node 20 + PM2 (proceso `velox`) en `~/velox-courier/server` |
 | Proxy | Nginx a 127.0.0.1:3000 |
 | Repo | privado, con deploy key SSH de solo lectura |
+| Usuarios SQL | `velox_user` (el de la app, **sin** permisos de `ALTER`) y `sa` (migraciones, backups y scripts de limpieza). Las contraseñas de `root`, `sa` y `velox` se resetearon en octubre de 2026; las guarda el usuario, **nunca** en el repo. |
 
 ### Flujo de actualización
 
@@ -101,9 +102,24 @@ solo paquete: `mssql` a `pg`. Node y VS Code no cambian.
 
 ---
 
-## D-003 · Fotos: Cloudflare R2, no Cloudinary (Fase 3, pendiente)
+## D-003 · Fotos: Cloudflare R2, no Cloudinary (Fase 3, completada)
 
-**Estado:** Código implementado (server/r2.js, rutas POST /api/ordenes/:id/evidencia/presigned
+**Estado actual (27 de octubre de 2026): R2 activo en local y en producción.** Bucket
+`velox-fotos`, las 5 variables `R2_*` en el `.env` de cada máquina, CORS configurado para los
+dos orígenes. En producción, confirmado que las fotos suben a `pub-b64e...r2.dev/productos/`.
+El modo prueba de abajo queda solo como respaldo si falta alguna variable.
+
+**Regla permanente (27 de octubre de 2026): un solo pipeline de fotos, siempre R2.** Todo punto
+de foto nuevo reusa el mismo camino que la foto del producto y la evidencia de pago: la cola de
+`js/cola-fotos.js` (`encolarFoto`, IndexedDB + reintentos + `idSubida`), la URL firmada de
+`server/r2.js` y el registro de la URL en `ordenes_fotos`. Una clase de foto nueva es solo un
+`tipo` nuevo en `TIPOS_FOTO` (y revisar `puedeVerFotoOrden()`). No se crean mecanismos de
+almacenamiento, tablas, columnas ni rutas de subida aparte, ni fotos en base64, en disco o en
+otro servicio. **Por qué:** así todas las fotos heredan sin trabajo extra la tolerancia a señal
+mala, la deduplicación, el indicador de la cola y el control de acceso, y hay un solo lugar donde
+buscarlas. Detalle en `CLAUDE.md` → "Fotos: un solo pipeline, siempre R2".
+
+**Historia:** Código implementado (server/r2.js, rutas POST /api/ordenes/:id/evidencia/presigned
 y PATCH /api/ordenes/:id/medio-pago, tabla `ordenes_fotos`, subida y compresión en el modal
 "Actualizar orden"). **Falta crear el bucket R2 y sus credenciales** — hasta entonces, esas
 rutas responden un error claro en vez de fallar. Variables que hay que agregar a `server/.env`
@@ -277,8 +293,10 @@ el navegador decide cuándo correrlo y agrega otra capa; queda como mejora opcio
 
 ## D-009 · Fecha de reparto: la Caja y las listas van por el día de entrega, no por el de creación
 
-**Estado:** Implementado y probado en local (23 de octubre de 2026), sin subir. Requiere la
-migración `velox_agregar_fecha_reparto.sql`.
+**Estado:** Implementado (23 de octubre de 2026) y en producción: migración
+`velox_agregar_fecha_reparto.sql` aplicada en el servidor + `git pull` (confirmado por el
+usuario el 27 de octubre de 2026). En el mismo deploy se limpiaron las órdenes de producción y
+se importaron las 274 reales del 20/10/2026 (ids 1–274).
 
 **Problema.** Todo el sistema agrupaba por `ordenes.fecha` (el día en que se creó la orden),
 salvo la página Motorizados. Una orden creada el 20, reprogramada y entregada el 21 cobraba en
@@ -316,8 +334,7 @@ reasigne, como pidió el usuario: el día del intento fallido no guarda rastro d
 | IGV Perú 18 % (DigitalOcean, desde 01/06/2026) | $4.32 |
 | Dominio Namecheap ($6.99/año) | $0.58 |
 | Ubuntu + SQL Server Express + SSL + Node + PM2 + Nginx | $0.00 |
-| **Total actual** | **~$28.90** |
-| Cloudflare R2 (Fase 3) | ~$2.90 |
+| Cloudflare R2 (activo desde oct-2026; estimado con volumen pleno) | ~$2.90 |
 | **Total con fotos** | **~$31.80** |
 
 - Facturación por hora, tope 672 h/mes, un mes de 31 días cuesta igual que uno de 28.
@@ -337,3 +354,9 @@ downtime). El dominio se traspasa aparte en Namecheap.
 - [ ] **2FA en Namecheap:** activar (la cuenta controla el dominio).
 - [ ] **Cambiar contraseña del admin** desde el propio sistema (ahora que el flujo es seguro).
 - [ ] **Monitoreo:** alertas de DigitalOcean por RAM > 85 % y disco > 80 %.
+- [ ] **Caja:** seguir revisándola con la fecha de reparto y los datos reales. Dos bugs
+      anotados: el prepago en el detalle de la tienda, y `GETDATE()` (UTC) en los dos "Marcar
+      pagado", que después de las 19:00 de Lima registra `fecha_pago` con el día siguiente.
+      Detalle en `CLAUDE.md` → "Pendiente".
+- [ ] **Rediseño de la vista del motorizado** (botón EMPEZAR + flujo de entrega con fotos, que
+      debe usar el pipeline único de fotos de D-003). Solo se habló, no se empezó.

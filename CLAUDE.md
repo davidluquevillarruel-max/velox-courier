@@ -10,10 +10,25 @@ Velox Courier — internal management system for a courier/delivery company in L
 
 ## Estado actual
 
-Última actualización: 23 de octubre de 2026.
+Última actualización: 27 de octubre de 2026.
 
-- **Resumen de la sesión del 22–23 de octubre de 2026 — todo en local, commiteado, SIN push.
-  Producción intacta.** El detalle de cada punto está más abajo.
+- **Deploy de la sesión del 22–23/10 HECHO en producción** (confirmado por el usuario el 27 de
+  octubre de 2026). `main` está pusheado y en el servidor se hizo `git pull` + `pm2 restart
+  velox`, así que todo lo commiteado hasta `a5ec7ab` está en producción (fecha de
+  asignación/reparto, reprogramadas que vuelven a Asignación, ráfaga con tienda,
+  export, "Por cobrar").
+  - Migración `velox_agregar_fecha_reparto.sql` aplicada en el servidor.
+  - Limpieza + import corridos en producción: quedaron las **274 órdenes del 20/10** (241
+    entregado, 28 reprogramado, 5 cancelado, ids 1–274). El import creó 22 tiendas, 4
+    motorizados (DAVID, FERNANDO, Expres AGENCIA, Expres LIMA) y el distrito
+    LURIGANCHO - CHOSICA. Los ids de producción no tienen por qué coincidir con los de local.
+  - **R2 activo en producción** (ver abajo).
+  - Se resetearon las contraseñas de `root`, `sa` y `velox` del servidor (las tiene anotadas el
+    usuario; **nunca** en el repo). `velox_user` sigue sin permisos de `ALTER`: las migraciones y los scripts de
+    limpieza se corren con `sa`.
+
+- **Resumen de la sesión del 22–23 de octubre de 2026** (ya en producción, ver arriba). El
+  detalle de cada punto está más abajo.
   - Limpieza de las órdenes de ejemplo + import de las **274 órdenes reales del 20/10/2026**
     (241 entregado, 28 reprogramado, 5 cancelado; todas con fecha de reparto 20/10).
   - Botón **Descargar Excel / CSV** en "Todos los pedidos".
@@ -25,26 +40,28 @@ Velox Courier — internal management system for a courier/delivery company in L
     ahí es plata ya cobrada (solo entregadas / ausentes). "Total por cobrar" de la Caja es otra
     cosa (lo que la tienda le debe a Velox) y no se tocó.
   - Scripts en `server/scripts/`: `limpiar_ordenes.sql`, `importar-ordenes-excel.js`,
-    `leer-xlsx.js`, `revisar_dias_pagados_fecha_reparto.sql`. Migración nueva (gitignored, solo
-    en la PC): `velox_agregar_fecha_reparto.sql`.
+    `leer-xlsx.js`, `revisar_dias_pagados_fecha_reparto.sql`. Migración (gitignored, solo
+    en la PC): `velox_agregar_fecha_reparto.sql`, ya aplicada en producción.
   - Backups locales en la carpeta `Backup` de SQL Server:
     `velox_courier_antes_import_20261022.bak` y `velox_courier_antes_fecha_reparto_20261023.bak`.
-  - **Para subir todo a producción** ver "Pendiente" → "Subir a producción".
 
-- **R2 (Cloudflare): configurado y funcionando EN LOCAL; en producción sigue el modo prueba.**
-  Cuenta R2 creada, bucket `velox-fotos`, las 5 variables `R2_*` puestas en el `server/.env`
-  local (nunca en el repo), URL pública `pub-b64e...r2.dev`. CORS del bucket configurado para
+- **R2 (Cloudflare): ACTIVO en local y en producción.** En producción se pusieron las 5
+  variables `R2_*` en el `.env` del servidor + `pm2 restart velox`; confirmado por el usuario
+  (27 de octubre de 2026) que las fotos suben a `pub-b64e...r2.dev/productos/`. El modo prueba
+  (`uploads_local/`) ya no se usa en ningún lado, salvo que falte alguna variable.
+  Cuenta R2 creada, bucket `velox-fotos`, las 5 variables `R2_*` en el `server/.env` de cada
+  máquina (nunca en el repo), URL pública `pub-b64e...r2.dev`. CORS del bucket configurado para
   `http://localhost:3000` y `https://sistema.veloxcourierperu.com` (métodos PUT y GET,
   encabezado `content-type`: el navegador sube directo a R2 desde `js/cola-fotos.js`).
   Probado el 21 de octubre de 2026: las fotos (incluida la ráfaga) suben a R2, se ven con su
   URL pública y quedan registradas en `ordenes_fotos` con la URL de R2, sin duplicados.
   Ojo: el servidor usa R2 apenas las 5 variables tienen **cualquier** valor; si una falta o
-  está vacía, vuelve al modo prueba (`uploads_local/`). Pasos para producción en "Pendiente".
+  está vacía, vuelve al modo prueba (`uploads_local/`).
 
-- **Fecha de reparto (23 de octubre de 2026, en local, sin subir; ver D-009 en `DECISIONES.md`).**
+- **Fecha de reparto (23 de octubre de 2026, en producción; ver D-009 en `DECISIONES.md`).**
   La fecha que manda es el día en que la orden sale a entregar, no el de creación: **entrega del
   día = cobro del día**. Columna calculada `ordenes.fecha_reparto = ISNULL(fecha_asignacion,
-  fecha)` (migración `velox_agregar_fecha_reparto.sql`, ver abajo). La usan "Todos los
+  fecha)` (migración `velox_agregar_fecha_reparto.sql`, aplicada en local y en producción). La usan "Todos los
   pedidos" (`GET /ordenes?fecha=`), la página Motorizados, **toda la Caja** (tiendas,
   motorizados, liquidez, caja real incluido el prepago, y los dos "Marcar pagado"), Clientes y
   el dashboard. `ordenes.fecha` (creación) no cambia: queda como dato histórico, se muestra en
@@ -66,20 +83,18 @@ Velox Courier — internal management system for a courier/delivery company in L
     `GETDATE()` del servidor, que en UTC daba el día siguiente después de las 19:00).
   - Con los datos importados: el 20/10 pasa de 231 a 274 órdenes (las 43 creadas del 13 al 19
     se repartieron el 20) y los días 13–19 quedan vacíos.
-  - **Antes de subir:** correr en producción `server/scripts/revisar_dias_pagados_fecha_reparto.sql`
-    (solo lectura): lista las órdenes que cambiarían de día en días ya pagados y cómo cambiaría
-    el monto de cada uno. Si sale vacío, se puede subir sin sorpresas en la Caja.
+  - `server/scripts/revisar_dias_pagados_fecha_reparto.sql` (solo lectura) lista las órdenes
+    que cambiarían de día en días ya pagados. Se usó antes de subir; queda por si hace falta.
 
 - **Descargar Excel / CSV en "Todos los pedidos" (23 de octubre de 2026, commit `55613a7`, en
-  local, sin subir).** `js/exportar-pedidos.js` exporta solo las filas **visibles** de la tabla
+  producción).** `js/exportar-pedidos.js` exporta solo las filas **visibles** de la tabla
   (cada `<tr>` lleva `data-id`; se cruzan con `_ordenesCache`), así respeta la fecha y todos los
   filtros. Mismas 15 columnas y orden que el Excel de importación, para poder reimportarlo
   (probado ida y vuelta). Sin librerías: el `.xlsx` es un zip sin comprimir armado a mano
   (fecha como fecha real `dd/mm/yyyy`); el CSV va con BOM UTF-8 y **separado por `;`**, porque
   en Windows es-PE el separador de listas es `;` y con comas Excel lo abre en una sola columna.
   REPROGRAMADOS PARA HOY = "SI" si las observaciones dicen "Reprogramado para hoy" o si
-  `fecha_asignacion` > `fecha`; por eso `SELECT_ORDEN` ahora devuelve `fecha_asignacion`. Al
-  subirlo: `git pull` + `pm2 restart velox`, sin migración.
+  `fecha_asignacion` > `fecha`; por eso `SELECT_ORDEN` ahora devuelve `fecha_asignacion`.
 
 - **Importación de órdenes desde Excel (22 de octubre de 2026, commit `c15090d`).** En local se
   borraron las órdenes de ejemplo y se cargó el día real 20/10/2026 desde
@@ -103,32 +118,28 @@ Velox Courier — internal management system for a courier/delivery company in L
     a importar si ya hay órdenes de ese día (salvo `--forzar`).
   - `leer-xlsx.js` — lector de `.xlsx` sin dependencias (el `.xlsx` es un zip con XML).
 
-  **Antes de correrlos en el servidor (lo hace el usuario):**
-  1. `limpiar_ordenes.sql` borra **TODAS** las órdenes de producción, no solo las de un día, y
-     también los pagos de caja ya marcados. Hacer backup del servidor antes y confirmar que es
-     lo que se quiere.
-  2. Verificar que la columna `ordenes.fecha_asignacion` exista antes de importar (ya se
-     verificó aplicada en producción): sin ella el INSERT falla.
-  3. `velox_user` no alcanza para el backup ni para `DBCC CHECKIDENT`: correr el `.sql` con un
-     usuario con más permisos. Con `sqlcmd`, el script ya pone `QUOTED_IDENTIFIER ON` (sin eso
-     el DELETE falla por el índice filtrado de `id_creacion`).
-  4. Correr primero el import sin flags y revisar la validación antes de `--insertar`.
+  **Ya corridos en producción** (limpieza + import del 20/10, ver arriba). Si se vuelven a usar
+  en el servidor: `limpiar_ordenes.sql` borra **TODAS** las órdenes y los pagos de caja (backup
+  antes); se corre con `sa`, porque `velox_user` no alcanza para el backup ni para
+  `DBCC CHECKIDENT` (con `sqlcmd`, el script ya pone `QUOTED_IDENTIFIER ON`; sin eso el DELETE
+  falla por el índice filtrado de `id_creacion`); el import se corre primero sin flags y se
+  revisa la validación antes de `--insertar`.
 
-- **En local, sin subir: el motorizado ve sus órdenes el día en que se le asignaron.** Columna
+- **En producción: el motorizado ve sus órdenes el día en que se le asignaron.** Columna
   nueva `ordenes.fecha_asignacion` (migración ya aplicada en producción, ver abajo), la llena `/asignar`. La
   página Motorizados (resumen, tarjetas y detalle, para todos los roles) la usa. Desde el
   cambio "Fecha de reparto" (arriba) también la usan la Caja y el resto de las pantallas, vía
   `ordenes.fecha_reparto`: el pendiente de que la Caja agrupaba por `ordenes.fecha` quedó resuelto.
-- **En local, sin subir: reprogramadas y no entregadas vuelven a Asignación.** Al confirmar la
+- **En producción: reprogramadas y no entregadas vuelven a Asignación.** Al confirmar la
   devolución (`PATCH /:id/devolver`) pasan a `en-proceso` **sin motorizado** y con
   `fecha_asignacion` vacía (vuelven a verse en su día de creación); al reasignarlas, `/asignar`
   les pone el día elegido (o hoy). Depende de la
   migración `velox_agregar_fecha_asignacion.sql`. "Pendiente devolución" y "Devolución Tienda"
   ahora refrescan suave (sin "Cargando..." y sin repintar si nada cambió).
 
-- **En local, sin subir (20 de octubre de 2026): ráfaga con tienda + "Pendiente" con
+- **En producción (20 de octubre de 2026): ráfaga con tienda + "Pendiente" con
   destinatario/distrito/cobrado.** No necesita migración (todas las columnas ya existen).
-  Commits `aad7979` (parte 1) y el siguiente (parte 2). Falta que el usuario lo pruebe en local.
+  Commits `aad7979` (parte 1) y el siguiente (parte 2).
   - **⚡ ahora pide primero la tienda** (modal `#rafaga-tienda-overlay` en `pages/pedidos.html`,
     mismo buscador que "Nueva orden"); recién después abre la cámara. Una tienda por ráfaga;
     la cámara la muestra arriba del contador. La tienda viaja guardada con cada foto en la
@@ -158,8 +169,7 @@ Velox Courier — internal management system for a courier/delivery company in L
   - **Marca de "pendiente"**: columna propia `ordenes.datos_pendientes` (nace en 1 solo en la
     ráfaga). **No** se detecta por la tienda comodín, que solo ocupa el lugar (`id_tienda` es
     NOT NULL). Qué campos hay que completar lo define `CAMPOS_PENDIENTES` en
-    `server/routes/ordenes.js` (en producción: tienda, destinatario, teléfono; en local
-    ya cambió, ver arriba); la marca se apaga en
+    `server/routes/ordenes.js` (hoy: destinatario, distrito, cobrado; ver arriba); la marca se apaga en
     `recalcularDatosPendientes()` cuando están todos, ya sea desde "Pendiente" o desde
     "Actualizar orden". El usuario avisó que esos campos pueden cambiar (quizás 2, o distrito en
     vez de tienda): para sacar uno basta con quitarlo de la lista; para uno nuevo, sumarlo
@@ -189,9 +199,9 @@ Velox Courier — internal management system for a courier/delivery company in L
   destinatario y teléfono: el distrito queda en el comodín `SIN DEFINIR` para
   completarlo después desde "Actualizar orden". El modal tiene un único ícono de cámara
   con marca roja (sin foto) o verde (con foto) que abre la vista previa.
-- **Fotos: MODO PRUEBA en producción** (en local ya se usa R2, ver arriba). Mientras el
-  `.env` del servidor no tenga las variables `R2_*`, las fotos se guardan en
-  `server/uploads_local/` (gitignored; en producción, en el disco del servidor) y se
+- **Fotos: R2 activo en local y en producción (modo prueba como respaldo).** Si el `.env`
+  no tiene las 5 variables `R2_*`, las fotos se guardan en
+  `server/uploads_local/` (gitignored, en el disco de la máquina) y se
   sirven por `GET /api/ordenes/:id/foto/:fotoId` validando sesión. El código prefiere R2
   solo cuando las 5 variables `R2_*` estén en el `.env` (ver `server/r2.js` y
   `server/almacenamiento-local.js`). Las fotos guardadas en modo prueba **no se migran
@@ -243,32 +253,18 @@ Velox Courier — internal management system for a courier/delivery company in L
   quien llama es motorizado), no solo visual.
 
 **Pendiente:**
-- **Subir a producción lo de la sesión del 22–23/10** (lo hace el usuario en el servidor, en
-  este orden):
-  1. **Backup** de la base de producción.
-  2. Correr `server/scripts/revisar_dias_pagados_fecha_reparto.sql` (solo lectura) y revisar el
-     resultado. Como en el paso 6 se borran todas las órdenes y los pagos de caja, sirve sobre
-     todo para saber qué había antes de borrar.
-  3. Verificar que exista `ordenes.fecha_asignacion` (la migración ya está aplicada en
-     producción; solo confirmarlo).
-  4. Copiar y correr `velox_agregar_fecha_reparto.sql` con `sqlcmd -I` y un usuario con
-     permisos de `ALTER` (**no** `velox_user`, que no los tiene).
-  5. `git pull` + `pm2 restart velox`.
-  6. Repetir la limpieza + import de las 274 órdenes: `limpiar_ordenes.sql` (borra **todas** las
-     órdenes, sus fotos registradas y los pagos de caja; usuario con permisos, no `velox_user`),
-     después `node scripts/importar-ordenes-excel.js "<excel>"` sin flags para revisar la
-     validación, y recién ahí con `--insertar --fecha-asignacion=2026-10-20`. Hay que copiar el
-     Excel al servidor.
-- **Seguir revisando la Caja** (con la fecha de reparto ya aplicada).
-- **Activar R2 en producción** (lo hace el usuario en el servidor; el borrado de órdenes y de
-  `ordenes_fotos` del paso 1 ya lo cubre `limpiar_ordenes.sql` de arriba):
-  1. Checklist de limpieza en el servidor: borrar las órdenes de prueba, sus registros en
-     `ordenes_fotos` y la carpeta `server/uploads_local/`. Las fotos de modo prueba **no se
-     migran** a R2.
-  2. Poner las 5 variables `R2_*` en el `.env` del **servidor** y `pm2 restart velox`.
-  3. Probar que una foto suba a R2 desde producción (que su URL empiece con
-     `pub-b64e...r2.dev/productos/`).
-  4. Hay 3 fotos de prueba en el bucket (`productos/orden-0/`) que se pueden borrar.
+- **Seguir revisando la Caja** (con la fecha de reparto ya aplicada y los datos reales del 20/10).
+- **Bug de Caja 1 — prepago en el detalle de la tienda.** El prepago (`pago_velox = 'PAGADO'`)
+  no se cuenta en el detalle de la tienda de la Caja. Falta precisar con el usuario qué se ve
+  mal y reproducirlo antes de tocar código.
+- **Bug de Caja 2 — `GETDATE()` en "Marcar pagado".** Los dos "Marcar pagado" (tiendas y
+  motorizados) guardan `fecha_pago = CAST(GETDATE() AS DATE)` (`server/routes/caja.js`, en el
+  UPDATE y el INSERT de cada uno). El servidor está en UTC: después de las 19:00 de Lima queda
+  registrado el día siguiente. Es el mismo bug que ya se arregló en la copia de "ausente":
+  usar la fecha de Lima.
+- Borrar las 3 fotos de prueba del bucket (`productos/orden-0/`) y, si quedó, la carpeta
+  `server/uploads_local/` del servidor (ya no se usa con R2 activo; las fotos de modo prueba
+  **no se migran** a R2).
 - Opcional, más adelante: conectar un dominio propio (`fotos.veloxcourierperu.com`) al bucket
   en vez de la URL `r2.dev`, que tiene límite de velocidad; después cambiar `R2_PUBLIC_URL`.
 - **Función grande pendiente: rediseño de la vista del motorizado** (botón EMPEZAR + flujo de
@@ -341,13 +337,12 @@ Roles: `admin`, `operador`, `visor`, `tienda`, `motorizado`. `GESTORES = ['admin
 
 ## Migraciones pendientes de aplicar en producción
 
-- `velox_agregar_fecha_reparto.sql` — columna calculada `ordenes.fecha_reparto =
-  ISNULL(fecha_asignacion, fecha)` (PERSISTED) + índice `ix_ordenes_fecha_reparto`. No toca
-  datos. Aplicada en local el 23 de octubre de 2026. **Correrla en el servidor antes del
-  `git pull`** (con `sqlcmd -I`): sin la columna fallan `GET /ordenes`, la Caja y `/asignar`.
-  Antes, correr la consulta `server/scripts/revisar_dias_pagados_fecha_reparto.sql`.
+Ninguna por ahora.
 
-`velox_agregar_fecha_asignacion.sql` (columna `ordenes.fecha_asignacion`, DATE NULL, que llena
+`velox_agregar_fecha_reparto.sql` (columna calculada `ordenes.fecha_reparto =
+ISNULL(fecha_asignacion, fecha)` PERSISTED + índice `ix_ordenes_fecha_reparto`) se aplicó en
+local el 23 de octubre de 2026 y en producción después (confirmado por el usuario el 27 de
+octubre de 2026). `velox_agregar_fecha_asignacion.sql` (columna `ordenes.fecha_asignacion`, DATE NULL, que llena
 `PATCH /:id/asignar`; la página Motorizados filtra por `ISNULL(fecha_asignacion, fecha)`) se
 aplicó en local el 20 de octubre de 2026 y ya está aplicada en producción (confirmado por el
 usuario el 22 de octubre de 2026). `velox_agregar_rafaga.sql` (tienda comodín `SIN DEFINIR`, columnas `ordenes.datos_pendientes`
@@ -358,7 +353,8 @@ de octubre de 2026.
 
 Cuando haya una migración nueva, anotarla acá hasta que se aplique en el servidor. Como los
 `velox_agregar_*.sql` están gitignored, no viajan con `git push`: hay que copiarlos al
-servidor y correrlos a mano con `sqlcmd`, **antes** del `git pull`.
+servidor y correrlos a mano con `sqlcmd -I` y el usuario `sa` (`velox_user` no tiene
+permisos de `ALTER`), **antes** del `git pull`.
 
 ## Reglas de trabajo
 
@@ -388,6 +384,46 @@ servidor y correrlos a mano con `sqlcmd`, **antes** del `git pull`.
 - **Nunca** subir al repositorio `server/.env`, `node_modules` ni archivos de credenciales — ya están en `.gitignore`, respetarlo.
 - No reintroducir secretos hardcodeados en el código: contraseñas, tokens ni claves.
 - El hashing de contraseñas (PBKDF2 en `routes/auth.js`) está correcto: no tocarlo.
+
+### Fotos: un solo pipeline, siempre R2 (regla permanente)
+
+**El usuario nunca espera a que la foto suba.** Capturar la foto y seguir trabajando es
+instantáneo; la subida a R2 pasa en segundo plano por la cola. Todo punto de foto nuevo se
+trabaja así:
+
+- Se captura → se comprime (`comprimirImagenJPEG`) → `encolarFoto(...)` y el usuario sigue. El
+  `await` de `encolarFoto` solo espera el guardado en IndexedDB (milisegundos), **nunca** la
+  red: la subida arranca sin `await` dentro de `_colaAgregar`.
+- La pantalla no muestra "Subiendo…" bloqueante, ni deshabilita botones, ni impide cerrar el
+  modal o pasar a la siguiente orden mientras la foto sube. El estado de la subida lo muestra
+  solo el indicador global (`js/indicador-fotos.js`). Si la pantalla necesita reaccionar cuando
+  la foto llega (ej. refrescar un ícono), escucha `velox:foto-subida`, no espera.
+- Si la foto tiene que estar asociada a una orden, la orden se crea/guarda primero (eso sí
+  necesita señal) y la foto entra a la cola **después** de que ese guardado salió bien (como la
+  evidencia en `js/motorizados.js`). Si la orden todavía no existe y tiene que poder crearse sin
+  señal, seguir el modelo de la ráfaga (`encolarFotoRafaga`: la cola crea la orden y después
+  sube la foto, con `idCreacion` para no duplicar).
+- Para validar "hay foto" alcanza con que esté tomada (en memoria, ya subida o en la cola de ese
+  teléfono); no exigir que ya esté en R2 (ver `evidencia_pendiente`).
+
+R2 está activo en local y en producción y es el **almacenamiento oficial** de las fotos. Todo
+punto de foto **nuevo**, en cualquier pantalla, reusa el **mismo** pipeline que ya usan la foto
+del producto (`js/pedidos.js`) y la evidencia de pago (`js/motorizados.js`):
+
+- **Frontend:** la cola de `js/cola-fotos.js` (`encolarFoto(ordenId, tipo, blob, codigoOrden)`):
+  guarda en IndexedDB, sube en segundo plano con reintentos y sin duplicar (`idSubida`). Nada de
+  `fetch` propio para subir la foto.
+- **Backend:** la URL firmada a R2 de `server/r2.js` y el registro de la URL en `ordenes_fotos`
+  (endpoints que ya usa la cola en `server/routes/ordenes.js`).
+- **Una clase de foto nueva = un `tipo` nuevo** en `ordenes_fotos`: sumarlo a `TIPOS_FOTO` en
+  `server/routes/ordenes.js` (y revisar quién puede verla en `puedeVerFotoOrden()`). No crear
+  columnas, tablas ni rutas de subida aparte.
+- **Prohibido:** un mecanismo de almacenamiento nuevo, guardar fotos en otra tabla o columna,
+  como base64 en la BD, en disco o en otro servicio. `server/almacenamiento-local.js` es solo el
+  respaldo automático del mismo pipeline cuando faltan las variables `R2_*`; no se usa directo.
+
+Así todas las fotos van a R2 automáticamente, con la misma cola, los mismos reintentos y el
+mismo indicador (`js/indicador-fotos.js`).
 
 ### Despliegue (contexto — no ejecutar)
 

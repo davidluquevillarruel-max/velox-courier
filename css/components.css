@@ -738,6 +738,20 @@
 .foto-slot.lista .foto-slot-estado {
   color: var(--color-green-text);
 }
+/* Casillero con dos caminos: cámara o galería (pago y "no entregado") */
+.foto-slot-doble {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.foto-slot-doble .foto-slot {
+  cursor: default;
+}
+.foto-slot-botones {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
 
 /* Opciones grandes (medio de pago, Otros, motivo) */
 .entrega-opciones {

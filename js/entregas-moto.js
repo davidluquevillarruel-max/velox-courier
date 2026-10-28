@@ -6,13 +6,16 @@
    para cerrar la entrega con tres caminos:
      · COMPLETAR → entregado. Foto de entrega siempre; foto del cambio
        si la orden tiene condición especial (reemplaza "Recibido");
-       en contraentrega, cómo se cobró y la foto del pago si es Yape
-       moto, Pago tienda o Pago Velox.
+       en contraentrega, cómo se cobró y la foto del pago (todos los
+       medios, efectivo incluido).
      · OTROS     → reprogramado / ausente / cancelado, cada uno con su foto.
      · DETALLE   → no entregado: motivo (lista + "otro") y de 1 a 3 fotos.
+   La foto del pago y las de DETALLE se pueden tomar con la cámara o
+   subir desde la galería (la prueba de un Yape suele ser una captura
+   ya guardada); entrega y cambio, solo con la cámara en vivo.
    Cerrar la orden es UN pedido (PATCH /ordenes/:id/resolver), que
    necesita señal en ese momento. Las fotos se toman antes (cámara de
-   js/camara-foto.js) y quedan en memoria; recién cuando el servidor
+   js/camara-foto.js, o la galería) y quedan en memoria; recién cuando el servidor
    respondió bien entran a la cola de siempre (encolarFoto, en
    js/cola-fotos.js), que las sube a R2 en segundo plano: el motorizado
    no espera ninguna subida y pasa directo a la siguiente orden.
@@ -22,9 +25,12 @@
 
 var _ENT_MAX_FOTOS_DETALLE = 3;
 
-/* Medios de pago que piden foto en esta vista (en "Actualizar orden"
-   solo la piden Pago tienda y Pago Velox: ver _MEDIOS_PAGO) */
-var _ENT_MEDIOS_CON_FOTO = ['yape-motorizado', 'pago-tienda', 'pago-empresa'];
+/* Medios de pago que piden foto en esta vista: todos (en "Actualizar
+   orden" solo la piden Pago tienda y Pago Velox: ver _MEDIOS_PAGO) */
+var _ENT_MEDIOS_CON_FOTO = ['yape-motorizado', 'efectivo-motorizado', 'pago-tienda', 'pago-empresa'];
+
+/* Tipos de foto que además se pueden subir desde la galería */
+var _ENT_TIPOS_CON_GALERIA = ['evidencia_medio_pago', 'foto_no_entregado'];
 
 var _ENT_OTROS = [
   { value: 'reprogramado', label: 'Reprogramado', foto: 'foto_reprogramado' },
@@ -248,10 +254,26 @@ window.elegirModoEntrega = function(modo) {
   if (sec) sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
 };
 
-/* Casillero de foto. idx solo para las de "no entregado" (varias). */
+/* Casillero de foto. idx solo para las de "no entregado" (varias).
+   Los tipos de _ENT_TIPOS_CON_GALERIA llevan dos botones abajo:
+   "Tomar foto" (cámara) y "Subir imagen" (galería). */
 function _slotFotoEnt(tipo, titulo, blob, idx) {
   var url = blob ? _urlBlobEnt(blob) : '';
   var arg = '\'' + tipo + '\'' + (idx != null ? ', ' + idx : '');
+  if (_ENT_TIPOS_CON_GALERIA.indexOf(tipo) !== -1) {
+    return '<div class="foto-slot-doble">' +
+        '<div class="foto-slot' + (blob ? ' lista' : '') + '">' +
+          (blob ? '<img src="' + url + '" alt="">' : '<i class="ti ti-photo"></i>') +
+          '<span>' + _escEnt(titulo) +
+            '<span class="foto-slot-estado">' + (blob ? 'Lista — puedes cambiarla' : 'Falta') + '</span>' +
+          '</span>' +
+        '</div>' +
+        '<div class="foto-slot-botones">' +
+          '<button type="button" class="entrega-opcion" onclick="tomarFotoEntrega(' + arg + ')"><i class="ti ti-camera"></i> Tomar foto</button>' +
+          '<button type="button" class="entrega-opcion" onclick="subirImagenEntrega(' + arg + ')"><i class="ti ti-photo-up"></i> Subir imagen</button>' +
+        '</div>' +
+      '</div>';
+  }
   return '<button type="button" class="foto-slot' + (blob ? ' lista' : '') + '" onclick="tomarFotoEntrega(' + arg + ')">' +
       (blob ? '<img src="' + url + '" alt="">' : '<i class="ti ti-camera"></i>') +
       '<span>' + _escEnt(titulo) +
@@ -434,7 +456,53 @@ window.tomarFotoEntrega = async function(tipo, idx) {
     titulo:  (_ENT_TITULOS_FOTO[tipo] || 'Foto') + ' — #' + orden.codigo,
     textoOk: 'Usar foto',
   });
-  if (!blob || _entOrden !== orden) return;
+  _guardarFotoEnt(orden, tipo, idx, blob);
+};
+
+/* Galería: el input sin "capture" deja elegir una imagen ya guardada
+   (captura del Yape, foto del voucher). Se comprime igual que la de
+   la cámara y queda en el borrador; la sube la cola al confirmar. */
+var _entDestinoGaleria = null;
+
+function _inputGaleriaEnt() {
+  var input = document.getElementById('entrega-input-galeria');
+  if (input) return input;
+  input = document.createElement('input');
+  input.type = 'file';
+  input.id = 'entrega-input-galeria';
+  input.accept = 'image/*';
+  input.style.display = 'none';
+  input.onchange = _onImagenGaleriaEnt;
+  document.body.appendChild(input);
+  return input;
+}
+
+window.subirImagenEntrega = function(tipo, idx) {
+  if (!_entOrden || _entGuardando) return;
+  _entDestinoGaleria = { orden: _entOrden, tipo: tipo, idx: idx };
+  _inputGaleriaEnt().click();
+};
+
+async function _onImagenGaleriaEnt() {
+  var input = this;
+  var file = input.files && input.files[0];
+  input.value = ''; /* permite volver a elegir la misma imagen */
+  var destino = _entDestinoGaleria;
+  _entDestinoGaleria = null;
+  if (!file || !destino) return;
+
+  var blob;
+  try {
+    blob = await comprimirImagenJPEG(file, _FOTO_MAX_ANCHO, _FOTO_CALIDAD);
+  } catch (err) {
+    _mostrarErrorEnt(err.message || 'No se pudo usar esa imagen. Prueba con otra.');
+    return;
+  }
+  _guardarFotoEnt(destino.orden, destino.tipo, destino.idx, blob);
+}
+
+function _guardarFotoEnt(orden, tipo, idx, blob) {
+  if (!blob || _entOrden !== orden || _entGuardando) return;
 
   var b = _borradorEnt(orden.id);
   if (tipo === 'foto_no_entregado') {
@@ -445,7 +513,7 @@ window.tomarFotoEntrega = async function(tipo, idx) {
     b.fotos[tipo] = blob;
   }
   _repintarSeccionEnt();
-};
+}
 
 function _mostrarErrorEnt(msg) {
   var el = document.getElementById('entrega-error');

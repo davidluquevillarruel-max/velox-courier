@@ -58,11 +58,16 @@ Velox Courier — internal management system for a courier/delivery company in L
     volver); lo llenado queda en memoria por orden mientras no se cierre.
   - **COMPLETAR** (entregado): foto de entrega siempre; foto del cambio si la orden tiene
     condición especial (reemplaza "Recibido": con esa foto, "Actualizar orden" ya no lo pide); en
-    contraentrega, cómo se cobró y foto del pago con Yape moto, Pago tienda o Pago Velox (no con
-    Efectivo; en "Actualizar orden" sigue pidiéndose solo con Pago tienda / Pago Velox).
+    contraentrega, cómo se cobró y foto del pago con cualquier medio, efectivo incluido
+    (`_ENT_MEDIOS_CON_FOTO`; en "Actualizar orden" sigue pidiéndose solo con Pago tienda / Pago
+    Velox).
     **OTROS**: reprogramado / ausente / cancelado, cada uno con su foto y un comentario opcional.
     **DETALLE** (no entregado): motivo de una lista (no contesta, dirección errada, cliente no
     tenía el dinero, rechazó el producto, otro + texto) y de 1 a 3 fotos.
+  - La foto del pago y las de DETALLE tienen dos botones: "Tomar foto" (cámara) y "Subir imagen"
+    (galería, para la captura del Yape o del voucher; `_ENT_TIPOS_CON_GALERIA`). La imagen se
+    comprime igual que la foto y sigue el mismo camino (borrador → cola → R2). Entrega, cambio y
+    OTROS: solo cámara en vivo.
   - Cerrar es un solo pedido nuevo, `PATCH /ordenes/:id/resolver` (un UPDATE: estado, medio de
     pago, motivo). Solo órdenes `en-proceso` con motorizado (409 `yaResuelta` si ya se cerró),
     con `ifVersion`, y revisa que el día no esté pagado en la Caja (`bloqueoPorResolverEnDiaPagado`;

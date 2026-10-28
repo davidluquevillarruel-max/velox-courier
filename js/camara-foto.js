@@ -118,7 +118,7 @@ async function _encenderCamaraPedirFoto() {
     /* Permiso denegado, cámara ocupada o sin cámara. No se abre el
        input solo: el navegador lo bloquea fuera de un toque */
     _apagarCamaraPedirFoto();
-    _pasoPedirFoto('archivo', 'No se pudo abrir la cámara (' + (err.name || 'error') + '). Elegí la foto a mano.');
+    _pasoPedirFoto('archivo', 'No se pudo abrir la cámara (' + (err.name || 'error') + '). Elige la foto a mano.');
   }
 }
 
@@ -159,7 +159,7 @@ window.pedirFoto = function(opciones) {
   if (_pfResolver) _terminarPedirFoto(null);
 
   var overlay = _overlayPedirFoto();
-  document.getElementById('pedir-foto-titulo').textContent = opciones.titulo || 'Tomá la foto';
+  document.getElementById('pedir-foto-titulo').textContent = opciones.titulo || 'Toma la foto';
   document.getElementById('pedir-foto-texto-ok').textContent = opciones.textoOk || 'Usar foto';
   overlay.style.display = 'flex';
 
@@ -174,7 +174,7 @@ window.pedirFoto = function(opciones) {
 window._capturarPedirFoto = function() {
   var canvas = _cuadroDeVideo(document.getElementById('pedir-foto-video'));
   if (!canvas) {
-    if (typeof showNotif === 'function') showNotif('La cámara todavía no está lista, probá de nuevo');
+    if (typeof showNotif === 'function') showNotif('La cámara todavía no está lista, prueba de nuevo');
     return;
   }
   _apagarCamaraPedirFoto();

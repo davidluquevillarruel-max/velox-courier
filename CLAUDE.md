@@ -45,6 +45,40 @@ Velox Courier — internal management system for a courier/delivery company in L
   - Backups locales en la carpeta `Backup` de SQL Server:
     `velox_courier_antes_import_20261022.bak` y `velox_courier_antes_fecha_reparto_20261023.bak`.
 
+- **Vista del motorizado: "Mis entregas de hoy" (28 de octubre de 2026, solo en local, sin
+  subir).** **Necesita la migración `velox_agregar_motivo_no_entrega.sql`** (columna
+  `ordenes.motivo_no_entrega NVARCHAR(300) NULL`), ya aplicada en local; ver "Migraciones
+  pendientes". Todo en `js/entregas-moto.js` (estilos al final de `css/components.css`).
+  - Arriba de la página Motorizados, solo para el rol motorizado: sus órdenes de **hoy** (siempre
+    hoy, sin importar el filtro de fecha) en `en-proceso`, con un botón EMPEZAR grande. Se
+    refresca cada 8 s; la orden cerrada desaparece. La tabla de abajo no cambió.
+  - EMPEZAR abre una pantalla sobrepuesta: foto del producto, datos (tienda, distrito, por
+    cobrar / cliente, método de pago, condición especial), dirección y teléfono, y abajo
+    COMPLETAR / OTROS / DETALLE. Al cerrar una orden abre directo la siguiente ("← Lista" para
+    volver); lo llenado queda en memoria por orden mientras no se cierre.
+  - **COMPLETAR** (entregado): foto de entrega siempre; foto del cambio si la orden tiene
+    condición especial (reemplaza "Recibido": con esa foto, "Actualizar orden" ya no lo pide); en
+    contraentrega, cómo se cobró y foto del pago con Yape moto, Pago tienda o Pago Velox (no con
+    Efectivo; en "Actualizar orden" sigue pidiéndose solo con Pago tienda / Pago Velox).
+    **OTROS**: reprogramado / ausente / cancelado, cada uno con su foto y un comentario opcional.
+    **DETALLE** (no entregado): motivo de una lista (no contesta, dirección errada, cliente no
+    tenía el dinero, rechazó el producto, otro + texto) y de 1 a 3 fotos.
+  - Cerrar es un solo pedido nuevo, `PATCH /ordenes/:id/resolver` (un UPDATE: estado, medio de
+    pago, motivo). Solo órdenes `en-proceso` con motorizado (409 `yaResuelta` si ya se cerró),
+    con `ifVersion`, y revisa que el día no esté pagado en la Caja (`bloqueoPorResolverEnDiaPagado`;
+    se extrajeron `tiendaConDiaPagado` / `motoConDiaPagado` de `bloqueoPorDiaPagado`). Necesita
+    señal en ese momento (encolarlo sin señal quedó para una etapa 2); sin señal, la pantalla
+    avisa y conserva las fotos.
+  - Fotos: van a la cola recién cuando `/resolver` respondió bien. Tipos nuevos `foto_entrega`
+    (`entregas/`), `foto_cambio` (`cambios/`), `foto_reprogramado`, `foto_ausente`,
+    `foto_cancelado` y `foto_no_entregado` (`intentos/`); la del pago es la
+    `evidencia_medio_pago` de siempre. Tope de seguridad de 10 por tipo y por orden
+    (`MAX_FOTOS_MOTORIZADO_POR_TIPO`, en `rechazoPorTipoFoto`). Las ven los gestores y el
+    motorizado de la orden; la tienda no.
+  - "Actualizar orden" tiene un bloque "Fotos del motorizado" (cada foto en su grupo + el motivo
+    del último intento). `GET /ordenes/:id` devuelve `fotos` (todas las que ese rol puede ver;
+    reemplaza a `fotos_devolucion`) y `SELECT_ORDEN` devuelve `motivo_no_entrega`.
+
 - **Fotos de devolución (28 de octubre de 2026, solo en local, sin subir).** No necesita
   migración. "Confirmar devolución" (columna de la tabla en Pedidos / Pendiente devolución, y el
   botón amarillo de "Actualizar orden") y "Devuelto" de Devolución Tienda piden **primero** una
@@ -286,8 +320,8 @@ Velox Courier — internal management system for a courier/delivery company in L
   **no se migran** a R2).
 - Opcional, más adelante: conectar un dominio propio (`fotos.veloxcourierperu.com`) al bucket
   en vez de la URL `r2.dev`, que tiene límite de velocidad; después cambiar `R2_PUBLIC_URL`.
-- **Función grande pendiente: rediseño de la vista del motorizado** (botón EMPEZAR + flujo de
-  entrega con fotos). Solo se habló, no se empezó.
+- **Vista del motorizado (hecha en local, ver arriba):** probarla en el celular real contra
+  local antes de subir. Etapa 2, opcional: encolar el "resolver" para que funcione sin señal.
 - Probar a fondo la cola de fotos **con corte de señal**, ahora desde el celular real
   contra producción: que la foto quede en la cola sin señal y suba sola al volver, sin
   duplicados; evidencia de pago que entra a la cola y la marca de "evidencia pendiente" que
@@ -356,7 +390,10 @@ Roles: `admin`, `operador`, `visor`, `tienda`, `motorizado`. `GESTORES = ['admin
 
 ## Migraciones pendientes de aplicar en producción
 
-Ninguna por ahora.
+- `velox_agregar_motivo_no_entrega.sql` — columna `ordenes.motivo_no_entrega NVARCHAR(300)
+  NULL` para la vista del motorizado (`PATCH /ordenes/:id/resolver`). Aplicada en local el 28 de
+  octubre de 2026. Correrla en el servidor con `sqlcmd -I` y `sa` **antes** del `git pull` que
+  suba la vista del motorizado (sin la columna, `GET /ordenes` falla).
 
 `velox_agregar_fecha_reparto.sql` (columna calculada `ordenes.fecha_reparto =
 ISNULL(fecha_asignacion, fecha)` PERSISTED + índice `ix_ordenes_fecha_reparto`) se aplicó en

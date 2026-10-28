@@ -151,7 +151,9 @@
      ordenes-pendientes → después de pedidos (usa CATALOGO_TIENDAS,
                   _esGestorPedidos y _fechaDisplay); botón "Pendiente"
      camara-foto → después de pedidos (reusa su cámara); antes de
-                  pendiente-devolucion/devolucion-tienda (pedirFoto)
+                  pendiente-devolucion/devolucion-tienda/entregas-moto (pedirFoto)
+     entregas-moto → después de camara-foto y motorizados (usa _MEDIOS_PAGO,
+                  _esSesionMotorizado, _fechaHaceDiasMoto); vista del motorizado
      navigation → carga las páginas desde pages/
      filters   → filtrarTablaPedidos (texto + tienda + motorizado + estado)
      asignacion → asignar, desasignar
@@ -167,6 +169,7 @@
 <script src="js/motorizados.js"></script>
 <script src="js/pedidos.js"></script>
 <script src="js/camara-foto.js"></script>
+<script src="js/entregas-moto.js"></script>
 <script src="js/exportar-pedidos.js"></script>
 <script src="js/ordenes-pendientes.js"></script>
 <script src="js/pendiente-devolucion.js"></script>

@@ -57,7 +57,7 @@ const TIPOS_PERMITIDOS = {
 };
 
 /* Carpetas del bucket, una por clase de foto */
-const CARPETAS = ['productos', 'evidencias', 'devoluciones', 'devoluciones-tienda'];
+const CARPETAS = ['productos', 'evidencias', 'devoluciones', 'devoluciones-tienda', 'entregas', 'cambios', 'intentos'];
 
 /* Genera una URL firmada de subida (PUT) válida por 5 minutos, y la
    URL pública final donde va a quedar la foto una vez subida.
@@ -65,7 +65,9 @@ const CARPETAS = ['productos', 'evidencias', 'devoluciones', 'devoluciones-tiend
    carpeta separa los tipos de foto (ver CARPETAS: 'evidencias' para
    el medio de pago, 'productos' para la foto que se toma al crear la
    orden, 'devoluciones' y 'devoluciones-tienda' para las fotos de
-   devolución). Una carpeta desconocida cae en 'evidencias'.
+   devolución, 'entregas', 'cambios' e 'intentos' para las que toma el
+   motorizado al cerrar la orden). Una carpeta desconocida cae en
+   'evidencias'.
    Si viene idSubida (la cola de fotos del celular), el nombre del
    archivo sale de ese id: así cada reintento de la misma foto pisa
    el mismo objeto en vez de dejar copias huérfanas en el bucket. */

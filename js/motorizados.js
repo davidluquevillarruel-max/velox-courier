@@ -806,6 +806,10 @@ window.abrirEliminarMotoFisico = function() {
 };
 
 window.initMotorizados = function() {
+  /* "Mis entregas de hoy" arriba de todo (solo el rol motorizado; ver
+     js/entregas-moto.js) */
+  if (typeof initEntregasMoto === 'function') initEntregasMoto();
+
   /* Todos arrancan con "Hoy" por defecto */
   _filtroFechaMoto = _fechaHaceDiasMoto(0);
   renderMotorizados().then(function() {
@@ -959,7 +963,11 @@ function _renderModalActualizarOrden(orden, tiendas, distritos, motorizados) {
       'Veces que volvió a la oficina: <strong style="color:var(--color-text-secondary)">' + vecesDevuelto + '</strong>' +
     '</div>';
 
-  var fotosDevolucionHTML = _fotosDevolucionHTML(orden.fotos_devolucion);
+  var fotosOrden = Array.isArray(orden.fotos) ? orden.fotos : [];
+  var fotosDevolucionHTML = _fotosDevolucionHTML(fotosOrden.filter(function(f) {
+    return f.tipo === 'foto_devolucion' || f.tipo === 'foto_devolucion_tienda';
+  }));
+  var seccionFotosEntrega = _seccionFotosEntregaHTML(fotosOrden, orden.motivo_no_entrega);
   var codigoAttr = String(orden.codigo || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;');
 
   var seccionDevuelto = '';
@@ -1028,6 +1036,7 @@ function _renderModalActualizarOrden(orden, tiendas, distritos, motorizados) {
         '<button onclick="cerrarActualizarEstadoOrden()" style="background:none;border:none;cursor:pointer;font-size:18px;color:var(--color-text-secondary)"><i class="ti ti-x"></i></button>' +
       '</div>' +
       seccionFotoProducto +
+      seccionFotosEntrega +
       '<div style="display:flex;flex-direction:column;gap:14px">' +
 
         '<div>' +
@@ -1297,8 +1306,11 @@ function _renderModalActualizarOrden(orden, tiendas, distritos, motorizados) {
     if (bloqueFechaReparto) bloqueFechaReparto.style.display = 'none';
 
     /* Si la orden ya tiene una condición especial, no puede guardar
-       nada de esta orden sin antes confirmar "Recibido" */
-    if (orden.condicionEspecial) {
+       nada de esta orden sin antes confirmar "Recibido". Si ya tomó la
+       foto del cambio en su vista de entregas (js/entregas-moto.js),
+       esa foto es la constancia y no hace falta. */
+    var tieneFotoCambio = fotosOrden.some(function(f) { return f.tipo === 'foto_cambio'; });
+    if (orden.condicionEspecial && !tieneFotoCambio) {
       _ordenActualizarRecibidoRequerido = true;
       var bloqueRecibido = document.getElementById('bloque-recibido-update');
       if (bloqueRecibido) bloqueRecibido.style.display = 'block';
@@ -1440,50 +1452,99 @@ window.onTogglePrepagadoUpdate = function() {
   }
 };
 
-/* ── Fotos de devolución en "Actualizar orden" ──
-   Una por cada vez que el producto volvió a la oficina (hasta
-   MAX_FOTOS_DEVOLUCION en el servidor) y la de la entrega a la tienda.
-   Cada foto es un botón; la imagen se pide recién al tocarlo, para no
-   gastar datos al abrir el modal. Vienen de GET /ordenes/:id (solo
-   para gestores). */
+/* ── Fotos de la orden en "Actualizar orden" ──
+   Vienen de GET /ordenes/:id (orden.fotos, ya filtradas por rol). Cada
+   foto es un botón; la imagen se pide recién al tocarlo, para no gastar
+   datos al abrir el modal. Cada bloque (data-fotos-seccion) tiene su
+   propia vista previa (ver verFotoEnSeccion). */
 var _MAX_FOTOS_DEVOLUCION = 5;
 
+function _escFoto(s) {
+  return String(s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+}
+
+/* Botón de una foto: cámara + etiqueta, y la fecha en el title */
+function _botonFotoOrden(f, etiqueta, titulo) {
+  var cuando = f.subido_en ? f.subido_en.slice(8, 10) + '/' + f.subido_en.slice(5, 7) + ' ' + f.subido_en.slice(11, 16) : '';
+  return '<button type="button" class="btn btn-sm" data-src="' + _escFoto(f.url) + '" onclick="verFotoEnSeccion(this)" ' +
+           'title="' + _escFoto(titulo + (cuando ? ' — ' + cuando : '')) + '" ' +
+           'style="padding:4px 8px;font-size:12px;background:var(--color-bg-primary)">' +
+           '<i class="ti ti-camera"></i> ' + _escFoto(etiqueta) +
+         '</button>';
+}
+
+/* Vista previa compartida por las fotos de un bloque */
+function _vistaPreviaFotosHTML() {
+  return '<div class="fotos-preview" style="display:none;margin-top:8px">' +
+      '<img alt="Foto" onerror="fotoEnSeccionNoCargo(this)" ' +
+           'style="width:100%;max-height:280px;object-fit:contain;border-radius:var(--radius-md);display:block;background:var(--color-bg-tertiary)" />' +
+      '<div class="fotos-preview-error" style="display:none;font-size:12px;color:var(--color-text-secondary);padding:10px 12px;background:var(--color-bg-tertiary);border-radius:var(--radius-md)">' +
+        '<i class="ti ti-photo-off"></i> No se pudo cargar la foto' +
+      '</div>' +
+    '</div>';
+}
+
+/* Devolución: una por cada vez que el producto volvió a la oficina
+   (hasta MAX_FOTOS_DEVOLUCION en el servidor) y la de la entrega a la
+   tienda. Va en la zona amarilla / verde de la devolución. */
 function _fotosDevolucionHTML(fotos) {
   if (!Array.isArray(fotos) || !fotos.length) return '';
-  var esc = function(s) { return String(s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;'); };
 
   var vueltas = 0;
   var botones = fotos.map(function(f) {
     var esTienda = f.tipo === 'foto_devolucion_tienda';
     var etiqueta = esTienda ? 'Tienda' : String(++vueltas);
-    var cuando = f.subido_en ? f.subido_en.slice(8, 10) + '/' + f.subido_en.slice(5, 7) + ' ' + f.subido_en.slice(11, 16) : '';
-    return '<button type="button" class="btn btn-sm" data-src="' + esc(f.url) + '" onclick="verFotoDevolucion(this)" ' +
-             'title="' + (esTienda ? 'Foto de la entrega a la tienda' : 'Foto de la devolución ' + etiqueta) + (cuando ? ' — ' + cuando : '') + '" ' +
-             'style="padding:4px 8px;font-size:12px;background:var(--color-bg-primary)">' +
-             '<i class="ti ti-camera"></i> ' + etiqueta +
-           '</button>';
+    return _botonFotoOrden(f, etiqueta, esTienda ? 'Foto de la entrega a la tienda' : 'Foto de la devolución ' + etiqueta);
   }).join('');
 
-  return '<div style="flex:1;min-width:160px">' +
+  return '<div data-fotos-seccion style="flex:1;min-width:160px">' +
       '<div style="font-size:11px;color:var(--color-text-secondary);margin-bottom:4px">' +
         'Fotos de devolución (' + vueltas + '/' + _MAX_FOTOS_DEVOLUCION + ')' +
       '</div>' +
       '<div style="display:flex;gap:6px;flex-wrap:wrap">' + botones + '</div>' +
-      '<div id="foto-devolucion-preview" style="display:none;margin-top:8px">' +
-        '<img id="foto-devolucion-preview-img" alt="Foto de devolución" onerror="fotoDevolucionNoCargo()" ' +
-             'style="width:100%;max-height:280px;object-fit:contain;border-radius:var(--radius-md);display:block;background:var(--color-bg-tertiary)" />' +
-        '<div id="foto-devolucion-preview-error" style="display:none;font-size:12px;color:var(--color-text-secondary);padding:10px 12px;background:var(--color-bg-tertiary);border-radius:var(--radius-md)">' +
-          '<i class="ti ti-photo-off"></i> No se pudo cargar la foto' +
-        '</div>' +
-      '</div>' +
+      _vistaPreviaFotosHTML() +
+    '</div>';
+}
+
+/* Las que toma el motorizado al cerrar la orden (js/entregas-moto.js),
+   cada una en su lugar, más el motivo del último intento fallido */
+var _GRUPOS_FOTOS_ENTREGA = [
+  { tipo: 'foto_entrega',         label: 'Entrega' },
+  { tipo: 'foto_cambio',          label: 'Cambio' },
+  { tipo: 'evidencia_medio_pago', label: 'Pago' },
+  { tipo: 'foto_reprogramado',    label: 'Reprogramado' },
+  { tipo: 'foto_ausente',         label: 'Ausente' },
+  { tipo: 'foto_cancelado',       label: 'Cancelado' },
+  { tipo: 'foto_no_entregado',    label: 'No entregado' },
+];
+
+function _seccionFotosEntregaHTML(fotos, motivo) {
+  var grupos = _GRUPOS_FOTOS_ENTREGA.map(function(g) {
+    var deEste = fotos.filter(function(f) { return f.tipo === g.tipo; });
+    if (!deEste.length) return '';
+    return '<div class="fotos-orden-grupo">' +
+        '<span class="fotos-orden-grupo-label">' + g.label + '</span>' +
+        deEste.map(function(f, i) {
+          return _botonFotoOrden(f, deEste.length > 1 ? String(i + 1) : 'Ver', 'Foto: ' + g.label.toLowerCase());
+        }).join('') +
+      '</div>';
+  }).join('');
+  if (!grupos && !motivo) return '';
+
+  return '<div data-fotos-seccion style="background:var(--color-bg-secondary);border-radius:var(--radius-md);padding:10px 12px;margin-bottom:12px;display:flex;flex-direction:column;gap:6px">' +
+      '<div style="font-size:12px;font-weight:600;color:var(--color-text-secondary)">Fotos del motorizado</div>' +
+      grupos +
+      (motivo ? '<div style="font-size:12px;color:var(--color-text-secondary)">Motivo del último intento: <strong style="color:var(--color-text-primary)">' + _escFoto(motivo) + '</strong></div>' : '') +
+      _vistaPreviaFotosHTML() +
     '</div>';
 }
 
 /* Tocar la misma foto la cierra; tocar otra la cambia */
-window.verFotoDevolucion = function(btn) {
-  var cont = document.getElementById('foto-devolucion-preview');
-  var img  = document.getElementById('foto-devolucion-preview-img');
-  var err  = document.getElementById('foto-devolucion-preview-error');
+window.verFotoEnSeccion = function(btn) {
+  var seccion = btn.closest('[data-fotos-seccion]');
+  var cont = seccion && seccion.querySelector('.fotos-preview');
+  var img  = cont && cont.querySelector('img');
+  var err  = cont && cont.querySelector('.fotos-preview-error');
   if (!cont || !img) return;
   var src = btn.getAttribute('data-src');
 
@@ -1497,10 +1558,9 @@ window.verFotoDevolucion = function(btn) {
   cont.style.display = 'block';
 };
 
-window.fotoDevolucionNoCargo = function() {
-  var img = document.getElementById('foto-devolucion-preview-img');
-  var err = document.getElementById('foto-devolucion-preview-error');
-  if (img) img.style.display = 'none';
+window.fotoEnSeccionNoCargo = function(img) {
+  var err = img.parentNode.querySelector('.fotos-preview-error');
+  img.style.display = 'none';
   if (err) err.style.display = 'block';
 };
 

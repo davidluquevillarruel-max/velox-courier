@@ -152,8 +152,23 @@ const TIPO_FOTO_EVIDENCIA = 'evidencia_medio_pago';
 const TIPO_FOTO_DEVOLUCION = 'foto_devolucion';
 const TIPO_FOTO_DEVOLUCION_TIENDA = 'foto_devolucion_tienda';
 const TIPOS_FOTO_DEVOLUCION = [TIPO_FOTO_DEVOLUCION, TIPO_FOTO_DEVOLUCION_TIENDA];
-const TIPOS_FOTO = [TIPO_FOTO_PRODUCTO, TIPO_FOTO_EVIDENCIA, ...TIPOS_FOTO_DEVOLUCION];
+/* Fotos que toma el motorizado al resolver la orden desde su vista
+   (js/entregas-moto.js, PATCH /:id/resolver): la de la entrega, la
+   del producto que el cliente devolvió en un cambio / condición
+   especial, y la de cada intento fallido (una por situación; en "no
+   entregado" hasta 3). La del pago es la evidencia_medio_pago de
+   siempre. Las ven los gestores y el motorizado de la orden. */
+const TIPO_FOTO_ENTREGA      = 'foto_entrega';
+const TIPO_FOTO_CAMBIO       = 'foto_cambio';
+const TIPOS_FOTO_INTENTO     = ['foto_reprogramado', 'foto_ausente', 'foto_cancelado', 'foto_no_entregado'];
+const TIPOS_FOTO_MOTORIZADO  = [TIPO_FOTO_ENTREGA, TIPO_FOTO_CAMBIO, ...TIPOS_FOTO_INTENTO];
+const TIPOS_FOTO = [TIPO_FOTO_PRODUCTO, TIPO_FOTO_EVIDENCIA, ...TIPOS_FOTO_DEVOLUCION, ...TIPOS_FOTO_MOTORIZADO];
 const MAX_FOTOS_DEVOLUCION = 5;
+/* Tope de seguridad por tipo y por orden para las del motorizado: una
+   orden puede salir varias veces (cada intento suma las suyas), esto
+   solo frena un error que la llene de fotos. La pantalla pide 1 por
+   situación (3 en "no entregado") en cada intento. */
+const MAX_FOTOS_MOTORIZADO_POR_TIPO = 10;
 
 /* Carpeta del bucket R2 para cada tipo (ver CARPETAS en server/r2.js) */
 const CARPETA_POR_TIPO = {
@@ -161,6 +176,9 @@ const CARPETA_POR_TIPO = {
   [TIPO_FOTO_EVIDENCIA]:         'evidencias',
   [TIPO_FOTO_DEVOLUCION]:        'devoluciones',
   [TIPO_FOTO_DEVOLUCION_TIENDA]: 'devoluciones-tienda',
+  [TIPO_FOTO_ENTREGA]:           'entregas',
+  [TIPO_FOTO_CAMBIO]:            'cambios',
+  ...Object.fromEntries(TIPOS_FOTO_INTENTO.map((t) => [t, 'intentos'])),
 };
 
 /* Id único que el celular le pone a cada foto de la cola (ver
@@ -241,7 +259,10 @@ const SELECT_ORDEN = `
     o.delivery_base, o.monto_adicional, o.delivery_total,
     o.monto_cobrado, o.monto_producto,
     o.pago_moto_base, o.pago_moto_adicional, o.pago_moto_total,
-    o.producto_especial, o.observaciones, o.reprogramado_de
+    o.producto_especial, o.observaciones, o.reprogramado_de,
+    /* Motivo del último intento fallido (vista del motorizado, ver
+       velox_agregar_motivo_no_entrega.sql) */
+    o.motivo_no_entrega
   FROM ordenes o
   JOIN tiendas    t   ON t.id   = o.id_tienda
   JOIN origenes   ori ON ori.id = o.id_origen
@@ -364,17 +385,21 @@ router.get('/:id', async (req, res) => {
     }
     const orden = result.recordset[0];
 
-    /* Fotos de devolución (las dos clases), para verlas en "Actualizar
-       orden". Solo gestores: los demás no las pueden ver (ver
-       puedeVerFotoOrden) */
-    if (GESTORES.includes(req.usuario.rol)) {
+    /* Todas las fotos de la orden que ese rol puede ver, para la
+       sección "Fotos" de "Actualizar orden" (mismas reglas que
+       puedeVerFotoOrden): los gestores, todas; el motorizado (ya
+       filtrado a sus órdenes por filtroPorRol), todas menos las de
+       devolución de la oficina. La tienda y el visor no reciben la
+       lista (la tienda ya tiene foto_producto_url). */
+    const esGestor = GESTORES.includes(req.usuario.rol);
+    if (esGestor || req.usuario.rol === 'motorizado') {
       const fotos = await pool.request()
         .input('id', sql.BigInt, req.params.id)
         .query(`SELECT id, tipo, url, CONVERT(varchar(16), subido_en, 120) AS subido_en
                 FROM ordenes_fotos
-                WHERE id_orden = @id AND tipo IN ('foto_devolucion', 'foto_devolucion_tienda')
+                WHERE id_orden = @id AND url <> ''
                 ORDER BY subido_en, id`);
-      orden.fotos_devolucion = fotos.recordset;
+      orden.fotos = fotos.recordset.filter((f) => esGestor || !TIPOS_FOTO_DEVOLUCION.includes(f.tipo));
     }
     res.json(orden);
   } catch (err) {
@@ -818,6 +843,107 @@ router.patch('/:id/estado', async (req, res) => {
   }
 });
 
+/* ── PATCH /api/ordenes/:id/resolver ─────────────────────────
+   La vista del motorizado (js/entregas-moto.js) cierra una orden en
+   reparto con un solo pedido: COMPLETAR (entregado + medio de pago),
+   OTROS (reprogramado / ausente / cancelado) o DETALLE (no entregado
+   + motivo). Gestores, o el motorizado dueño de la orden.
+   Body: { resultado, medioPago?, motivo?, ifVersion? }
+   · Solo órdenes "en-proceso" y con motorizado: una orden ya resuelta
+     no se resuelve dos veces (corregirla es cosa de "Actualizar orden").
+   · Entregado contraentrega exige el medio de pago; sin cobro, no lleva.
+   · No entregado exige el motivo; en los otros es opcional. Se guarda
+     en ordenes.motivo_no_entrega (el del último intento fallido).
+   · No toca montos ni condición especial (como /estado para el moto).
+   · Revisa que el día no esté pagado en la Caja, como /completo.
+   Las fotos NO pasan por acá: la pantalla las manda a la cola recién
+   cuando esto respondió bien (regla de fotos, ver CLAUDE.md). Todo va
+   en un solo UPDATE: no queda nada guardado a medias. */
+const RESULTADOS_RESOLVER = ['entregado', 'reprogramado', 'ausente', 'cancelado', 'no-entregado'];
+
+router.patch('/:id/resolver', async (req, res) => {
+  try {
+    const pool = await getPool();
+    const ordenId = req.params.id;
+
+    if (!(await puedeTocarOrden(req.usuario, ordenId, pool))) {
+      return res.status(403).json({ error: 'No puedes modificar esta orden' });
+    }
+
+    const { resultado, medioPago } = req.body;
+    const motivo = typeof req.body.motivo === 'string' ? req.body.motivo.trim() : '';
+    if (!RESULTADOS_RESOLVER.includes(resultado)) {
+      return res.status(400).json({ error: 'Resultado no válido' });
+    }
+    if (motivo.length > 300) {
+      return res.status(400).json({ error: 'El motivo no puede pasar de 300 caracteres' });
+    }
+    if (resultado === 'no-entregado' && !motivo) {
+      return res.status(400).json({ error: 'Indica el motivo por el que no se entregó' });
+    }
+
+    const r = await pool.request()
+      .input('id', sql.BigInt, ordenId)
+      .query(`SELECT estado, metodo_pago, id_tienda, id_motorizado, pago_velox, datos_pendientes,
+                     CONVERT(varchar, fecha_reparto, 23) AS fecha_reparto
+              FROM ordenes WHERE id = @id`);
+    const orden = r.recordset[0];
+    if (!orden) return res.status(404).json({ error: 'Orden no encontrada' });
+
+    if (orden.estado !== 'en-proceso') {
+      return res.status(409).json({ error: 'Esta orden ya fue cerrada (' + orden.estado + ').', yaResuelta: true, estado: orden.estado });
+    }
+    if (!orden.id_motorizado) {
+      return res.status(400).json({ error: 'Esta orden no tiene motorizado asignado.' });
+    }
+    if (orden.datos_pendientes) {
+      return res.status(400).json({ error: 'A esta orden todavía le faltan datos ("Por completar").' });
+    }
+
+    /* Medio de pago: solo al entregar una contraentrega */
+    let medio = null;
+    if (resultado === 'entregado' && orden.metodo_pago === 'contraentrega') {
+      if (!MEDIOS_PAGO.includes(medioPago)) {
+        return res.status(400).json({ error: 'Elige cómo se recibió el pago' });
+      }
+      medio = medioPago;
+    }
+
+    const bloqueo = await bloqueoPorResolverEnDiaPagado(pool, orden, resultado);
+    if (bloqueo) return res.status(400).json({ error: bloqueo, diaPagado: true });
+
+    const ifVersion = bufferDeVersion(req.body.ifVersion);
+    const request = pool.request()
+      .input('id',     sql.BigInt,   ordenId)
+      .input('estado', sql.NVarChar, resultado)
+      .input('medio',  sql.NVarChar, medio)
+      .input('motivo', sql.NVarChar, motivo || null);
+    let whereVersion = '';
+    if (ifVersion) { request.input('ifVersion', sql.VarBinary(8), ifVersion); whereVersion = ' AND row_version = @ifVersion'; }
+
+    /* Entregado conserva el motivo del último intento fallido (es
+       historia); los otros resultados lo pisan con el de este intento.
+       El medio de pago se guarda solo si se entregó con cobro. */
+    const result = await request.query(`
+      UPDATE ordenes
+      SET estado = @estado,
+          medio_pago = CASE WHEN @estado = 'entregado' AND metodo_pago = 'contraentrega' THEN @medio ELSE medio_pago END,
+          motivo_no_entrega = CASE WHEN @estado = 'entregado' THEN motivo_no_entrega ELSE @motivo END
+      WHERE id = @id AND estado = 'en-proceso'${whereVersion}
+    `);
+    if (result.rowsAffected[0] === 0) {
+      const fresca = await conflictoDeVersion(pool, ordenId);
+      if (!fresca) return res.status(404).json({ error: 'Orden no encontrada' });
+      return res.status(409).json({ error: 'Esta orden fue modificada por otro usuario mientras la llenabas.', orden: fresca });
+    }
+
+    res.json({ ok: true, version: await versionActualHex(pool, ordenId) });
+  } catch (err) {
+    console.error('PATCH /ordenes/:id/resolver:', err.message);
+    res.status(500).json({ error: 'Error al cerrar la orden' });
+  }
+});
+
 /* ── PATCH /api/ordenes/:id/contacto ─────────────────────── */
 router.patch('/:id/contacto', async (req, res) => {
   try {
@@ -1005,41 +1131,79 @@ async function bloqueoPorDiaPagado(pool, orden, antes, despues) {
   const cambiaMoto = (antes.id_motorizado || null) !== (despues.id_motorizado || null);
   if (!cambiaDia && !cambiaMoto) return null;
 
-  const sumaTienda = ['entregado', 'ausente'].includes(orden.estado) ||
-    (orden.estado === 'cancelado' && orden.pago_velox === 'PAGADO');
-  const sumaMoto   = ['entregado', 'ausente'].includes(orden.estado);
-
-  if (sumaTienda && cambiaDia) {
+  if (sumaEnCajaTienda(orden.estado, orden.pago_velox) && cambiaDia) {
     for (const dia of [antes.fecha_reparto, despues.fecha_reparto]) {
-      const r = await pool.request()
-        .input('tienda', sql.Int, orden.id_tienda)
-        .input('dia', sql.Date, dia)
-        .query(`
-          SELECT t.nombre FROM caja_pagos_tiendas cp JOIN tiendas t ON t.id = cp.id_tienda
-          WHERE cp.id_tienda = @tienda AND cp.fecha_ciclo = @dia AND cp.pagado = 1
-        `);
-      if (r.recordset[0]) {
-        return `El ${fechaDMY(dia)} ya está marcado como pagado en la Caja de la tienda ${r.recordset[0].nombre}: ` +
+      const tienda = await tiendaConDiaPagado(pool, orden.id_tienda, dia);
+      if (tienda) {
+        return `El ${fechaDMY(dia)} ya está marcado como pagado en la Caja de la tienda ${tienda}: ` +
                'mover esta orden cambiaría el monto que ya se pagó.';
       }
     }
   }
-  if (sumaMoto) {
+  if (sumaEnCajaMoto(orden.estado)) {
     const pares = [];
     if (antes.id_motorizado)   pares.push([antes.id_motorizado, antes.fecha_reparto]);
     if (despues.id_motorizado) pares.push([despues.id_motorizado, despues.fecha_reparto]);
     for (const [moto, dia] of pares) {
-      const r = await pool.request()
-        .input('moto', sql.Int, moto)
-        .input('dia', sql.Date, dia)
-        .query(`
-          SELECT m.nombre FROM caja_pagos_motorizados cm JOIN motorizados m ON m.id = cm.id_motorizado
-          WHERE cm.id_motorizado = @moto AND cm.fecha_dia = @dia AND cm.pagado = 1
-        `);
-      if (r.recordset[0]) {
-        return `El ${fechaDMY(dia)} ya está marcado como pagado en la Caja del motorizado ${r.recordset[0].nombre}: ` +
+      const motorizado = await motoConDiaPagado(pool, moto, dia);
+      if (motorizado) {
+        return `El ${fechaDMY(dia)} ya está marcado como pagado en la Caja del motorizado ${motorizado}: ` +
                'mover esta orden cambiaría el monto que ya se pagó.';
       }
+    }
+  }
+  return null;
+}
+
+/* Qué estados suman en cada Caja (mismas condiciones que routes/caja.js) */
+function sumaEnCajaTienda(estado, pagoVelox) {
+  return ['entregado', 'ausente'].includes(estado) || (estado === 'cancelado' && pagoVelox === 'PAGADO');
+}
+function sumaEnCajaMoto(estado) {
+  return ['entregado', 'ausente'].includes(estado);
+}
+
+/* Nombre de la tienda / del motorizado si ese día ya está marcado
+   pagado en su Caja, o null */
+async function tiendaConDiaPagado(pool, idTienda, dia) {
+  const r = await pool.request()
+    .input('tienda', sql.Int, idTienda)
+    .input('dia', sql.Date, dia)
+    .query(`
+      SELECT t.nombre FROM caja_pagos_tiendas cp JOIN tiendas t ON t.id = cp.id_tienda
+      WHERE cp.id_tienda = @tienda AND cp.fecha_ciclo = @dia AND cp.pagado = 1
+    `);
+  return r.recordset[0] ? r.recordset[0].nombre : null;
+}
+async function motoConDiaPagado(pool, idMoto, dia) {
+  const r = await pool.request()
+    .input('moto', sql.Int, idMoto)
+    .input('dia', sql.Date, dia)
+    .query(`
+      SELECT m.nombre FROM caja_pagos_motorizados cm JOIN motorizados m ON m.id = cm.id_motorizado
+      WHERE cm.id_motorizado = @moto AND cm.fecha_dia = @dia AND cm.pagado = 1
+    `);
+  return r.recordset[0] ? r.recordset[0].nombre : null;
+}
+
+/* Resolver la orden (en-proceso → entregado, ausente...) cambia lo que
+   suma en la Caja de su día sin moverla de día: si ese día ya está
+   pagado para su tienda o su motorizado, no se puede. orden = {
+   id_tienda, id_motorizado, fecha_reparto, pago_velox }. Devuelve el
+   mensaje de error, o null. */
+async function bloqueoPorResolverEnDiaPagado(pool, orden, estadoNuevo) {
+  if (sumaEnCajaTienda(estadoNuevo, orden.pago_velox)) {
+    const tienda = await tiendaConDiaPagado(pool, orden.id_tienda, orden.fecha_reparto);
+    if (tienda) {
+      return `El ${fechaDMY(orden.fecha_reparto)} ya está marcado como pagado en la Caja de la tienda ${tienda}: ` +
+             'avisa en la oficina para cerrar esta orden.';
+    }
+  }
+  if (sumaEnCajaMoto(estadoNuevo) && orden.id_motorizado) {
+    const motorizado = await motoConDiaPagado(pool, orden.id_motorizado, orden.fecha_reparto);
+    if (motorizado) {
+      return `El ${fechaDMY(orden.fecha_reparto)} ya está marcado como pagado en la Caja del motorizado ${motorizado}: ` +
+             'avisa en la oficina para cerrar esta orden.';
     }
   }
   return null;
@@ -1361,7 +1525,7 @@ router.post('/:id/evidencia/presigned', async (req, res) => {
     /* Un reintento de una foto que ya quedó registrada no se frena
        por el tope: la cola la va a dar por subida al registrarla */
     if (!(await buscarPorIdSubida(pool, idSubida))) {
-      const rechazo = await rechazoFotoDevolucion(pool, req.usuario, req.params.id, tipo);
+      const rechazo = await rechazoPorTipoFoto(pool, req.usuario, req.params.id, tipo);
       if (rechazo) return res.status(rechazo.status).json({ error: rechazo.error });
     }
 
@@ -1491,24 +1655,36 @@ function esMismaFoto(existente, ordenId, tipo) {
   return existente.id_orden === parseInt(ordenId, 10) && existente.tipo === tipo;
 }
 
-/* Reglas propias de las fotos de devolución: solo las suben los
-   gestores, y la de vuelta a la oficina tiene un tope por orden.
+/* Reglas propias de algunos tipos de foto (además de puedeTocarOrden):
+   · Devolución: solo las suben los gestores, y la de vuelta a la
+     oficina tiene un tope de MAX_FOTOS_DEVOLUCION por orden.
+   · Las del motorizado (entrega, cambio, intentos): tope de seguridad
+     de MAX_FOTOS_MOTORIZADO_POR_TIPO por tipo y por orden.
    Devuelve { status, error } si la foto no va, o null. Se llama
    después de reconocer los reintentos (idSubida ya registrado), así
-   un reintento de la quinta foto no rebota contra el tope. */
-async function rechazoFotoDevolucion(pool, usuario, ordenId, tipo) {
-  if (!TIPOS_FOTO_DEVOLUCION.includes(tipo)) return null;
-  if (!GESTORES.includes(usuario.rol)) {
-    return { status: 403, error: 'Solo un administrador u operador puede subir fotos de devolución' };
+   un reintento de la última foto permitida no rebota contra el tope. */
+async function rechazoPorTipoFoto(pool, usuario, ordenId, tipo) {
+  let tope = null;
+  let mensaje = '';
+  if (TIPOS_FOTO_DEVOLUCION.includes(tipo)) {
+    if (!GESTORES.includes(usuario.rol)) {
+      return { status: 403, error: 'Solo un administrador u operador puede subir fotos de devolución' };
+    }
+    if (tipo !== TIPO_FOTO_DEVOLUCION) return null;
+    tope = MAX_FOTOS_DEVOLUCION;
+    mensaje = `Esta orden ya tiene ${MAX_FOTOS_DEVOLUCION} fotos de devolución`;
+  } else if (TIPOS_FOTO_MOTORIZADO.includes(tipo)) {
+    tope = MAX_FOTOS_MOTORIZADO_POR_TIPO;
+    mensaje = `Esta orden ya tiene ${MAX_FOTOS_MOTORIZADO_POR_TIPO} fotos de este tipo`;
+  } else {
+    return null;
   }
-  if (tipo !== TIPO_FOTO_DEVOLUCION) return null;
 
   const r = await pool.request()
-    .input('id', sql.BigInt, ordenId)
-    .query(`SELECT COUNT(*) AS total FROM ordenes_fotos WHERE id_orden = @id AND tipo = 'foto_devolucion'`);
-  if (r.recordset[0].total >= MAX_FOTOS_DEVOLUCION) {
-    return { status: 409, error: `Esta orden ya tiene ${MAX_FOTOS_DEVOLUCION} fotos de devolución` };
-  }
+    .input('id',   sql.BigInt,   ordenId)
+    .input('tipo', sql.NVarChar, tipo)
+    .query(`SELECT COUNT(*) AS total FROM ordenes_fotos WHERE id_orden = @id AND tipo = @tipo`);
+  if (r.recordset[0].total >= tope) return { status: 409, error: mensaje };
   return null;
 }
 
@@ -1564,7 +1740,7 @@ router.post('/:id/foto/registrar', async (req, res) => {
       return res.json({ ok: true, fotoId: previa.id, url: previa.url, repetida: true });
     }
 
-    const rechazo = await rechazoFotoDevolucion(pool, req.usuario, req.params.id, datos.tipo);
+    const rechazo = await rechazoPorTipoFoto(pool, req.usuario, req.params.id, datos.tipo);
     if (rechazo) return res.status(rechazo.status).json({ error: rechazo.error });
 
     const reg = await registrarFoto(pool, req.params.id, datos.tipo, url, datos.idSubida);
@@ -1620,7 +1796,7 @@ router.post('/:id/foto/local',
       if (previa) {
         reg = { fotoId: previa.id, nueva: false, existente: previa };
       } else {
-        const rechazo = await rechazoFotoDevolucion(pool, req.usuario, ordenId, datos.tipo);
+        const rechazo = await rechazoPorTipoFoto(pool, req.usuario, ordenId, datos.tipo);
         if (rechazo) return res.status(rechazo.status).json({ error: rechazo.error });
 
         /* Se inserta primero para tener el id, que forma parte del

@@ -959,6 +959,9 @@ function _renderModalActualizarOrden(orden, tiendas, distritos, motorizados) {
       'Veces que volvió a la oficina: <strong style="color:var(--color-text-secondary)">' + vecesDevuelto + '</strong>' +
     '</div>';
 
+  var fotosDevolucionHTML = _fotosDevolucionHTML(orden.fotos_devolucion);
+  var codigoAttr = String(orden.codigo || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+
   var seccionDevuelto = '';
   if (calificaDevolucion) {
     seccionDevuelto =
@@ -973,15 +976,22 @@ function _renderModalActualizarOrden(orden, tiendas, distritos, motorizados) {
             ? 'El producto no vuelve a salir a reparto: queda en almacén, pendiente de devolver a la tienda (ver la página "Devolución Tienda").'
             : 'La orden va a volver a "En proceso" y sin motorizado, a Asignación, para asignarla de nuevo otro día.') +
         '</div>' +
-        '<button type="button" class="btn btn-primary btn-sm" onclick="confirmarDevolucionOrden(' + orden.id + ', this)">' +
-          '<i class="ti ti-package-import"></i> Confirmar devolución' +
-        '</button>' +
+        '<div style="display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap">' +
+          '<button type="button" class="btn btn-primary btn-sm" data-codigo="' + codigoAttr + '" ' +
+                  'data-fotos-devolucion="' + (parseInt(orden.fotos_devolucion_total) || 0) + '" ' +
+                  'onclick="confirmarDevolucionOrden(' + orden.id + ', this)">' +
+            '<i class="ti ti-package-import"></i> Confirmar devolución' +
+          '</button>' +
+          fotosDevolucionHTML +
+        '</div>' +
       '</div>';
   } else if (vecesDevuelto > 0) {
     seccionDevuelto =
-      '<div style="background:var(--color-green-bg);border-radius:var(--radius-md);padding:10px 14px;' +
-      'font-size:13px;color:var(--color-green-text);display:flex;align-items:center;gap:8px">' +
-        '<i class="ti ti-circle-check"></i> Producto devuelto a Velox — confirmado' +
+      '<div style="background:var(--color-green-bg);border-radius:var(--radius-md);padding:10px 14px">' +
+        '<div style="font-size:13px;color:var(--color-green-text);display:flex;align-items:center;gap:8px">' +
+          '<i class="ti ti-circle-check"></i> Producto devuelto a Velox — confirmado' +
+        '</div>' +
+        (fotosDevolucionHTML ? '<div style="margin-top:10px">' + fotosDevolucionHTML + '</div>' : '') +
       '</div>';
   }
 
@@ -1430,17 +1440,109 @@ window.onTogglePrepagadoUpdate = function() {
   }
 };
 
+/* ── Fotos de devolución en "Actualizar orden" ──
+   Una por cada vez que el producto volvió a la oficina (hasta
+   MAX_FOTOS_DEVOLUCION en el servidor) y la de la entrega a la tienda.
+   Cada foto es un botón; la imagen se pide recién al tocarlo, para no
+   gastar datos al abrir el modal. Vienen de GET /ordenes/:id (solo
+   para gestores). */
+var _MAX_FOTOS_DEVOLUCION = 5;
+
+function _fotosDevolucionHTML(fotos) {
+  if (!Array.isArray(fotos) || !fotos.length) return '';
+  var esc = function(s) { return String(s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;'); };
+
+  var vueltas = 0;
+  var botones = fotos.map(function(f) {
+    var esTienda = f.tipo === 'foto_devolucion_tienda';
+    var etiqueta = esTienda ? 'Tienda' : String(++vueltas);
+    var cuando = f.subido_en ? f.subido_en.slice(8, 10) + '/' + f.subido_en.slice(5, 7) + ' ' + f.subido_en.slice(11, 16) : '';
+    return '<button type="button" class="btn btn-sm" data-src="' + esc(f.url) + '" onclick="verFotoDevolucion(this)" ' +
+             'title="' + (esTienda ? 'Foto de la entrega a la tienda' : 'Foto de la devolución ' + etiqueta) + (cuando ? ' — ' + cuando : '') + '" ' +
+             'style="padding:4px 8px;font-size:12px;background:var(--color-bg-primary)">' +
+             '<i class="ti ti-camera"></i> ' + etiqueta +
+           '</button>';
+  }).join('');
+
+  return '<div style="flex:1;min-width:160px">' +
+      '<div style="font-size:11px;color:var(--color-text-secondary);margin-bottom:4px">' +
+        'Fotos de devolución (' + vueltas + '/' + _MAX_FOTOS_DEVOLUCION + ')' +
+      '</div>' +
+      '<div style="display:flex;gap:6px;flex-wrap:wrap">' + botones + '</div>' +
+      '<div id="foto-devolucion-preview" style="display:none;margin-top:8px">' +
+        '<img id="foto-devolucion-preview-img" alt="Foto de devolución" onerror="fotoDevolucionNoCargo()" ' +
+             'style="width:100%;max-height:280px;object-fit:contain;border-radius:var(--radius-md);display:block;background:var(--color-bg-tertiary)" />' +
+        '<div id="foto-devolucion-preview-error" style="display:none;font-size:12px;color:var(--color-text-secondary);padding:10px 12px;background:var(--color-bg-tertiary);border-radius:var(--radius-md)">' +
+          '<i class="ti ti-photo-off"></i> No se pudo cargar la foto' +
+        '</div>' +
+      '</div>' +
+    '</div>';
+}
+
+/* Tocar la misma foto la cierra; tocar otra la cambia */
+window.verFotoDevolucion = function(btn) {
+  var cont = document.getElementById('foto-devolucion-preview');
+  var img  = document.getElementById('foto-devolucion-preview-img');
+  var err  = document.getElementById('foto-devolucion-preview-error');
+  if (!cont || !img) return;
+  var src = btn.getAttribute('data-src');
+
+  if (cont.style.display === 'block' && img.getAttribute('src') === src) {
+    cont.style.display = 'none';
+    return;
+  }
+  img.style.display = 'block';
+  if (err) err.style.display = 'none';
+  if (img.getAttribute('src') !== src) img.src = src;
+  cont.style.display = 'block';
+};
+
+window.fotoDevolucionNoCargo = function() {
+  var img = document.getElementById('foto-devolucion-preview-img');
+  var err = document.getElementById('foto-devolucion-preview-error');
+  if (img) img.style.display = 'none';
+  if (err) err.style.display = 'block';
+};
+
+/* Foto tomada para una devolución que no se pudo confirmar (sin señal,
+   error del servidor): se guarda para que el reintento no obligue a
+   sacarla de nuevo. Solo una, de la última orden que falló. */
+var _fotoDevolucionSinConfirmar = null; /* { ordenId, blob } */
+
 /* ── Confirmar que el motorizado devolvió el producto — acción aparte,
    separada del botón "Guardar" porque dispara un cambio importante
-   (cambia el estado, o crea una orden nueva) ── */
+   (cambia el estado, o crea una orden nueva) ──
+   Primero pide la foto de la devolución (js/camara-foto.js); con la
+   foto aceptada recién manda PATCH /devolver, y si salió bien la foto
+   entra a la cola (js/cola-fotos.js), que la sube en segundo plano: el
+   usuario no espera la subida. Con MAX_FOTOS_DEVOLUCION fotos ya
+   registradas no se pide otra y se confirma sin foto. */
 /**
  * @param {number} [ordenId] - Si no se pasa, usa la orden abierta en el modal.
  * @param {HTMLElement} [btnEl] - Botón que disparó la acción, se desactiva
- *        mientras se procesa para evitar un doble click accidental.
+ *        mientras se procesa para evitar un doble click accidental. Trae
+ *        data-codigo y data-fotos-devolucion (fotos ya registradas).
  */
 window.confirmarDevolucionOrden = async function(ordenId, btnEl) {
   ordenId = ordenId || _ordenActualizarId;
   if (!ordenId) return;
+
+  var codigo = (btnEl && btnEl.getAttribute('data-codigo')) || '';
+  var fotosPrevias = parseInt(btnEl && btnEl.getAttribute('data-fotos-devolucion'), 10) || 0;
+
+  var foto = null;
+  if (fotosPrevias >= _MAX_FOTOS_DEVOLUCION) {
+    if (!confirm('Esta orden ya tiene ' + _MAX_FOTOS_DEVOLUCION + ' fotos de devolución: se confirma sin foto.\n\n' +
+                 '¿Confirmar que el motorizado devolvió el producto' + (codigo ? ' de #' + codigo : '') + ' a la oficina?')) return;
+  } else if (_fotoDevolucionSinConfirmar && _fotoDevolucionSinConfirmar.ordenId == ordenId) {
+    foto = _fotoDevolucionSinConfirmar.blob;
+  } else {
+    foto = await pedirFoto({
+      titulo:  'Foto de la devolución' + (codigo ? ' — #' + codigo : ''),
+      textoOk: 'Usar foto y confirmar',
+    });
+    if (!foto) return;
+  }
 
   if (btnEl) { btnEl.disabled = true; }
   var errEl = document.getElementById('orden-estado-error');
@@ -1452,6 +1554,17 @@ window.confirmarDevolucionOrden = async function(ordenId, btnEl) {
     });
     var data = await r.json().catch(function(){ return {}; });
     if (!r.ok) throw new Error(data.error || 'No se pudo procesar la devolución');
+
+    /* La devolución ya quedó: la foto va a la cola y sube sola */
+    _fotoDevolucionSinConfirmar = null;
+    if (foto) {
+      try {
+        await encolarFoto(ordenId, 'foto_devolucion', foto, codigo);
+      } catch (errCola) {
+        console.error('Cola de fotos (devolución):', errCola);
+        if (typeof showNotif === 'function') showNotif('La devolución quedó confirmada, pero no se pudo guardar la foto en este dispositivo.', 5000);
+      }
+    }
 
     if (_ordenActualizarId == ordenId) cerrarActualizarEstadoOrden();
     if (typeof showNotif === 'function') {
@@ -1471,6 +1584,7 @@ window.confirmarDevolucionOrden = async function(ordenId, btnEl) {
     if (typeof _recargarTablaDevolucionTienda === 'function') _recargarTablaDevolucionTienda();
     if (typeof _refrescarCajaActual === 'function') _refrescarCajaActual();
   } catch (err) {
+    if (foto) _fotoDevolucionSinConfirmar = { ordenId: ordenId, blob: foto };
     if (btnEl) { btnEl.disabled = false; }
     if (errEl) {
       errEl.textContent = err.message || 'Error al procesar la devolución.';

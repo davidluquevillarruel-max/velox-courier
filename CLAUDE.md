@@ -45,6 +45,25 @@ Velox Courier — internal management system for a courier/delivery company in L
   - Backups locales en la carpeta `Backup` de SQL Server:
     `velox_courier_antes_import_20261022.bak` y `velox_courier_antes_fecha_reparto_20261023.bak`.
 
+- **Fotos de devolución (28 de octubre de 2026, solo en local, sin subir).** No necesita
+  migración. "Confirmar devolución" (columna de la tabla en Pedidos / Pendiente devolución, y el
+  botón amarillo de "Actualizar orden") y "Devuelto" de Devolución Tienda piden **primero** una
+  foto (`pedirFoto()` en `js/camara-foto.js`: cámara → vista previa → "Usar foto y confirmar";
+  reemplaza al `confirm()`), después hacen la acción de siempre y recién ahí la foto entra a la
+  cola (`encolarFoto`). Si el PATCH falla, la foto se guarda en memoria para el reintento.
+  - Tipos nuevos en `ordenes_fotos`: `foto_devolucion` (una por vuelta a la oficina, tope
+    `MAX_FOTOS_DEVOLUCION = 5`) y `foto_devolucion_tienda`. Carpetas R2 `devoluciones/` y
+    `devoluciones-tienda/` (`CARPETAS` en `server/r2.js`). Solo las suben y las ven los gestores
+    (`rechazoFotoDevolucion`, `puedeVerFotoOrden`).
+  - **Tope de 5 = tope de fotos, no de reprogramaciones:** con 5 fotos ya no se pide foto (aviso
+    con `confirm()`) y la devolución se confirma igual; `devuelto` sigue contando. El servidor
+    rechaza la sexta con 409 en `presigned`/`registrar`/`local`, salvo el reintento de una foto
+    ya registrada (mismo `idSubida`).
+  - Se ven en "Actualizar orden": en la zona amarilla al lado del botón y en la verde ("Producto
+    devuelto — confirmado"), como botones 1…5 / "Tienda" que cargan la foto al tocarlos. Vienen
+    en `GET /ordenes/:id` (`fotos_devolucion`, solo para gestores); `SELECT_ORDEN` devuelve
+    `fotos_devolucion_total`.
+
 - **R2 (Cloudflare): ACTIVO en local y en producción.** En producción se pusieron las 5
   variables `R2_*` en el `.env` del servidor + `pm2 restart velox`; confirmado por el usuario
   (27 de octubre de 2026) que las fotos suben a `pub-b64e...r2.dev/productos/`. El modo prueba

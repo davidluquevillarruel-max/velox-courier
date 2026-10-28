@@ -56,11 +56,16 @@ const TIPOS_PERMITIDOS = {
   'image/webp': 'webp',
 };
 
+/* Carpetas del bucket, una por clase de foto */
+const CARPETAS = ['productos', 'evidencias', 'devoluciones', 'devoluciones-tienda'];
+
 /* Genera una URL firmada de subida (PUT) válida por 5 minutos, y la
    URL pública final donde va a quedar la foto una vez subida.
    ordenId se usa para armar una ruta legible dentro del bucket, y
-   carpeta separa los tipos de foto ('evidencias' para el medio de
-   pago, 'productos' para la foto que se toma al crear la orden).
+   carpeta separa los tipos de foto (ver CARPETAS: 'evidencias' para
+   el medio de pago, 'productos' para la foto que se toma al crear la
+   orden, 'devoluciones' y 'devoluciones-tienda' para las fotos de
+   devolución). Una carpeta desconocida cae en 'evidencias'.
    Si viene idSubida (la cola de fotos del celular), el nombre del
    archivo sale de ese id: así cada reintento de la misma foto pisa
    el mismo objeto en vez de dejar copias huérfanas en el bucket. */
@@ -70,7 +75,7 @@ async function generarUrlSubidaEvidencia(ordenId, contentType, carpeta, idSubida
     throw new Error('Tipo de imagen no permitido (usa JPEG, PNG o WEBP)');
   }
 
-  const prefijo = carpeta === 'productos' ? 'productos' : 'evidencias';
+  const prefijo = CARPETAS.includes(carpeta) ? carpeta : 'evidencias';
   const base = idSubida || `${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
   const nombreArchivo = `${prefijo}/orden-${parseInt(ordenId, 10)}/${base}.${ext}`;
 
@@ -92,8 +97,7 @@ function esUrlDeOrden(url, ordenId) {
   if (!r2Habilitado() || typeof url !== 'string') return false;
   const base = process.env.R2_PUBLIC_URL.replace(/\/$/, '');
   const id   = parseInt(ordenId, 10);
-  return url.startsWith(`${base}/productos/orden-${id}/`) ||
-         url.startsWith(`${base}/evidencias/orden-${id}/`);
+  return CARPETAS.some((c) => url.startsWith(`${base}/${c}/orden-${id}/`));
 }
 
 module.exports = { r2Habilitado, generarUrlSubidaEvidencia, esUrlDeOrden, TIPOS_PERMITIDOS };

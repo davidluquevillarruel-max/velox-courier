@@ -144,7 +144,24 @@ async function insertarConCodigoNuevo(pool, insertar) {
    orden (la otra es 'evidencia_medio_pago') */
 const TIPO_FOTO_PRODUCTO = 'foto_producto';
 const TIPO_FOTO_EVIDENCIA = 'evidencia_medio_pago';
-const TIPOS_FOTO = [TIPO_FOTO_PRODUCTO, TIPO_FOTO_EVIDENCIA];
+/* Fotos de devolución: la que se toma al confirmar que el producto
+   volvió a la oficina (PATCH /:id/devolver; se acumulan hasta
+   MAX_FOTOS_DEVOLUCION, una por vuelta) y la que se toma al
+   devolverlo a la tienda (PATCH /:id/devolver-tienda, una sola).
+   Solo las suben y las ven los gestores. */
+const TIPO_FOTO_DEVOLUCION = 'foto_devolucion';
+const TIPO_FOTO_DEVOLUCION_TIENDA = 'foto_devolucion_tienda';
+const TIPOS_FOTO_DEVOLUCION = [TIPO_FOTO_DEVOLUCION, TIPO_FOTO_DEVOLUCION_TIENDA];
+const TIPOS_FOTO = [TIPO_FOTO_PRODUCTO, TIPO_FOTO_EVIDENCIA, ...TIPOS_FOTO_DEVOLUCION];
+const MAX_FOTOS_DEVOLUCION = 5;
+
+/* Carpeta del bucket R2 para cada tipo (ver CARPETAS en server/r2.js) */
+const CARPETA_POR_TIPO = {
+  [TIPO_FOTO_PRODUCTO]:          'productos',
+  [TIPO_FOTO_EVIDENCIA]:         'evidencias',
+  [TIPO_FOTO_DEVOLUCION]:        'devoluciones',
+  [TIPO_FOTO_DEVOLUCION_TIENDA]: 'devoluciones-tienda',
+};
 
 /* Id único que el celular le pone a cada foto de la cola (ver
    velox_agregar_id_subida.sql). Opcional: si no viene, la foto se
@@ -216,6 +233,9 @@ const SELECT_ORDEN = `
     CASE WHEN o.medio_pago IN ('pago-tienda', 'pago-empresa')
           AND NOT EXISTS (SELECT 1 FROM ordenes_fotos WHERE id_orden = o.id AND tipo = 'evidencia_medio_pago')
          THEN 1 ELSE 0 END AS evidencia_pendiente,
+    /* Fotos de devolución ya registradas: con MAX_FOTOS_DEVOLUCION
+       ya no se pide otra al confirmar (ver confirmarDevolucionOrden) */
+    (SELECT COUNT(*) FROM ordenes_fotos WHERE id_orden = o.id AND tipo = 'foto_devolucion') AS fotos_devolucion_total,
     /* Orden de ráfaga a la que todavía le faltan datos ("Por completar") */
     o.datos_pendientes,
     o.delivery_base, o.monto_adicional, o.delivery_total,
@@ -342,7 +362,21 @@ router.get('/:id', async (req, res) => {
     if (result.recordset.length === 0) {
       return res.status(404).json({ error: 'Orden no encontrada' });
     }
-    res.json(result.recordset[0]);
+    const orden = result.recordset[0];
+
+    /* Fotos de devolución (las dos clases), para verlas en "Actualizar
+       orden". Solo gestores: los demás no las pueden ver (ver
+       puedeVerFotoOrden) */
+    if (GESTORES.includes(req.usuario.rol)) {
+      const fotos = await pool.request()
+        .input('id', sql.BigInt, req.params.id)
+        .query(`SELECT id, tipo, url, CONVERT(varchar(16), subido_en, 120) AS subido_en
+                FROM ordenes_fotos
+                WHERE id_orden = @id AND tipo IN ('foto_devolucion', 'foto_devolucion_tienda')
+                ORDER BY subido_en, id`);
+      orden.fotos_devolucion = fotos.recordset;
+    }
+    res.json(orden);
   } catch (err) {
     console.error('GET /ordenes/:id:', err.message);
     res.status(500).json({ error: 'Error al obtener la orden' });
@@ -1320,8 +1354,18 @@ router.post('/:id/evidencia/presigned', async (req, res) => {
     const { contentType, tipo } = req.body;
     const idSubida = leerIdSubida(req.body.idSubida);
     if (idSubida === false) return res.status(400).json({ error: 'Identificador de subida no válido' });
+    if (tipo !== undefined && !TIPOS_FOTO.includes(tipo)) {
+      return res.status(400).json({ error: 'Tipo de foto no válido' });
+    }
 
-    const carpeta = tipo === TIPO_FOTO_PRODUCTO ? 'productos' : 'evidencias';
+    /* Un reintento de una foto que ya quedó registrada no se frena
+       por el tope: la cola la va a dar por subida al registrarla */
+    if (!(await buscarPorIdSubida(pool, idSubida))) {
+      const rechazo = await rechazoFotoDevolucion(pool, req.usuario, req.params.id, tipo);
+      if (rechazo) return res.status(rechazo.status).json({ error: rechazo.error });
+    }
+
+    const carpeta = CARPETA_POR_TIPO[tipo] || 'evidencias';
     const { uploadUrl, publicUrl } = await generarUrlSubidaEvidencia(req.params.id, contentType, carpeta, idSubida);
 
     res.json({ uploadUrl, publicUrl });
@@ -1387,9 +1431,10 @@ router.patch('/:id/medio-pago', async (req, res) => {
 });
 
 /* ════════════════════════════════════════════════════════════
-   FOTOS DE LA ORDEN (foto del producto y evidencia del medio de pago)
-   Las dos clases de foto usan estas rutas; se distinguen por "tipo"
-   ('foto_producto' por defecto, o 'evidencia_medio_pago').
+   FOTOS DE LA ORDEN (foto del producto, evidencia del medio de pago
+   y fotos de devolución)
+   Todas las clases de foto usan estas rutas; se distinguen por "tipo"
+   ('foto_producto' por defecto, ver TIPOS_FOTO).
    Dos caminos, según si R2 está configurado:
    · R2 activo → el navegador pide una URL firmada (la ruta
      /evidencia/presigned de arriba), sube la foto DIRECTO a R2 y
@@ -1446,6 +1491,27 @@ function esMismaFoto(existente, ordenId, tipo) {
   return existente.id_orden === parseInt(ordenId, 10) && existente.tipo === tipo;
 }
 
+/* Reglas propias de las fotos de devolución: solo las suben los
+   gestores, y la de vuelta a la oficina tiene un tope por orden.
+   Devuelve { status, error } si la foto no va, o null. Se llama
+   después de reconocer los reintentos (idSubida ya registrado), así
+   un reintento de la quinta foto no rebota contra el tope. */
+async function rechazoFotoDevolucion(pool, usuario, ordenId, tipo) {
+  if (!TIPOS_FOTO_DEVOLUCION.includes(tipo)) return null;
+  if (!GESTORES.includes(usuario.rol)) {
+    return { status: 403, error: 'Solo un administrador u operador puede subir fotos de devolución' };
+  }
+  if (tipo !== TIPO_FOTO_DEVOLUCION) return null;
+
+  const r = await pool.request()
+    .input('id', sql.BigInt, ordenId)
+    .query(`SELECT COUNT(*) AS total FROM ordenes_fotos WHERE id_orden = @id AND tipo = 'foto_devolucion'`);
+  if (r.recordset[0].total >= MAX_FOTOS_DEVOLUCION) {
+    return { status: 409, error: `Esta orden ya tiene ${MAX_FOTOS_DEVOLUCION} fotos de devolución` };
+  }
+  return null;
+}
+
 /* Inserta la fila en ordenes_fotos y devuelve su id. Si otro
    reintento con el mismo idSubida ganó la carrera (índice único),
    devuelve el id de esa fila en vez de fallar. */
@@ -1497,6 +1563,9 @@ router.post('/:id/foto/registrar', async (req, res) => {
       }
       return res.json({ ok: true, fotoId: previa.id, url: previa.url, repetida: true });
     }
+
+    const rechazo = await rechazoFotoDevolucion(pool, req.usuario, req.params.id, datos.tipo);
+    if (rechazo) return res.status(rechazo.status).json({ error: rechazo.error });
 
     const reg = await registrarFoto(pool, req.params.id, datos.tipo, url, datos.idSubida);
     if (!reg.nueva) {
@@ -1551,6 +1620,9 @@ router.post('/:id/foto/local',
       if (previa) {
         reg = { fotoId: previa.id, nueva: false, existente: previa };
       } else {
+        const rechazo = await rechazoFotoDevolucion(pool, req.usuario, ordenId, datos.tipo);
+        if (rechazo) return res.status(rechazo.status).json({ error: rechazo.error });
+
         /* Se inserta primero para tener el id, que forma parte del
            nombre del archivo en disco — así la ruta que lo sirve lo
            reconstruye sola, sin guardar el nombre en otra columna */
@@ -1599,8 +1671,10 @@ router.post('/:id/foto/local',
    · tienda           → solo la foto del producto, y solo de órdenes
                         de SU tienda. La tienda sale de la sesión y la
                         de la orden, de la BD: nada viene del cliente.
-   · visor            → ninguna */
+   · visor            → ninguna
+   Las fotos de devolución, solo los gestores. */
 async function puedeVerFotoOrden(usuario, ordenId, tipo, pool) {
+  if (TIPOS_FOTO_DEVOLUCION.includes(tipo)) return GESTORES.includes(usuario.rol);
   if (usuario.rol === 'tienda') {
     if (!usuario.id_tienda || tipo !== TIPO_FOTO_PRODUCTO) return false;
     const r = await pool.request()

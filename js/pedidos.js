@@ -126,14 +126,16 @@ function _celdaDevuelto(o) {
   if (!califica) {
     return '<span style="color:var(--color-text-tertiary)">—</span>';
   }
+  var codigo = String(o.codigo || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;');
   return '<button class="btn btn-sm" style="padding:4px 8px" title="Confirmar devolución" ' +
+    'data-codigo="' + codigo + '" data-fotos-devolucion="' + (parseInt(o.fotos_devolucion_total) || 0) + '" ' +
     'onclick="confirmarDevolucionDesdeTabla(' + o.id + ', this)"><i class="ti ti-package-import"></i> Confirmar</button>';
 }
 
-/* Pide confirmación (desde la tabla no hay tiempo de repasar la orden
-   como en el modal) y dispara la misma acción que "Confirmar devolución" */
+/* La misma acción que "Confirmar devolución" del modal. Ya no hay
+   confirm(): confirmarDevolucionOrden pide primero la foto, y aceptarla
+   ("Usar foto y confirmar") es la confirmación */
 window.confirmarDevolucionDesdeTabla = function(ordenId, btnEl) {
-  if (!confirm('¿Confirmar que el motorizado devolvió el producto de esta orden a la oficina?')) return;
   if (typeof confirmarDevolucionOrden === 'function') confirmarDevolucionOrden(ordenId, btnEl);
 };
 

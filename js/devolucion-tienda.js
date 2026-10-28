@@ -107,7 +107,8 @@ window._recargarTablaDevolucionTienda = async function(opciones) {
           '<td>' + _motivoDevolucionTienda(o) + '</td>' +
           '<td style="font-size:12px;color:var(--color-text-secondary)">' + (typeof _celdaFechaOrden === 'function' ? _celdaFechaOrden(o) : (o.fecha_reparto || o.fecha)) + '</td>' +
           '<td>' + (typeof _badgeSubEstado === 'function' ? _badgeSubEstado(o) : 'En almacén') + '</td>' +
-          '<td><button class="btn btn-primary btn-sm" onclick="confirmarDevolucionTienda(' + o.id + ', this)">' +
+          '<td><button class="btn btn-primary btn-sm" data-codigo="' + String(o.codigo || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;') + '" ' +
+            'onclick="confirmarDevolucionTienda(' + o.id + ', this)">' +
             '<i class="ti ti-check"></i> Devuelto</button></td>' +
         '</tr>';
       }).join('');
@@ -127,10 +128,28 @@ window._recargarTablaDevolucionTienda = async function(opciones) {
   if (typeof filtrarTablaDevolucionTienda === 'function') filtrarTablaDevolucionTienda();
 };
 
+/* Foto tomada para una entrega que no se pudo confirmar: el reintento
+   la reusa en vez de pedirla de nuevo (como en confirmarDevolucionOrden) */
+var _fotoDevolucionTiendaSinConfirmar = null; /* { ordenId, blob } */
+
 /* Confirma que el producto ya se le devolvió físicamente a la tienda.
+   Primero pide la foto de la entrega (js/camara-foto.js; aceptarla es
+   la confirmación); con PATCH /devolver-tienda ya hecho, la foto entra
+   a la cola (js/cola-fotos.js) y sube en segundo plano.
    Refresca esta página y "Todos los pedidos" al toque, sin F5. */
 window.confirmarDevolucionTienda = async function(ordenId, btnEl) {
-  if (!confirm('¿Confirmar que este producto ya se le devolvió a la tienda?')) return;
+  var codigo = (btnEl && btnEl.getAttribute('data-codigo')) || '';
+
+  var foto;
+  if (_fotoDevolucionTiendaSinConfirmar && _fotoDevolucionTiendaSinConfirmar.ordenId == ordenId) {
+    foto = _fotoDevolucionTiendaSinConfirmar.blob;
+  } else {
+    foto = await pedirFoto({
+      titulo:  'Foto de la entrega a la tienda' + (codigo ? ' — #' + codigo : ''),
+      textoOk: 'Usar foto y confirmar',
+    });
+    if (!foto) return;
+  }
   if (btnEl) btnEl.disabled = true;
 
   try {
@@ -141,12 +160,21 @@ window.confirmarDevolucionTienda = async function(ordenId, btnEl) {
     var data = await r.json().catch(function(){ return {}; });
     if (!r.ok) throw new Error(data.error || 'No se pudo confirmar la devolución a la tienda');
 
+    _fotoDevolucionTiendaSinConfirmar = null;
+    try {
+      await encolarFoto(ordenId, 'foto_devolucion_tienda', foto, codigo);
+    } catch (errCola) {
+      console.error('Cola de fotos (devolución a tienda):', errCola);
+      if (typeof showNotif === 'function') showNotif('La devolución quedó confirmada, pero no se pudo guardar la foto en este dispositivo.', 5000);
+    }
+
     if (typeof showNotif === 'function') showNotif('Producto devuelto a la tienda');
 
     _recargarTablaDevolucionTienda();
     if (typeof renderPedidos === 'function') renderPedidos();
     if (typeof _recargarTablaPendienteDevolucion === 'function') _recargarTablaPendienteDevolucion();
   } catch (err) {
+    _fotoDevolucionTiendaSinConfirmar = { ordenId: ordenId, blob: foto };
     if (btnEl) btnEl.disabled = false;
     if (typeof showNotif === 'function') showNotif(err.message || 'Error al confirmar la devolución a la tienda');
   }

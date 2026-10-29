@@ -849,3 +849,105 @@
   min-width: 120px;
   color: var(--color-text-secondary);
 }
+
+/* ── Catálogos: estado inactivo y filtro "Mostrar inactivos" ─────── */
+/* Badge neutro (inactivo, sin acceso) */
+.badge.badge-inactivo { background: var(--color-bg-secondary); color: var(--color-text-secondary); }
+/* Fila de una tienda/motorizado inactivo: se ve, pero apagada */
+tr.fila-inactiva td { color: var(--color-text-secondary); }
+/* Casilla al lado de los filtros de tienda/motorizado de las tablas */
+.chk-inactivos {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+/* ── "Crear accesos" (js/accesos.js) ──────────────────────────────── */
+.accesos-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  z-index: 1100;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+.accesos-panel {
+  background: var(--color-bg-primary);
+  border-radius: var(--radius-lg);
+  width: 640px;
+  max-width: 100%;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18);
+}
+.accesos-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 18px 20px 12px;
+}
+.accesos-titulo { font-size: 15px; font-weight: 500; }
+.accesos-cerrar {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 18px;
+  color: var(--color-text-secondary);
+}
+.accesos-cuerpo {
+  padding: 0 20px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.accesos-pie {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 14px 20px 18px;
+}
+.accesos-pie:empty { display: none; }
+.accesos-resumen { margin-right: auto; font-size: 12px; color: var(--color-text-secondary); }
+.accesos-ayuda { font-size: 13px; color: var(--color-text-secondary); }
+.accesos-aviso {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  font-size: 12px;
+  color: var(--color-amber-text);
+  background: var(--color-amber-bg);
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+}
+.accesos-error {
+  font-size: 12px;
+  color: var(--color-red-text);
+  background: var(--color-red-bg);
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+}
+.accesos-tabla { width: 100%; border-collapse: collapse; font-size: 13px; }
+.accesos-tabla th {
+  text-align: left;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--color-border-tertiary);
+  position: sticky;
+  top: 0;
+  background: var(--color-bg-primary);
+}
+.accesos-tabla td { padding: 6px 8px; border-bottom: 1px solid var(--color-border-tertiary); }
+.accesos-mono { font-family: ui-monospace, Consolas, monospace; font-size: 12px; word-break: break-all; }
+.accesos-pwd { font-weight: 600; color: var(--color-text-primary); }

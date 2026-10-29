@@ -12,6 +12,7 @@ var _ROLES_LABEL = {
   operador:   'Operador',
   visor:      'Visor',
   motorizado: 'Motorizado',
+  tienda:     'Tienda',
 };
 
 /* ════════════════════════════════════════════
@@ -35,7 +36,9 @@ async function _renderTablaUsuarios() {
   tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:20px;color:var(--color-text-tertiary)"><i class="ti ti-loader"></i> Cargando...</td></tr>';
 
   var sesion = _obtenerSesionUsuarios();
-  var esMoto = sesion && sesion.rol === 'motorizado';
+  /* Motorizado y tienda solo ven su propio usuario (para cambiar su
+     contraseña); el resto de la página es del admin */
+  var esPropio = sesion && (sesion.rol === 'motorizado' || sesion.rol === 'tienda');
 
   try {
     var r = await fetch(API + '/auth/usuarios');
@@ -45,14 +48,21 @@ async function _renderTablaUsuarios() {
     return;
   }
 
-  /* Motorizado: solo ve su propio usuario */
-  var usuariosVisibles = esMoto
+  var filtroRol = (document.getElementById('f-rol-usuarios') || {}).value || '';
+  var texto     = ((document.getElementById('f-buscar-usuarios') || {}).value || '').toLowerCase().trim();
+  var usuariosVisibles = esPropio
     ? _USUARIOS_CACHE.filter(function(u){ return u.email === sesion.email; })
-    : _USUARIOS_CACHE;
+    : _USUARIOS_CACHE.filter(function(u) {
+        if (filtroRol && u.rol !== filtroRol) return false;
+        if (texto && (u.nombre + ' ' + u.email + ' ' + (u.tienda_nombre || '') + ' ' + (u.motorizado_nombre || '')).toLowerCase().indexOf(texto) === -1) return false;
+        return true;
+      });
 
-  /* Ocultar botón agregar si es motorizado */
-  var btnAgregar = document.getElementById('btn-agregar-usuario');
-  if (btnAgregar) btnAgregar.style.display = esMoto ? 'none' : '';
+  /* Botones y filtros: solo para el admin */
+  ['barra-acciones-usuarios', 'filtros-usuarios'].forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el) el.style.display = esPropio ? 'none' : 'flex';
+  });
 
   if (usuariosVisibles.length === 0) {
     tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:20px;color:var(--color-text-tertiary)">Sin usuarios registrados</td></tr>';
@@ -66,9 +76,11 @@ async function _renderTablaUsuarios() {
 
     var vinculo = u.motorizado_nombre
       ? '<span style="font-size:12px"><i class="ti ti-motorbike"></i> ' + u.motorizado_nombre + '</span>'
-      : '<span style="font-size:12px;color:var(--color-text-tertiary)">—</span>';
+      : u.tienda_nombre
+        ? '<span style="font-size:12px"><i class="ti ti-building-store"></i> ' + u.tienda_nombre + '</span>'
+        : '<span style="font-size:12px;color:var(--color-text-tertiary)">—</span>';
 
-    var acciones = esMoto
+    var acciones = esPropio
       ? '<button class="btn btn-sm" onclick="abrirCambiarPassword(' + u.id + ')"><i class="ti ti-key"></i> Cambiar contraseña</button>'
       : '<div style="display:flex;gap:4px">' +
           '<button class="btn btn-sm" onclick="toggleEstadoUsuario(' + u.id + ',' + (u.activo ? 'false' : 'true') + ')">' +
@@ -88,6 +100,13 @@ async function _renderTablaUsuarios() {
     '</tr>';
   }).join('');
 }
+
+window.filtrarUsuarios = function() { _renderTablaUsuarios(); };
+
+/* Usuarios para los motorizados activos que no tienen (js/accesos.js) */
+window.crearAccesosMotorizados = function() {
+  abrirCrearAccesos('motorizado', null, _renderTablaUsuarios);
+};
 
 window.abrirEliminarUsuarioFisico = function(id, nombre) {
   abrirConfirmarEliminacionFisica(nombre, API + '/auth/usuarios/' + id + '/permanente', function() {
@@ -216,7 +235,11 @@ function _obtenerSesionUsuarios() {
 
 window.cerrarPwdModal = function() { var o=document.getElementById('pwd-modal-overlay'); if(o) o.remove(); };
 
+/* El admin resetea cualquier contraseña sin la actual; los demás solo
+   cambian la suya y el servidor les pide la actual */
 window.abrirCambiarPassword = function(userId) {
+  var sesion = _obtenerSesionUsuarios();
+  var pideActual = !(sesion && sesion.rol === 'admin');
   var overlay = document.getElementById('pwd-modal-overlay');
   if (!overlay) {
     overlay = document.createElement('div');
@@ -226,8 +249,11 @@ window.abrirCambiarPassword = function(userId) {
       '<div style="background:var(--color-bg-primary);border-radius:var(--radius-lg);padding:24px;width:380px;max-width:95vw;box-shadow:0 8px 32px rgba(0,0,0,0.18)">' +
         '<div style="font-size:15px;font-weight:500;margin-bottom:16px"><i class="ti ti-key"></i> Cambiar contraseña</div>' +
         '<div style="display:flex;flex-direction:column;gap:12px">' +
+          '<div id="wrap-pwd-actual"><label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px">Contraseña actual</label>' +
+            '<input id="f-actual-pwd" type="password" class="search-box" style="width:100%" autocomplete="current-password" /></div>' +
           '<div><label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px">Nueva contraseña</label>' +
-            '<input id="f-nueva-pwd" type="password" class="search-box" style="width:100%" placeholder="Mínimo 8 caracteres" /></div>' +
+            '<input id="f-nueva-pwd" type="password" class="search-box" style="width:100%" placeholder="Mínimo 8 caracteres" autocomplete="new-password" />' +
+            '<div style="font-size:11px;color:var(--color-text-tertiary);margin-top:4px">Con mayúscula, minúscula, número y un símbolo (ej: !)</div></div>' +
           '<div><label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px">Confirmar contraseña</label>' +
             '<input id="f-confirm-pwd" type="password" class="search-box" style="width:100%" placeholder="Repetir contraseña" /></div>' +
           '<div id="pwd-error" style="display:none;color:#A32D2D;font-size:12px;padding:8px 12px;background:#FCEBEB;border-radius:var(--radius-md)"></div>' +
@@ -240,22 +266,27 @@ window.abrirCambiarPassword = function(userId) {
     document.body.appendChild(overlay);
   } else {
     overlay.style.display = 'flex';
+    document.getElementById('f-actual-pwd').value = '';
     document.getElementById('f-nueva-pwd').value = '';
     document.getElementById('f-confirm-pwd').value = '';
     document.getElementById('pwd-error').style.display = 'none';
   }
 
+  document.getElementById('wrap-pwd-actual').style.display = pideActual ? '' : 'none';
+
   document.getElementById('btn-guardar-pwd').onclick = async function() {
+    var actual  = document.getElementById('f-actual-pwd').value;
     var nueva   = document.getElementById('f-nueva-pwd').value;
     var confirma = document.getElementById('f-confirm-pwd').value;
     var errEl   = document.getElementById('pwd-error');
-    if (nueva.length < 8) { errEl.textContent='Mínimo 8 caracteres'; errEl.style.display='block'; return; }
+    if (pideActual && !actual) { errEl.textContent='Ingresa tu contraseña actual'; errEl.style.display='block'; return; }
+    if (!ejecutarValidaciones([validarPasswordFuerte(nueva, { obligatorio: true })], errEl)) return;
     if (nueva !== confirma) { errEl.textContent='Las contraseñas no coinciden'; errEl.style.display='block'; return; }
     try {
       var r = await fetch(API + '/auth/usuarios/' + userId + '/password', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password: nueva }),
+        body: JSON.stringify(pideActual ? { password: nueva, passwordActual: actual } : { password: nueva }),
       });
       var data = await r.json();
       if (data.ok) {

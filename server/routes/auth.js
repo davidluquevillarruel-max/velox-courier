@@ -141,9 +141,11 @@ router.get('/usuarios', requireAuth, async (req, res) => {
     const result = await request.query(`
       SELECT u.id, u.nombre, u.email, u.rol, u.activo,
              CONVERT(varchar,u.ultimo_acceso,20) AS ultimo_acceso,
-             u.id_motorizado, m.nombre AS motorizado_nombre
+             u.id_motorizado, m.nombre AS motorizado_nombre,
+             u.id_tienda, t.nombre AS tienda_nombre
       FROM usuarios u
       LEFT JOIN motorizados m ON m.id = u.id_motorizado
+      LEFT JOIN tiendas t ON t.id = u.id_tienda
       ${filtro}
       ORDER BY u.rol, u.nombre
     `);
@@ -169,6 +171,26 @@ router.get('/motorizados-libres', requireAuth, requireRol('admin'), async (req, 
   } catch (err) {
     console.error('GET /auth/motorizados-libres:', err.message);
     res.status(500).json({ error: 'Error al listar motorizados' });
+  }
+});
+
+/* ── GET /api/auth/tiendas-libres — solo admin ──
+   Tiendas activas sin usuario de acceso (para "Crear accesos" en el
+   catálogo de tiendas). Sin la tienda comodín de la ráfaga. */
+router.get('/tiendas-libres', requireAuth, requireRol('admin'), async (req, res) => {
+  try {
+    const pool = await getPool();
+    const result = await pool.request().query(`
+      SELECT t.id, t.nombre
+      FROM tiendas t
+      WHERE t.activa = 1 AND t.nombre <> 'SIN DEFINIR'
+        AND NOT EXISTS (SELECT 1 FROM usuarios u WHERE u.id_tienda = t.id)
+      ORDER BY t.nombre
+    `);
+    res.json(result.recordset);
+  } catch (err) {
+    console.error('GET /auth/tiendas-libres:', err.message);
+    res.status(500).json({ error: 'Error al listar tiendas' });
   }
 });
 
@@ -212,6 +234,22 @@ router.post('/usuarios', requireAuth, requireRol('admin'), async (req, res) => {
         .query('SELECT id FROM usuarios WHERE id_motorizado = @idm');
       if (yaVinculado.recordset.length > 0) {
         return res.status(400).json({ error: 'Ese motorizado ya tiene un usuario vinculado' });
+      }
+    }
+
+    /* Un usuario por tienda, igual que por motorizado */
+    if (rol === 'tienda') {
+      const t = await pool.request()
+        .input('idt', sql.Int, req.body.id_tienda)
+        .query(`SELECT nombre,
+                       (SELECT COUNT(*) FROM usuarios WHERE id_tienda = @idt) AS usuarios
+                FROM tiendas WHERE id = @idt`);
+      const fila = t.recordset[0];
+      if (!fila || fila.nombre === 'SIN DEFINIR') {
+        return res.status(400).json({ error: 'Tienda no válida' });
+      }
+      if (fila.usuarios > 0) {
+        return res.status(400).json({ error: 'Esa tienda ya tiene un usuario vinculado' });
       }
     }
 
@@ -323,8 +361,10 @@ router.patch('/usuarios/:id/password', requireAuth, async (req, res) => {
       const r = await pool.request()
         .input('id', sql.Int, id)
         .query('SELECT password_hash FROM usuarios WHERE id = @id');
+      /* 400 y no 401: el navegador trata cualquier 401 como sesión
+         caída y manda al login (ver js/utils.js) */
       if (!r.recordset[0] || !verifyPassword(passwordActual, r.recordset[0].password_hash)) {
-        return res.status(401).json({ error: 'La contraseña actual no es correcta' });
+        return res.status(400).json({ error: 'La contraseña actual no es correcta' });
       }
     }
 

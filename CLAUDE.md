@@ -20,6 +20,36 @@ Velox Courier — internal management system for a courier/delivery company in L
   - Vista del motorizado "Mis entregas de hoy" (`2c77411`).
   - Foto del pago también con Efectivo + "Subir imagen" desde la galería (`a0b71c8`).
 
+- **Catálogo de tiendas + accesos + filtro de activos (29 de octubre de 2026, solo en local, sin
+  subir).** No necesita migración.
+  - **Página "Tiendas"** (`pages/tiendas.html`, `js/tiendas.js`; reemplaza en el menú a "Usuarios
+    Tienda", que se borró): todas las tiendas sin filtro de fecha, buscador, filtros de estado y
+    acceso, "Agregar tienda", editar, **Desactivar / Reactivar** (`PATCH /tiendas/:id/estado`) y
+    "Crear acceso". El alta/edición salió de "Clientes / Tiendas", que queda como resumen de plata.
+    Solo el nombre es obligatorio (antes RUC y correo, y ninguna tienda importada los tiene: no se
+    podía editar ninguna); `POST`/`PUT /tiendas` responden 400 "Ya existe una tienda con ese
+    nombre." (antes 500). `GET /tiendas` devuelve `tiene_usuario`.
+  - **Accesos** (`js/accesos.js`, solo admin): "Crear accesos faltantes" en Tiendas y "Crear accesos
+    de motorizados" en Usuarios. Lista las activas sin usuario (`GET /auth/tiendas-libres` /
+    `motorizados-libres`, por el vínculo, no por el correo), con casillas; crea con el mismo
+    `POST /auth/usuarios`, correo armado con el nombre (número si está tomado) y **contraseña
+    aleatoria** de 12 caracteres, mostrada **una sola vez** con Copiar y Descargar CSV. Se borró el
+    masivo viejo de contraseña de fórmula (nombre + `Velox2026!`): los 89 usuarios de tienda que ya
+    existen la siguen teniendo (Fase 4); `resetearAccesos()` deja listo el reseteo en masa, sin botón.
+    `POST /auth/usuarios` ahora rechaza un segundo usuario para la misma tienda.
+  - **Usuarios:** filtro por rol + buscador, vínculo con la tienda, y el rol tienda entra a ver su
+    usuario (como el motorizado) para cambiar su contraseña. "Cambiar contraseña" ahora pide la
+    actual a quien no es admin (antes no la mandaba y el servidor la exigía) y el servidor responde
+    400, no 401, si está mal (el 401 mandaba al login).
+  - **Activos:** las selecciones (crear orden, ráfaga, Pendiente, asignar) ya eran solo activos; se
+    completó el combo de tienda de "Actualizar orden" (activas + la que la orden ya tiene). En el
+    servidor, `POST /ordenes` rechaza tienda o motorizado inactivo (y uno que no existe),
+    `/asignar` rechaza motorizado inactivo salvo que la orden ya fuera suya (antes un nombre
+    desconocido la desasignaba sin avisar) y `/completo` rechaza **pasar** a una tienda inactiva.
+    Los filtros de tienda/motorizado de Pedidos, Pendiente devolución y Devolución Tienda tienen la
+    casilla **"Mostrar inactivos"** (`opcionesFiltroTiendas` / `opcionesFiltroMotorizados` en
+    `js/pedidos.js`). El filtro de tienda de Asignación sigue solo con activas.
+
 - **Deploy de la sesión del 22–23/10 HECHO en producción** (confirmado por el usuario el 27 de
   octubre de 2026). `main` está pusheado y en el servidor se hizo `git pull` + `pm2 restart
   velox`, así que todo lo commiteado hasta `a5ec7ab` está en producción (fecha de

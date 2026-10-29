@@ -1242,8 +1242,12 @@ function _renderModalActualizarOrden(orden, tiendas, distritos, motorizados) {
      comboboxes se inician de nuevo en cada apertura (ver js/combobox.js) */
   _distritosCatalogoUpdate = distritos;
 
+  /* Solo tiendas activas, más la que la orden ya tiene aunque se haya
+     desactivado (así una orden vieja se puede seguir guardando; el
+     servidor solo rechaza pasarla a otra tienda inactiva) */
   initComboBuscable('f-orden-tienda-update', function() {
-    return tiendas.map(function(t) { return { value: t.nombre, label: t.nombre }; });
+    return tiendas.filter(function(t) { return t.activa || t.nombre === orden.tienda; })
+      .map(function(t) { return { value: t.nombre, label: t.nombre + (t.activa ? '' : ' (inactiva)') }; });
   });
 
   initComboBuscable('f-orden-motorizado-update', function() {

@@ -284,6 +284,14 @@ const SELECT_ORDEN = `
    no se rompe ningún llamador existente (Asignación, autoasignar,
    confirmar devolución, etc.) que todavía no lo usa.
 ──────────────────────────────────────────────────────────── */
+/* { id, activo } del motorizado con ese nombre, o null si no existe */
+async function motorizadoPorNombre(pool, nombre) {
+  const r = await pool.request()
+    .input('moto', sql.NVarChar, nombre)
+    .query(`SELECT id, activo FROM motorizados WHERE nombre = @moto`);
+  return r.recordset[0] || null;
+}
+
 function bufferDeVersion(hex) {
   if (!hex || typeof hex !== 'string') return null;
   const limpio = (hex.startsWith('0x') || hex.startsWith('0X')) ? hex.slice(2) : hex;
@@ -425,16 +433,20 @@ router.post('/', requireRol(...GESTORES), async (req, res) => {
       .input('distrito', sql.NVarChar, nombreDistrito)
       .query(`
         SELECT
-          (SELECT id FROM tiendas   WHERE nombre = @tienda)   AS id_tienda,
-          (SELECT id FROM origenes  WHERE nombre = @origen)   AS id_origen,
-          (SELECT id FROM distritos WHERE nombre = @distrito) AS id_distrito
+          (SELECT id     FROM tiendas   WHERE nombre = @tienda)   AS id_tienda,
+          (SELECT activa FROM tiendas   WHERE nombre = @tienda)   AS tienda_activa,
+          (SELECT id     FROM origenes  WHERE nombre = @origen)   AS id_origen,
+          (SELECT id     FROM distritos WHERE nombre = @distrito) AS id_distrito
       `);
 
-    const { id_tienda, id_origen, id_distrito } = lookups.recordset[0];
+    const { id_tienda, tienda_activa, id_origen, id_distrito } = lookups.recordset[0];
 
     if (!id_tienda)   return res.status(400).json({ error: `Tienda no encontrada: ${o.tienda}` });
     /* El comodín es solo para las órdenes de ráfaga (POST /rafaga) */
     if (o.tienda === TIENDA_SIN_DEFINIR) return res.status(400).json({ error: 'Elegí una tienda.' });
+    /* Una tienda inactiva sigue en el catálogo (historial) pero no
+       recibe órdenes nuevas */
+    if (!tienda_activa) return res.status(400).json({ error: `La tienda ${o.tienda} está inactiva: reactívala en "Tiendas" para crearle órdenes.` });
     if (!id_origen)   return res.status(400).json({ error: `Origen no encontrado: ${o.origen}` });
     if (!id_distrito) {
       return res.status(400).json({
@@ -450,10 +462,10 @@ router.post('/', requireRol(...GESTORES), async (req, res) => {
 
     let id_motorizado = null;
     if (o.motorizado) {
-      const mRes = await pool.request()
-        .input('moto', sql.NVarChar, o.motorizado)
-        .query(`SELECT id FROM motorizados WHERE nombre = @moto`);
-      if (mRes.recordset.length > 0) id_motorizado = mRes.recordset[0].id;
+      const moto = await motorizadoPorNombre(pool, o.motorizado);
+      if (!moto) return res.status(400).json({ error: `Motorizado no encontrado: ${o.motorizado}` });
+      if (!moto.activo) return res.status(400).json({ error: `El motorizado ${o.motorizado} está inactivo.` });
+      id_motorizado = moto.id;
     }
 
     const nueva = await insertarConCodigoNuevo(pool, async (codigo) => {
@@ -988,17 +1000,26 @@ router.patch('/:id/completo', async (req, res) => {
     const o = req.body;
 
     const lookups = await pool.request()
+      .input('id',       sql.BigInt,   req.params.id)
       .input('tienda',   sql.NVarChar, o.tienda)
       .input('distrito', sql.NVarChar, o.distrito)
       .query(`
         SELECT
-          (SELECT id FROM tiendas   WHERE nombre = @tienda)   AS id_tienda,
-          (SELECT id FROM distritos WHERE nombre = @distrito) AS id_distrito
+          (SELECT id     FROM tiendas   WHERE nombre = @tienda)   AS id_tienda,
+          (SELECT activa FROM tiendas   WHERE nombre = @tienda)   AS tienda_activa,
+          (SELECT id     FROM distritos WHERE nombre = @distrito) AS id_distrito,
+          (SELECT id_tienda FROM ordenes WHERE id = @id)          AS id_tienda_actual
       `);
 
-    const { id_tienda, id_distrito } = lookups.recordset[0];
+    const { id_tienda, tienda_activa, id_distrito, id_tienda_actual } = lookups.recordset[0];
     if (!id_tienda)   return res.status(400).json({ error: `Tienda no encontrada: ${o.tienda}` });
     if (!id_distrito) return res.status(400).json({ error: `Distrito no encontrado: ${o.distrito}` });
+    /* Pasar la orden a una tienda inactiva no; conservar la que ya
+       tenía sí (una orden vieja de una tienda que después se
+       desactivó tiene que poder seguir editándose) */
+    if (!tienda_activa && id_tienda !== id_tienda_actual) {
+      return res.status(400).json({ error: `La tienda ${o.tienda} está inactiva.` });
+    }
 
     /* La tienda comodín solo puede quedar en una orden de ráfaga que
        todavía está pendiente (se guardan otros datos sin elegir la
@@ -1228,6 +1249,7 @@ router.patch('/:id/asignar', async (req, res) => {
     }
 
     let id_motorizado;
+    let motoInactivo = false;
 
     if (esMotorizado) {
       if (!req.usuario.id_motorizado) {
@@ -1246,14 +1268,19 @@ router.patch('/:id/asignar', async (req, res) => {
       }
 
       id_motorizado = req.usuario.id_motorizado; /* se autoasigna, no puede elegir a otro */
+      const yo = await pool.request()
+        .input('idm', sql.Int, id_motorizado)
+        .query(`SELECT activo FROM motorizados WHERE id = @idm`);
+      motoInactivo = !yo.recordset[0] || !yo.recordset[0].activo;
     } else {
       const { motorizado } = req.body;
       id_motorizado = null;
       if (motorizado) {
-        const mRes = await pool.request()
-          .input('moto', sql.NVarChar, motorizado)
-          .query(`SELECT id FROM motorizados WHERE nombre = @moto`);
-        if (mRes.recordset.length > 0) id_motorizado = mRes.recordset[0].id;
+        /* Antes un nombre desconocido desasignaba la orden sin avisar */
+        const moto = await motorizadoPorNombre(pool, motorizado);
+        if (!moto) return res.status(400).json({ error: `Motorizado no encontrado: ${motorizado}` });
+        id_motorizado = moto.id;
+        motoInactivo = !moto.activo;
       }
     }
 
@@ -1268,6 +1295,12 @@ router.patch('/:id/asignar', async (req, res) => {
       `);
     const actual = actualRes.recordset[0];
     if (!actual) return res.status(404).json({ error: 'Orden no encontrada' });
+
+    /* A un motorizado inactivo no se le asignan órdenes. Si la orden ya
+       era suya (ej. solo se cambia la fecha), se deja pasar */
+    if (motoInactivo && id_motorizado !== actual.id_motorizado) {
+      return res.status(400).json({ error: 'Ese motorizado está inactivo: no se le pueden asignar órdenes.' });
+    }
 
     /* Una orden de ráfaga con datos pendientes no se puede asignar:
        todavía no se sabe de qué tienda es ni a quién se entrega */

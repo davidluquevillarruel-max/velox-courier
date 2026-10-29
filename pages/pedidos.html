@@ -139,6 +139,12 @@
         <input id="f-filtro-motorizado-pedidos" class="search-box" style="width:100%" placeholder="Filtrar por motorizado..." />
       </div>
 
+      <!-- Los filtros de tienda/motorizado ofrecen solo activos; marcado,
+           también los inactivos (para buscar historial) -->
+      <label class="chk-inactivos">
+        <input type="checkbox" id="chk-inactivos-pedidos" /> Mostrar inactivos
+      </label>
+
       <!-- Filtro de estado -->
       <select id="f-filtro-estado-pedidos" class="filter-select" onchange="filtrarTablaPedidos()"
               style="min-width:160px">

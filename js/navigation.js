@@ -10,12 +10,14 @@ function showPage(id) {
   if (sesion) {
     var rol = sesion.rol;
     var _moto   = ['motorizados','evidencias','asignacion','usuarios'];
-    var _tienda = ['clientes','evidencias','usuarios-tienda'];
+    var _tienda = ['clientes','evidencias','usuarios'];
 
     if (rol === 'motorizado' && !_moto.includes(id))   id = 'motorizados';
     if (rol === 'tienda'     && !_tienda.includes(id)) id = 'clientes';
-    if (id === 'usuarios' && rol !== 'admin' && rol !== 'motorizado') {
-      id = rol === 'tienda' ? 'clientes' : 'pedidos';
+    /* Usuarios: el admin gestiona; motorizado y tienda solo ven el suyo
+       (para cambiar su contraseña) */
+    if (id === 'usuarios' && rol !== 'admin' && rol !== 'motorizado' && rol !== 'tienda') {
+      id = 'pedidos';
     }
   }
 
@@ -50,7 +52,7 @@ function showPage(id) {
       if (id === 'motorizados')      initMotorizados();
       if (id === 'asignacion')       initAsignacion();
       if (id === 'usuarios')         initUsuarios();
-      if (id === 'usuarios-tienda')  initUsuariosTienda();
+      if (id === 'tiendas')          initTiendas();
     })
     .catch(function(err) {
       container.innerHTML =
@@ -142,34 +144,26 @@ function _aplicarPermisosPorRol() {
 
   if (sesion.rol === 'motorizado') {
     /* Motorizado: ocultar todo menos lo suyo */
-    ['nav-pedidos','nav-pendiente-devolucion','nav-devolucion-tienda','nav-clientes','nav-tarifas','nav-caja'].forEach(function(navId) {
+    ['nav-pedidos','nav-pendiente-devolucion','nav-devolucion-tienda','nav-clientes','nav-tiendas','nav-tarifas','nav-caja'].forEach(function(navId) {
       var el = document.getElementById(navId); if (el) el.style.display = 'none';
     });
     ['nav-motorizados','nav-evidencias','nav-asignacion','nav-usuarios'].forEach(function(navId) {
       var el = document.getElementById(navId); if (el) el.style.display = '';
     });
-    var navUT = document.getElementById('nav-usuarios-tienda');
-    if (navUT) navUT.style.display = 'none';
 
   } else if (sesion.rol === 'tienda') {
-    /* Tienda: solo ve Clientes, Evidencias y Usuarios Tienda */
-    ['nav-pedidos','nav-pendiente-devolucion','nav-devolucion-tienda','nav-motorizados','nav-tarifas','nav-caja',
-     'nav-asignacion','nav-usuarios'].forEach(function(navId) {
+    /* Tienda: solo ve Clientes, Evidencias y su usuario */
+    ['nav-pedidos','nav-pendiente-devolucion','nav-devolucion-tienda','nav-motorizados','nav-tiendas','nav-tarifas','nav-caja',
+     'nav-asignacion'].forEach(function(navId) {
       var el = document.getElementById(navId); if (el) el.style.display = 'none';
     });
-    ['nav-clientes','nav-evidencias','nav-usuarios-tienda'].forEach(function(navId) {
+    ['nav-clientes','nav-evidencias','nav-usuarios'].forEach(function(navId) {
       var el = document.getElementById(navId); if (el) el.style.display = '';
     });
 
   } else if (sesion.rol !== 'admin') {
     var navUsuarios = document.getElementById('nav-usuarios');
     if (navUsuarios) navUsuarios.style.display = 'none';
-    var navUT2 = document.getElementById('nav-usuarios-tienda');
-    if (navUT2) navUT2.style.display = 'none';
-  } else {
-    /* Admin: mostrar todo */
-    var navUT3 = document.getElementById('nav-usuarios-tienda');
-    if (navUT3) navUT3.style.display = '';
   }
 }
 

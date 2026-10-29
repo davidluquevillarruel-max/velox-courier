@@ -1,13 +1,17 @@
 <!-- ============================================================
      pages/usuarios.html — Gestión de usuarios del sistema
-     Solo accesible para rol "admin"
+     Admin: gestiona todos. Motorizado y tienda: solo ven el suyo
+     (para cambiar su contraseña).
      ============================================================ -->
 
 <div class="page-title">Usuarios</div>
-<div class="page-sub">Gestión de accesos al sistema. Cada motorizado puede tener su propio usuario.</div>
+<div class="page-sub">Gestión de accesos al sistema. Cada motorizado y cada tienda puede tener su propio usuario (los de tienda se crean desde "Tiendas").</div>
 
-<!-- Barra de acciones -->
-<div style="display:flex;justify-content:flex-end;margin-bottom:16px">
+<!-- Barra de acciones (solo admin) -->
+<div id="barra-acciones-usuarios" style="display:none;justify-content:flex-end;gap:8px;flex-wrap:wrap;margin-bottom:16px">
+  <button class="btn btn-sm" onclick="crearAccesosMotorizados()">
+    <i class="ti ti-users-plus"></i> Crear accesos de motorizados
+  </button>
   <button class="btn btn-primary btn-sm" onclick="abrirModalUsuario()">
     <i class="ti ti-user-plus"></i> Agregar usuario
   </button>
@@ -15,7 +19,23 @@
 
 <!-- Tabla de usuarios -->
 <div class="card">
-  <div class="card-head"><span class="card-title">Usuarios del sistema</span></div>
+  <div class="card-head" style="flex-wrap:wrap;gap:8px">
+    <span class="card-title">Usuarios del sistema</span>
+    <div id="filtros-usuarios" style="display:none;gap:8px;align-items:center;flex-wrap:wrap">
+      <div class="search-wrap">
+        <i class="ti ti-search search-icon"></i>
+        <input id="f-buscar-usuarios" class="search-box" placeholder="Buscar nombre, correo..." oninput="filtrarUsuarios()" />
+      </div>
+      <select id="f-rol-usuarios" class="filter-select" onchange="filtrarUsuarios()">
+        <option value="">Todos los roles</option>
+        <option value="admin">Administrador</option>
+        <option value="operador">Operador</option>
+        <option value="visor">Visor</option>
+        <option value="motorizado">Motorizado</option>
+        <option value="tienda">Tienda</option>
+      </select>
+    </div>
+  </div>
   <div class="table-wrap">
     <table>
       <thead>

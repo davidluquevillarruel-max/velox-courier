@@ -35,15 +35,11 @@ function _initFiltrosPendienteDevolucion() {
   if (typeof initComboBuscable !== 'function') return;
 
   initComboBuscable('f-filtro-tienda-pendiente-devolucion', function() {
-    return (typeof CATALOGO_TIENDAS !== 'undefined' ? CATALOGO_TIENDAS : []).map(function(t) {
-      return { value: t.nombre, label: t.nombre };
-    });
+    return typeof opcionesFiltroTiendas === 'function' ? opcionesFiltroTiendas('chk-inactivos-pendiente-devolucion') : [];
   }, function() { filtrarTablaPendienteDevolucion(); });
 
   initComboBuscable('f-filtro-motorizado-pendiente-devolucion', function() {
-    return (typeof CATALOGO_MOTORIZADOS !== 'undefined' ? CATALOGO_MOTORIZADOS : []).map(function(m) {
-      return { value: m.nombre, label: m.nombre + (m.zona ? ' — ' + m.zona : '') };
-    });
+    return typeof opcionesFiltroMotorizados === 'function' ? opcionesFiltroMotorizados('chk-inactivos-pendiente-devolucion') : [];
   }, function() { filtrarTablaPendienteDevolucion(); });
 }
 

@@ -6,8 +6,12 @@
 var API = '/api';
 
 /* Catálogos en memoria — se cargan al iniciar */
-var CATALOGO_TIENDAS     = [];
-var CATALOGO_MOTORIZADOS = [];
+var CATALOGO_TIENDAS     = [];   /* solo activas: para elegir al crear/editar */
+var CATALOGO_MOTORIZADOS = [];   /* solo activos: para asignar */
+/* Todos, con su estado: para los filtros de las tablas (historial), que
+   con "Mostrar inactivos" también ofrecen los inactivos */
+var CATALOGO_TIENDAS_TODAS     = [];
+var CATALOGO_MOTORIZADOS_TODOS = [];
 var CATALOGO_DISTRITOS   = [];
 
 var _filtroFecha  = '';
@@ -220,16 +224,20 @@ async function _cargarCatalogos() {
     const rT = await fetch(API + '/tiendas');
     const tiendas = await rT.json();
     CATALOGO_TIENDAS.length = 0;
-    tiendas.filter(function(t){ return t.activa; }).forEach(function(t) {
-      CATALOGO_TIENDAS.push({ id: t.id, nombre: t.nombre });
+    CATALOGO_TIENDAS_TODAS.length = 0;
+    tiendas.forEach(function(t) {
+      CATALOGO_TIENDAS_TODAS.push({ id: t.id, nombre: t.nombre, activa: !!t.activa });
+      if (t.activa) CATALOGO_TIENDAS.push({ id: t.id, nombre: t.nombre });
     });
 
     /* Motorizados */
     const rM = await fetch(API + '/motorizados');
     const motos = await rM.json();
     CATALOGO_MOTORIZADOS.length = 0;
-    motos.filter(function(m){ return m.activo; }).forEach(function(m) {
-      CATALOGO_MOTORIZADOS.push({ id: m.id, nombre: m.nombre, zona: m.zona || '' });
+    CATALOGO_MOTORIZADOS_TODOS.length = 0;
+    motos.forEach(function(m) {
+      CATALOGO_MOTORIZADOS_TODOS.push({ id: m.id, nombre: m.nombre, zona: m.zona || '', activo: !!m.activo });
+      if (m.activo) CATALOGO_MOTORIZADOS.push({ id: m.id, nombre: m.nombre, zona: m.zona || '' });
     });
 
     /* Distritos desde tarifas — solo los activos: los inactivos no son
@@ -1131,16 +1139,41 @@ window.initPedidos = async function() {
   iniciarRefrescoAutomatico('tbody-pedidos', renderPedidos);
 };
 
+/* ── Filtros de las tablas: activos, o todos con "Mostrar inactivos" ──
+   Las selecciones para crear/asignar usan CATALOGO_TIENDAS /
+   CATALOGO_MOTORIZADOS (solo activos). Los filtros sirven para buscar
+   historial, así que con la casilla marcada (idCasilla) también
+   ofrecen los inactivos, marcados como tales. La usan Pedidos,
+   Pendiente devolución y Devolución Tienda. */
+function _casillaMarcada(idCasilla) {
+  var c = document.getElementById(idCasilla);
+  return !!(c && c.checked);
+}
+
+function opcionesFiltroTiendas(idCasilla) {
+  var todas = _casillaMarcada(idCasilla);
+  return CATALOGO_TIENDAS_TODAS
+    .filter(function(t) { return todas || t.activa; })
+    .map(function(t) { return { value: t.nombre, label: t.nombre + (t.activa ? '' : ' (inactiva)') }; });
+}
+
+function opcionesFiltroMotorizados(idCasilla) {
+  var todos = _casillaMarcada(idCasilla);
+  return CATALOGO_MOTORIZADOS_TODOS
+    .filter(function(m) { return todos || m.activo; })
+    .map(function(m) {
+      return { value: m.nombre, label: m.nombre + (m.zona ? ' — ' + m.zona : '') + (m.activo ? '' : ' (inactivo)') };
+    });
+}
+
 /* Comboboxes buscables de la barra de filtros de la tabla (no confundir
    con los del modal "Agregar orden" — ver _initCombosOrden) */
 function _initFiltrosPedidosTabla() {
   initComboBuscable('f-filtro-tienda-pedidos', function() {
-    return CATALOGO_TIENDAS.map(function(t) { return { value: t.nombre, label: t.nombre }; });
+    return opcionesFiltroTiendas('chk-inactivos-pedidos');
   }, function() { filtrarTablaPedidos(); });
 
   initComboBuscable('f-filtro-motorizado-pedidos', function() {
-    return CATALOGO_MOTORIZADOS.map(function(m) {
-      return { value: m.nombre, label: m.nombre + (m.zona ? ' — ' + m.zona : '') };
-    });
+    return opcionesFiltroMotorizados('chk-inactivos-pedidos');
   }, function() { filtrarTablaPedidos(); });
 }

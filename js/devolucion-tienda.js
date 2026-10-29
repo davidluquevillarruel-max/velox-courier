@@ -48,15 +48,11 @@ function _initFiltrosDevolucionTienda() {
   if (typeof initComboBuscable !== 'function') return;
 
   initComboBuscable('f-filtro-tienda-devolucion-tienda', function() {
-    return (typeof CATALOGO_TIENDAS !== 'undefined' ? CATALOGO_TIENDAS : []).map(function(t) {
-      return { value: t.nombre, label: t.nombre };
-    });
+    return typeof opcionesFiltroTiendas === 'function' ? opcionesFiltroTiendas('chk-inactivos-devolucion-tienda') : [];
   }, function() { filtrarTablaDevolucionTienda(); });
 
   initComboBuscable('f-filtro-motorizado-devolucion-tienda', function() {
-    return (typeof CATALOGO_MOTORIZADOS !== 'undefined' ? CATALOGO_MOTORIZADOS : []).map(function(m) {
-      return { value: m.nombre, label: m.nombre + (m.zona ? ' — ' + m.zona : '') };
-    });
+    return typeof opcionesFiltroMotorizados === 'function' ? opcionesFiltroMotorizados('chk-inactivos-devolucion-tienda') : [];
   }, function() { filtrarTablaDevolucionTienda(); });
 }
 

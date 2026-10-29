@@ -24,6 +24,27 @@ async function esTiendaComodin(pool, id) {
   return r.recordset.length > 0;
 }
 
+/* Nombre de la tienda para crear/editar: obligatorio, sin repetir
+   (la tabla tiene uq_tiendas_nombre) y nunca el del comodín. Devuelve
+   { nombre } o { error } con el mensaje para el 400. */
+async function validarNombreTienda(pool, nombre, idPropio) {
+  nombre = typeof nombre === 'string' ? nombre.trim().replace(/\s+/g, ' ') : '';
+  if (nombre.length < 2)   return { error: 'El nombre de la tienda es obligatorio (mínimo 2 caracteres).' };
+  if (nombre.length > 100) return { error: 'El nombre de la tienda no puede pasar de 100 caracteres.' };
+  if (nombre.toUpperCase() === TIENDA_SIN_DEFINIR) return { error: 'Ese nombre está reservado por el sistema.' };
+  const r = await pool.request()
+    .input('nombre', sql.NVarChar, nombre)
+    .input('id',     sql.Int,      idPropio || 0)
+    .query(`SELECT 1 AS si FROM tiendas WHERE nombre = @nombre AND id <> @id`);
+  if (r.recordset.length > 0) return { error: 'Ya existe una tienda con ese nombre.' };
+  return { nombre };
+}
+
+/* Choque con uq_tiendas_nombre (dos altas al mismo tiempo) */
+function esNombreDuplicado(err) {
+  return err && (err.number === 2627 || err.number === 2601);
+}
+
 /* Una tienda solo puede consultar su propia tienda */
 function tiendaAutorizada(usuario, idTiendaPedida) {
   if (usuario.rol !== 'tienda') return true;
@@ -46,7 +67,10 @@ router.get('/', async (req, res) => {
     const result = await request.query(`
       SELECT id, nombre, ruc, contacto, telefono, yape, direccion,
              ciclo_pago, activa, observaciones,
-             CONVERT(varchar,creado_en,23) AS creado_en
+             CONVERT(varchar,creado_en,23) AS creado_en,
+             /* Para el catálogo (js/tiendas.js): si ya tiene usuario de acceso */
+             CAST(CASE WHEN EXISTS (SELECT 1 FROM usuarios u WHERE u.id_tienda = tiendas.id)
+                       THEN 1 ELSE 0 END AS BIT) AS tiene_usuario
       FROM tiendas
       ${filtro}
       ORDER BY nombre
@@ -112,13 +136,15 @@ router.get('/resumen', async (req, res) => {
   }
 });
 
-/* POST /api/tiendas — solo gestores */
+/* POST /api/tiendas — solo gestores. Solo el nombre es obligatorio. */
 router.post('/', requireRol(...GESTORES), async (req, res) => {
   try {
     const pool = await getPool();
     const t    = req.body;
+    const v    = await validarNombreTienda(pool, t.nombre);
+    if (v.error) return res.status(400).json({ error: v.error });
     const r = await pool.request()
-      .input('nombre',    sql.NVarChar, t.nombre)
+      .input('nombre',    sql.NVarChar, v.nombre)
       .input('ruc',       sql.NVarChar, t.ruc || '')
       .input('contacto',  sql.NVarChar, t.contacto || '')
       .input('telefono',  sql.NVarChar, t.telefono || '')
@@ -134,6 +160,7 @@ router.post('/', requireRol(...GESTORES), async (req, res) => {
       `);
     res.status(201).json({ id: r.recordset[0].id });
   } catch (err) {
+    if (esNombreDuplicado(err)) return res.status(400).json({ error: 'Ya existe una tienda con ese nombre.' });
     console.error('POST /tiendas:', err.message);
     res.status(500).json({ error: 'Error al crear la tienda' });
   }
@@ -147,9 +174,11 @@ router.put('/:id', requireRol(...GESTORES), async (req, res) => {
       return res.status(400).json({ error: 'Esta tienda es interna del sistema y no se puede modificar.' });
     }
     const t    = req.body;
+    const v    = await validarNombreTienda(pool, t.nombre, parseInt(req.params.id, 10));
+    if (v.error) return res.status(400).json({ error: v.error });
     await pool.request()
       .input('id',        sql.Int,      req.params.id)
-      .input('nombre',    sql.NVarChar, t.nombre)
+      .input('nombre',    sql.NVarChar, v.nombre)
       .input('ruc',       sql.NVarChar, t.ruc || '')
       .input('contacto',  sql.NVarChar, t.contacto || '')
       .input('telefono',  sql.NVarChar, t.telefono || '')
@@ -167,8 +196,31 @@ router.put('/:id', requireRol(...GESTORES), async (req, res) => {
       `);
     res.json({ ok: true });
   } catch (err) {
+    if (esNombreDuplicado(err)) return res.status(400).json({ error: 'Ya existe una tienda con ese nombre.' });
     console.error('PUT /tiendas/:id:', err.message);
     res.status(500).json({ error: 'Error al actualizar la tienda' });
+  }
+});
+
+/* PATCH /api/tiendas/:id/estado — solo gestores. { activa: true|false }
+   Desactivar / reactivar desde el catálogo. Una tienda inactiva sigue
+   en el catálogo y en el historial, pero no sale en las selecciones
+   para crear órdenes (y POST /ordenes la rechaza). */
+router.patch('/:id/estado', requireRol(...GESTORES), async (req, res) => {
+  try {
+    const pool = await getPool();
+    if (await esTiendaComodin(pool, req.params.id)) {
+      return res.status(400).json({ error: 'Esta tienda es interna del sistema y no se puede modificar.' });
+    }
+    const r = await pool.request()
+      .input('id',     sql.Int, req.params.id)
+      .input('activa', sql.Bit, req.body.activa ? 1 : 0)
+      .query(`UPDATE tiendas SET activa = @activa WHERE id = @id`);
+    if (!r.rowsAffected[0]) return res.status(404).json({ error: 'Tienda no encontrada' });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('PATCH /tiendas/:id/estado:', err.message);
+    res.status(500).json({ error: 'Error al cambiar el estado de la tienda' });
   }
 });
 

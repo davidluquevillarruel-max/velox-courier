@@ -86,6 +86,9 @@
       <div class="nav-item" id="nav-clientes" onclick="showPage('clientes')">
         <i class="ti ti-building-store" aria-hidden="true"></i> Clientes / Tiendas
       </div>
+      <div class="nav-item" id="nav-tiendas" onclick="showPage('tiendas')">
+        <i class="ti ti-list-details" aria-hidden="true"></i> Tiendas
+      </div>
       <div class="nav-item" id="nav-evidencias" onclick="showPage('evidencias')">
         <i class="ti ti-chart-bar" aria-hidden="true"></i> Evidencias
       </div>
@@ -100,9 +103,6 @@
       </div>
       <div class="nav-item" id="nav-usuarios" onclick="showPage('usuarios')">
         <i class="ti ti-users" aria-hidden="true"></i> Usuarios
-      </div>
-      <div class="nav-item" id="nav-usuarios-tienda" onclick="showPage('usuarios-tienda')">
-        <i class="ti ti-user-check" aria-hidden="true"></i> Usuarios Tienda
       </div>
     </nav>
 
@@ -158,6 +158,8 @@
      filters   → filtrarTablaPedidos (texto + tienda + motorizado + estado)
      asignacion → asignar, desasignar
      charts    → gráfico de barras
+     accesos   → antes de usuarios y tiendas ("Crear accesos")
+     tiendas   → catálogo de tiendas; después de pedidos (_cargarCatalogos)
 ══════════════════════════════════════════ -->
 <script src="js/validators.js"></script>
 <script src="js/utils.js"></script>
@@ -179,8 +181,9 @@
 <script src="js/filters.js"></script>
 <script src="js/asignacion.js"></script>
 <script src="js/charts.js"></script>
+<script src="js/accesos.js"></script>
 <script src="js/usuarios.js"></script>
-<script src="js/usuarios-tienda.js"></script>
+<script src="js/tiendas.js"></script>
 
 <script>
 function toggleSidebar() {

@@ -3,8 +3,6 @@
    ============================================================ */
 var API = '/api';
 var TIENDAS_REGISTRO = [];
-var _tiendaEditId = null;
-var _tiendaElimId = null;
 var _filtroDesdeClientes = '';
 var _filtroHastaClientes = '';
 var _filtroTiendaClientes = '';
@@ -117,9 +115,6 @@ window.renderClientes = async function() {
   var _esTienda   = _sesionCli && _sesionCli.rol === 'tienda';
   var _nomTienda  = _esTienda ? (_sesionCli.nombre||'') : '';
 
-  /* Ocultar botón agregar si es tienda */
-  var _btnAgregar = document.querySelector('[onclick="abrirModalTienda()"]');
-  if (_btnAgregar) _btnAgregar.style.display = _esTienda ? 'none' : '';
 
   /* Lista de tiendas a mostrar */
   var _listaT = _esTienda
@@ -173,14 +168,9 @@ window.renderClientes = async function() {
         '</td>'
       : '<td style="color:var(--color-text-tertiary);font-size:12px">—</td>';
 
-    /* Acciones — tienda no puede editar/eliminar */
-    var accionesHTML = _esTienda
-      ? '<td><button class="btn btn-sm" onclick="abrirDetalleTienda(\'' + t.id + '\')" title="Ver detalle"><i class="ti ti-eye"></i></button></td>'
-      : '<td><div style="display:flex;gap:4px">' +
-          '<button class="btn btn-sm" onclick="abrirDetalleTienda(\'' + t.id + '\')" title="Ver detalle"><i class="ti ti-eye"></i></button>' +
-          '<button class="btn btn-sm" onclick="editarTienda(' + t.id + ')" title="Editar"><i class="ti ti-pencil"></i></button>' +
-          '<button class="btn btn-sm" onclick="confirmarEliminarTienda(' + t.id + ')" style="color:#A32D2D;border-color:#F09595"><i class="ti ti-trash"></i></button>' +
-        '</div></td>';
+    /* Acciones: solo ver el detalle. Editar / desactivar está en el
+       catálogo (página "Tiendas", js/tiendas.js) */
+    var accionesHTML = '<td><button class="btn btn-sm" onclick="abrirDetalleTienda(\'' + t.id + '\')" title="Ver detalle"><i class="ti ti-eye"></i></button></td>';
 
     var html = '<tr>' +
       '<td><div style="font-weight:500">' + t.nombre + '</div>' +
@@ -677,108 +667,6 @@ window.renderDetalleTienda = async function(tiendaId) {
   }
 
   container.innerHTML = html;
-};
-
-/* ── Modal tienda ── */
-window.abrirModalTienda = function() {
-  _tiendaEditId = null;
-  document.getElementById('tienda-modal-titulo').textContent = 'Agregar tienda cliente';
-  document.getElementById('btn-guardar-tienda').innerHTML = '<i class="ti ti-plus"></i> Agregar';
-  ['f-tienda-nombre','f-tienda-ruc','f-tienda-contacto','f-tienda-telefono','f-tienda-direccion','f-tienda-obs'].forEach(function(id){
-    var el = document.getElementById(id); if(el) el.value='';
-  });
-  document.getElementById('f-tienda-ciclo').value  = 'semanal';
-  document.getElementById('f-tienda-activa').value = 'true';
-  document.getElementById('tienda-modal-error').style.display   = 'none';
-  document.getElementById('tienda-modal-overlay').style.display = 'flex';
-};
-
-window.editarTienda = function(id) {
-  var t = TIENDAS_REGISTRO.find(function(x){ return x.id==id; });
-  if (!t) return;
-  _tiendaEditId = id;
-  document.getElementById('tienda-modal-titulo').textContent = 'Editar tienda cliente';
-  document.getElementById('btn-guardar-tienda').innerHTML = '<i class="ti ti-check"></i> Guardar cambios';
-  document.getElementById('f-tienda-nombre').value    = t.nombre;
-  document.getElementById('f-tienda-ruc').value       = t.ruc||'';
-  document.getElementById('f-tienda-contacto').value  = t.contacto||'';
-  document.getElementById('f-tienda-telefono').value  = t.telefono||'';
-  document.getElementById('f-tienda-direccion').value = t.direccion||'';
-  document.getElementById('f-tienda-ciclo').value     = t.ciclo_pago||'semanal';
-  document.getElementById('f-tienda-activa').value    = t.activa?'true':'false';
-  document.getElementById('f-tienda-obs').value       = t.observaciones||'';
-  document.getElementById('tienda-modal-error').style.display   = 'none';
-  document.getElementById('tienda-modal-overlay').style.display = 'flex';
-};
-
-window.cerrarModalTienda = function() {
-  document.getElementById('tienda-modal-overlay').style.display = 'none';
-};
-
-window.guardarTienda = async function() {
-  var nombre    = document.getElementById('f-tienda-nombre').value.trim();
-  var ruc       = document.getElementById('f-tienda-ruc').value.trim();
-  var contacto  = document.getElementById('f-tienda-contacto').value.trim();
-  var telefono  = document.getElementById('f-tienda-telefono').value.trim();
-  var direccion = document.getElementById('f-tienda-direccion').value.trim();
-  var ciclo     = document.getElementById('f-tienda-ciclo').value;
-  var activa    = document.getElementById('f-tienda-activa').value === 'true';
-  var obs       = document.getElementById('f-tienda-obs').value.trim();
-  var errEl     = document.getElementById('tienda-modal-error');
-
-  var validaciones = [
-    validarTexto(nombre, { obligatorio: true, min: 2, max: 100, nombreCampo: 'El nombre de la tienda' }),
-    validarRUC(ruc, { obligatorio: true }),
-    validarEmail(contacto, { obligatorio: true }),
-    validarTelefono(telefono),
-    validarTexto(direccion, { max: 200, nombreCampo: 'La dirección' }),
-    validarTexto(obs, { max: 300, nombreCampo: 'Las observaciones' }),
-  ];
-  if (!ejecutarValidaciones(validaciones, errEl)) return;
-
-  var body   = { nombre, ruc, contacto, telefono, direccion, ciclo_pago: ciclo, activa, observaciones: obs };
-  var url    = API + '/tiendas' + (_tiendaEditId ? '/' + _tiendaEditId : '');
-  var method = _tiendaEditId ? 'PUT' : 'POST';
-
-  try {
-    var r = await fetch(url, { method, headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
-    if (!r.ok) { var e=await r.json(); errEl.textContent=e.error||'Error'; errEl.style.display='block'; return; }
-    cerrarModalTienda();
-    renderClientes();
-    if (typeof showNotif==='function') showNotif(_tiendaEditId?'Tienda actualizada':'Tienda agregada: '+nombre);
-  } catch(err) { errEl.textContent='Error de conexión.'; errEl.style.display='block'; }
-};
-
-window.confirmarEliminarTienda = function(id) {
-  var t = TIENDAS_REGISTRO.find(function(x){ return x.id==id; });
-  if (!t) return;
-  _tiendaElimId = id;
-  document.getElementById('confirm-tienda-nombre').textContent   = t.nombre;
-  document.getElementById('tienda-confirm-overlay').style.display = 'flex';
-};
-
-window.cerrarConfirmTienda = function() {
-  document.getElementById('tienda-confirm-overlay').style.display = 'none';
-  _tiendaElimId = null;
-};
-
-window.ejecutarEliminarTienda = async function() {
-  try {
-    await fetch(API + '/tiendas/' + _tiendaElimId, { method: 'DELETE' });
-    cerrarConfirmTienda();
-    renderClientes();
-    if (typeof showNotif==='function') showNotif('Tienda eliminada');
-  } catch(err) { console.error(err); }
-};
-
-window.abrirEliminarTiendaFisico = function() {
-  var t = TIENDAS_REGISTRO.find(function(x){ return x.id == _tiendaElimId; });
-  if (!t) return;
-  var idGuardado = t.id, nombreGuardado = t.nombre;
-  cerrarConfirmTienda();
-  abrirConfirmarEliminacionFisica(nombreGuardado, API + '/tiendas/' + idGuardado + '/permanente', function() {
-    renderClientes();
-  });
 };
 
 window.exportarTiendas = function() {

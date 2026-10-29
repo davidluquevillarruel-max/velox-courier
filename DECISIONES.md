@@ -15,7 +15,7 @@
 | **1** | Infraestructura y despliegue (servidor, BD, SSL, dominio) | Completada |
 | **2** | Autenticación y autorización server-side | Completada |
 | **3** | Módulo de fotos (Cloudflare R2) | Completada — R2 activo en producción (27/10/2026) |
-| **4** | Rotación de contraseñas + limpieza periódica + web institucional | Pendiente |
+| **4** | Rotación de contraseñas + limpieza periódica + web institucional | Pendiente (la herramienta de reseteo ya está en producción, 29/10/2026) |
 
 **El sistema está en producción y es seguro para repartir accesos.**
 URL: `https://sistema.veloxcourierperu.com`
@@ -220,8 +220,10 @@ local y producción). Los archivos `credenciales_tiendas.md` (160 filas) y
 `credenciales_motorizados.md` NO reflejan la BD: se generaron desde la lista de tiendas, no de
 los usuarios creados. **Están desactualizados y deben borrarse al rotar contraseñas.**
 
-Hay 236 tiendas en la tabla pero solo 89 con usuario de acceso. El sistema ya tiene el botón
-"Crear usuarios para todas las tiendas" para las que falten (usar después de la Fase 4).
+Hay 236 tiendas en la tabla pero solo 89 con usuario de acceso. Desde el 29/10/2026 (en
+producción) los accesos se crean desde la página "Tiendas" ("Crear accesos faltantes" / "Crear
+acceso"), con contraseña aleatoria mostrada una sola vez; el botón viejo de contraseña de fórmula
+se borró.
 
 ---
 
@@ -238,6 +240,15 @@ si solo 30 van a usar el sistema). Al hacerlo: contraseñas aleatorias, no deriv
 entregar una sola vez y forzar cambio en el primer login; borrar los `.md` de credenciales.
 
 **Además rotar:** la contraseña del `SA` de SQL Server (se escribió en un chat).
+
+**Herramienta lista (29/10/2026, en producción, commit `7cba834`):** "Resetear contraseñas" en
+Tiendas y en Usuarios (solo admin, por fila o en masa) pone a cada usuario una contraseña
+aleatoria de 12 caracteres y la muestra una sola vez con Copiar / CSV. Para la Fase 4 alcanza con
+elegir las tiendas que van a usar el sistema y resetearlas. Falta todavía:
+- **Sacar el secreto de `server/db.js`** (`DB_PASSWORD || 'Velox2026!'`): sin valor por defecto, y
+  rotar esa contraseña en el servidor porque está en el historial de git.
+- Opcional: que el reseteo corte las sesiones abiertas (hoy siguen hasta 12 h); necesita migración.
+- "Forzar cambio en el primer login" no está hecho (también necesitaría una columna nueva).
 
 ---
 
@@ -364,3 +375,12 @@ downtime). El dominio se traspasa aparte en Namecheap.
       "Subir imagen" desde la galería (último commit `a0b71c8`; migración
       `velox_agregar_motivo_no_entrega.sql` aplicada en el servidor). Falta probarlo a fondo
       en el celular real; etapa 2 opcional: cerrar la orden sin señal.
+- [x] **Catálogo de tiendas y usuarios de acceso.** **Desplegado en producción** el 29/10/2026
+      (último commit `7cba834`, sin migración): página "Tiendas" (alta, edición, desactivar /
+      reactivar), crear accesos y resetear contraseñas (por fila o en masa, contraseña
+      aleatoria mostrada una vez), filtro de activos en selecciones y servidor, y "Mostrar
+      inactivos" en los filtros de las tablas.
+- [ ] **Fase 4:** rotar las 89 contraseñas de fórmula de las tiendas (con "Resetear
+      contraseñas") y sacar el secreto de `server/db.js`. Ver D-007.
+- [ ] **Opcional:** cortar las sesiones abiertas al resetear una contraseña (necesita
+      migración). Ver D-007.

@@ -12,6 +12,12 @@ Velox Courier — internal management system for a courier/delivery company in L
 
 Última actualización: 29 de octubre de 2026.
 
+- **Deploy del 29/10 HECHO en producción** (confirmado por el usuario el 29 de octubre de
+  2026). Sin migración: `git pull` + `pm2 restart velox`. Último commit en producción:
+  `7cba834`. Quedan en producción (detalle más abajo):
+  - Catálogo de tiendas + accesos con contraseña aleatoria + filtro de activos (`96044c3`).
+  - Resetear contraseña de tiendas y motorizados, por fila y en masa (`7cba834`).
+
 - **Deploy del 28/10 HECHO en producción** (confirmado por el usuario el 29 de octubre de
   2026). Migración `velox_agregar_motivo_no_entrega.sql` aplicada en el servidor con `sa`
   **antes** del pull; después `git pull` + `pm2 restart velox`. Último commit en producción:
@@ -20,8 +26,8 @@ Velox Courier — internal management system for a courier/delivery company in L
   - Vista del motorizado "Mis entregas de hoy" (`2c77411`).
   - Foto del pago también con Efectivo + "Subir imagen" desde la galería (`a0b71c8`).
 
-- **Catálogo de tiendas + accesos + filtro de activos (29 de octubre de 2026, solo en local, sin
-  subir).** No necesita migración.
+- **Catálogo de tiendas + accesos + filtro de activos (29 de octubre de 2026, en producción).** No
+  necesitó migración.
   - **Página "Tiendas"** (`pages/tiendas.html`, `js/tiendas.js`; reemplaza en el menú a "Usuarios
     Tienda", que se borró): todas las tiendas sin filtro de fecha, buscador, filtros de estado y
     acceso, "Agregar tienda", editar, **Desactivar / Reactivar** (`PATCH /tiendas/:id/estado`) y
@@ -371,6 +377,17 @@ Velox Courier — internal management system for a courier/delivery company in L
   **no se migran** a R2).
 - Opcional, más adelante: conectar un dominio propio (`fotos.veloxcourierperu.com`) al bucket
   en vez de la URL `r2.dev`, que tiene límite de velocidad; después cambiar `R2_PUBLIC_URL`.
+- **Fase 4 — rotación de contraseñas y secretos** (ver D-007 en `DECISIONES.md`):
+  - Rotar las **89 contraseñas de fórmula** de los usuarios de tienda (nombre + `Velox2026!`): ya
+    se puede con Tiendas → "Resetear contraseñas" (en masa, buscador vacío → Todas) y entregar el
+    CSV. Conviene hacerlo cuando se decida a qué tiendas se les da acceso.
+  - **Sacar el secreto de `server/db.js`:** tiene `process.env.DB_PASSWORD || 'Velox2026!'` como
+    respaldo. Quitar el valor por defecto (que falle claro si falta la variable) y, como esa
+    contraseña quedó en el historial de git, rotarla en el servidor. Rotar también la del `sa`.
+- **Opcional — cortar las sesiones abiertas al resetear una contraseña.** Hoy el reseteo no
+  cierra las sesiones ya abiertas (el JWT dura 12 h y no depende de la contraseña). Necesita
+  **migración** (ej. columna `usuarios.sesion_version` que `requireAuth` compara con el token y
+  que el reseteo incrementa).
 - **Vista del motorizado (en producción, ver arriba):** probarla a fondo en el celular real
   (cámara, "Subir imagen" desde la galería, corte de señal). Etapa 2, opcional: encolar el
   "resolver" para que funcione sin señal.

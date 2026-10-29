@@ -4,7 +4,7 @@
 > Sirve también como contexto de arranque para Claude Code: si se copia a `CLAUDE.md`
 > en la raíz del repo, la herramienta lo lee automáticamente al iniciar.
 >
-> Última actualización: 27 de octubre de 2026
+> Última actualización: 29 de octubre de 2026
 
 ---
 
@@ -358,5 +358,9 @@ downtime). El dominio se traspasa aparte en Namecheap.
       anotados: el prepago en el detalle de la tienda, y `GETDATE()` (UTC) en los dos "Marcar
       pagado", que después de las 19:00 de Lima registra `fecha_pago` con el día siguiente.
       Detalle en `CLAUDE.md` → "Pendiente".
-- [ ] **Rediseño de la vista del motorizado** (botón EMPEZAR + flujo de entrega con fotos, que
-      debe usar el pipeline único de fotos de D-003). Solo se habló, no se empezó.
+- [x] **Rediseño de la vista del motorizado** ("Mis entregas de hoy": botón EMPEZAR + flujo
+      de entrega con fotos por el pipeline único de D-003). **Desplegado en producción** el
+      28–29/10/2026 junto con las fotos de devolución y la foto del pago con Efectivo +
+      "Subir imagen" desde la galería (último commit `a0b71c8`; migración
+      `velox_agregar_motivo_no_entrega.sql` aplicada en el servidor). Falta probarlo a fondo
+      en el celular real; etapa 2 opcional: cerrar la orden sin señal.

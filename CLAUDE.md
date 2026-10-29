@@ -10,7 +10,15 @@ Velox Courier — internal management system for a courier/delivery company in L
 
 ## Estado actual
 
-Última actualización: 27 de octubre de 2026.
+Última actualización: 29 de octubre de 2026.
+
+- **Deploy del 28/10 HECHO en producción** (confirmado por el usuario el 29 de octubre de
+  2026). Migración `velox_agregar_motivo_no_entrega.sql` aplicada en el servidor con `sa`
+  **antes** del pull; después `git pull` + `pm2 restart velox`. Último commit en producción:
+  `a0b71c8`. Quedan en producción las 3 funciones nuevas (detalle más abajo):
+  - Fotos de devolución (`234d539`).
+  - Vista del motorizado "Mis entregas de hoy" (`2c77411`).
+  - Foto del pago también con Efectivo + "Subir imagen" desde la galería (`a0b71c8`).
 
 - **Deploy de la sesión del 22–23/10 HECHO en producción** (confirmado por el usuario el 27 de
   octubre de 2026). `main` está pusheado y en el servidor se hizo `git pull` + `pm2 restart
@@ -45,10 +53,10 @@ Velox Courier — internal management system for a courier/delivery company in L
   - Backups locales en la carpeta `Backup` de SQL Server:
     `velox_courier_antes_import_20261022.bak` y `velox_courier_antes_fecha_reparto_20261023.bak`.
 
-- **Vista del motorizado: "Mis entregas de hoy" (28 de octubre de 2026, solo en local, sin
-  subir).** **Necesita la migración `velox_agregar_motivo_no_entrega.sql`** (columna
-  `ordenes.motivo_no_entrega NVARCHAR(300) NULL`), ya aplicada en local; ver "Migraciones
-  pendientes". Todo en `js/entregas-moto.js` (estilos al final de `css/components.css`).
+- **Vista del motorizado: "Mis entregas de hoy" (28 de octubre de 2026, en producción).** Usa la
+  columna `ordenes.motivo_no_entrega NVARCHAR(300) NULL` (migración
+  `velox_agregar_motivo_no_entrega.sql`, aplicada en local y en producción). Todo en `js/entregas-moto.js`
+  (estilos al final de `css/components.css`).
   - Arriba de la página Motorizados, solo para el rol motorizado: sus órdenes de **hoy** (siempre
     hoy, sin importar el filtro de fecha) en `en-proceso`, con un botón EMPEZAR grande. Se
     refresca cada 8 s; la orden cerrada desaparece. La tabla de abajo no cambió.
@@ -84,7 +92,7 @@ Velox Courier — internal management system for a courier/delivery company in L
     del último intento). `GET /ordenes/:id` devuelve `fotos` (todas las que ese rol puede ver;
     reemplaza a `fotos_devolucion`) y `SELECT_ORDEN` devuelve `motivo_no_entrega`.
 
-- **Fotos de devolución (28 de octubre de 2026, solo en local, sin subir).** No necesita
+- **Fotos de devolución (28 de octubre de 2026, en producción).** No necesita
   migración. "Confirmar devolución" (columna de la tabla en Pedidos / Pendiente devolución, y el
   botón amarillo de "Actualizar orden") y "Devuelto" de Devolución Tienda piden **primero** una
   foto (`pedirFoto()` en `js/camara-foto.js`: cámara → vista previa → "Usar foto y confirmar";
@@ -325,8 +333,9 @@ Velox Courier — internal management system for a courier/delivery company in L
   **no se migran** a R2).
 - Opcional, más adelante: conectar un dominio propio (`fotos.veloxcourierperu.com`) al bucket
   en vez de la URL `r2.dev`, que tiene límite de velocidad; después cambiar `R2_PUBLIC_URL`.
-- **Vista del motorizado (hecha en local, ver arriba):** probarla en el celular real contra
-  local antes de subir. Etapa 2, opcional: encolar el "resolver" para que funcione sin señal.
+- **Vista del motorizado (en producción, ver arriba):** probarla a fondo en el celular real
+  (cámara, "Subir imagen" desde la galería, corte de señal). Etapa 2, opcional: encolar el
+  "resolver" para que funcione sin señal.
 - Probar a fondo la cola de fotos **con corte de señal**, ahora desde el celular real
   contra producción: que la foto quede en la cola sin señal y suba sola al volver, sin
   duplicados; evidencia de pago que entra a la cola y la marca de "evidencia pendiente" que
@@ -395,10 +404,12 @@ Roles: `admin`, `operador`, `visor`, `tienda`, `motorizado`. `GESTORES = ['admin
 
 ## Migraciones pendientes de aplicar en producción
 
-- `velox_agregar_motivo_no_entrega.sql` — columna `ordenes.motivo_no_entrega NVARCHAR(300)
-  NULL` para la vista del motorizado (`PATCH /ordenes/:id/resolver`). Aplicada en local el 28 de
-  octubre de 2026. Correrla en el servidor con `sqlcmd -I` y `sa` **antes** del `git pull` que
-  suba la vista del motorizado (sin la columna, `GET /ordenes` falla).
+Ninguna por ahora.
+
+`velox_agregar_motivo_no_entrega.sql` (columna `ordenes.motivo_no_entrega NVARCHAR(300) NULL`,
+para la vista del motorizado y `PATCH /ordenes/:id/resolver`) se aplicó en local el 28 de
+octubre de 2026 y en producción después, con `sa` y antes del `git pull` (confirmado por el
+usuario el 29 de octubre de 2026).
 
 `velox_agregar_fecha_reparto.sql` (columna calculada `ordenes.fecha_reparto =
 ISNULL(fecha_asignacion, fecha)` PERSISTED + índice `ix_ordenes_fecha_reparto`) se aplicó en

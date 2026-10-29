@@ -1,6 +1,7 @@
 /* ============================================================
-   accesos.js — Crear usuarios de acceso en masa (tiendas y motorizados)
-   Un solo flujo para los dos catálogos:
+   accesos.js — Usuarios de acceso en masa (tiendas y motorizados)
+   Dos flujos con la misma ventana:
+   · CREAR (abrirCrearAccesos):
      1. Lista las tiendas / motorizados ACTIVOS sin usuario
         (GET /auth/tiendas-libres o /auth/motorizados-libres: "sin
         usuario" se decide por el vínculo id_tienda / id_motorizado, no
@@ -8,16 +9,17 @@
      2. Crea cada usuario con POST /auth/usuarios (el mismo endpoint del
         alta individual): correo armado con el nombre (con un número si
         ya está tomado) y contraseña ALEATORIA y fuerte.
-     3. Muestra correo y contraseña UNA sola vez, con "Copiar" y
-        "Descargar CSV" para entregarlas. No se guardan en ningún lado:
-        al cerrar la ventana se pierden (en la BD queda solo el hash).
-   Lo usan el catálogo de tiendas (js/tiendas.js: "Crear accesos" y
-   "Crear acceso" de cada fila) y la página Usuarios (js/usuarios.js:
-   motorizados). Solo admin (el servidor lo exige).
-
-   resetearAccesos() deja listo el reseteo en masa de contraseñas
-   (Fase 4: los usuarios de tienda viejos tienen contraseña de fórmula):
-   misma pantalla de resultados, con PATCH /auth/usuarios/:id/password.
+   · RESETEAR (abrirResetearAccesos): lista los usuarios de tienda /
+     motorizado que YA existen, se eligen, se confirma (la contraseña
+     anterior deja de funcionar) y a cada uno se le pone una contraseña
+     aleatoria nueva con PATCH /auth/usuarios/:id/password. No toca
+     nada más del usuario (ni el correo, ni el estado, ni el vínculo).
+   En los dos, al terminar se muestran correo y contraseña UNA sola vez,
+   con "Copiar" y "Descargar CSV" para entregarlas. No se guardan en
+   ningún lado: al cerrar la ventana se pierden (en la BD queda solo el
+   hash).
+   Lo usan el catálogo de tiendas (js/tiendas.js) y la página Usuarios
+   (js/usuarios.js). Solo admin (el servidor lo exige).
    ============================================================ */
 
 var _ACC_MAYUS   = 'ABCDEFGHJKLMNPQRSTUVWXYZ';   /* sin I ni O */
@@ -26,12 +28,18 @@ var _ACC_DIGITOS = '23456789';                   /* sin 0 ni 1 */
 var _ACC_SIMBOLOS = '!#$%*+?';                   /* aceptados por passwordEsFuerte */
 var _ACC_LARGO   = 12;
 
-var _accFilas      = [];     /* { id, nombre, email, elegida } del paso 1 */
-var _accResultados = [];     /* { nombre, email, password, ok, error } del paso 3 */
+/* Desde cuántas filas la lista muestra el buscador */
+var _ACC_FILAS_CON_BUSCADOR = 8;
+
+var _accFilas      = [];     /* { id, nombre, email, elegida, vinculo?, activo? } de la lista */
+var _accResultados = [];     /* { nombre, email, password, ok, error } del final */
 var _accTipo       = null;   /* 'tienda' | 'motorizado' | 'reseteo' */
+var _accBusqueda   = '';
 var _accEntregado  = false;  /* ya se copió o descargó */
 var _accTrabajando = false;
 var _accAlTerminar = null;
+
+var _ACC_ROLES = { tienda: 'Tienda', motorizado: 'Motorizado' };
 
 function _escAcc(s) {
   return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -105,6 +113,31 @@ function _pintarAcc(titulo, cuerpo, pie) {
   _overlayAcc().style.display = 'flex';
 }
 
+function _tituloAcc() {
+  if (_accTipo === 'reseteo') return 'Resetear contraseñas';
+  return _accTipo === 'tienda' ? 'Crear accesos de tiendas' : 'Crear accesos de motorizados';
+}
+
+function _empezarAcc(tipo, alTerminar) {
+  _accTipo = tipo;
+  _accFilas = [];
+  _accResultados = [];
+  _accBusqueda = '';
+  _accEntregado = false;
+  _accTrabajando = false;
+  _accAlTerminar = alTerminar || null;
+}
+
+function _avisoFinalAcc(texto) {
+  _pintarAcc(_tituloAcc(), '<div class="accesos-ayuda"><i class="ti ti-circle-check"></i> ' + texto + '</div>',
+    '<button class="btn btn-sm" onclick="cerrarAccesos()">Cerrar</button>');
+}
+
+function _errorCargaAcc(err) {
+  _pintarAcc(_tituloAcc(), '<div class="accesos-error">No se pudo cargar la lista: ' + _escAcc(err.message) + '</div>',
+    '<button class="btn btn-sm" onclick="cerrarAccesos()">Cerrar</button>');
+}
+
 /**
  * Abre "Crear accesos".
  * @param {'tienda'|'motorizado'} tipo
@@ -113,14 +146,8 @@ function _pintarAcc(titulo, cuerpo, pie) {
  * @param {function} [alTerminar] - Se llama al cerrar, si se creó alguno.
  */
 window.abrirCrearAccesos = async function(tipo, soloIds, alTerminar) {
-  _accTipo = tipo;
-  _accFilas = [];
-  _accResultados = [];
-  _accEntregado = false;
-  _accTrabajando = false;
-  _accAlTerminar = alTerminar || null;
-  var titulo = tipo === 'tienda' ? 'Crear accesos de tiendas' : 'Crear accesos de motorizados';
-  _pintarAcc(titulo, '<div class="accesos-ayuda"><i class="ti ti-loader"></i> Buscando quiénes no tienen usuario...</div>', '');
+  _empezarAcc(tipo, alTerminar);
+  _pintarAcc(_tituloAcc(), '<div class="accesos-ayuda"><i class="ti ti-loader"></i> Buscando quiénes no tienen usuario...</div>', '');
 
   var libres, usuarios;
   try {
@@ -132,9 +159,7 @@ window.abrirCrearAccesos = async function(tipo, soloIds, alTerminar) {
     libres = await r[0].json();
     usuarios = await r[1].json();
   } catch (err) {
-    _pintarAcc(titulo, '<div class="accesos-error">No se pudo cargar la lista: ' + _escAcc(err.message) + '</div>',
-      '<button class="btn btn-sm" onclick="cerrarAccesos()">Cerrar</button>');
-    return;
+    return _errorCargaAcc(err);
   }
 
   if (soloIds && soloIds.length) {
@@ -146,65 +171,153 @@ window.abrirCrearAccesos = async function(tipo, soloIds, alTerminar) {
   });
 
   if (!_accFilas.length) {
-    _pintarAcc(titulo,
-      '<div class="accesos-ayuda"><i class="ti ti-circle-check"></i> ' +
-        (soloIds ? 'Ya tiene usuario de acceso (o está inactiva).' :
-          tipo === 'tienda' ? 'Todas las tiendas activas ya tienen usuario de acceso.' : 'Todos los motorizados activos ya tienen usuario de acceso.') +
-      '</div>',
-      '<button class="btn btn-sm" onclick="cerrarAccesos()">Cerrar</button>');
-    return;
+    return _avisoFinalAcc(soloIds ? 'Ya tiene usuario de acceso (o está inactiva).' :
+      tipo === 'tienda' ? 'Todas las tiendas activas ya tienen usuario de acceso.' : 'Todos los motorizados activos ya tienen usuario de acceso.');
   }
   _pintarListaAcc();
 };
 
-function _pintarListaAcc() {
-  var titulo = _accTipo === 'tienda' ? 'Crear accesos de tiendas' : 'Crear accesos de motorizados';
-  var elegidas = _accFilas.filter(function(f) { return f.elegida; }).length;
-  var cuerpo =
-    '<div class="accesos-ayuda">' +
-      (_accFilas.length === 1
-        ? 'Se va a crear este usuario con una contraseña aleatoria.'
-        : _accFilas.length + (_accTipo === 'tienda' ? ' tiendas activas' : ' motorizados activos') + ' sin usuario. Elige a quiénes crearles acceso.') +
-      ' La contraseña se genera al azar y se muestra <strong>una sola vez</strong> al terminar.' +
-    '</div>' +
-    '<table class="accesos-tabla"><thead><tr>' +
-      '<th style="width:28px">' + (_accFilas.length > 1
-        ? '<input type="checkbox" ' + (elegidas === _accFilas.length ? 'checked ' : '') + 'onchange="elegirTodasAcc(this.checked)" title="Todas">'
-        : '') + '</th>' +
-      '<th>' + (_accTipo === 'tienda' ? 'Tienda' : 'Motorizado') + '</th><th>Correo de acceso</th>' +
-    '</tr></thead><tbody>' +
-    _accFilas.map(function(f, i) {
-      return '<tr>' +
-        '<td><input type="checkbox" ' + (f.elegida ? 'checked ' : '') + 'onchange="elegirFilaAcc(' + i + ', this.checked)"></td>' +
-        '<td>' + _escAcc(f.nombre) + '</td>' +
-        '<td class="accesos-mono">' + _escAcc(f.email) + '</td>' +
-      '</tr>';
-    }).join('') +
-    '</tbody></table>';
-  var pie =
-    '<button class="btn btn-sm" onclick="cerrarAccesos()">Cancelar</button>' +
-    '<button class="btn btn-primary btn-sm" id="btn-accesos-crear" onclick="confirmarCrearAccesos()" ' + (elegidas ? '' : 'disabled') + '>' +
-      '<i class="ti ti-user-plus"></i> Crear ' + elegidas + (elegidas === 1 ? ' acceso' : ' accesos') +
-    '</button>';
-  _pintarAcc(titulo, cuerpo, pie);
-}
+/**
+ * Abre "Resetear contraseñas" (solo usuarios de tienda y motorizado).
+ * @param {Object} opciones
+ * @param {Array<string>} opciones.roles - ['tienda'], ['motorizado'] o los dos.
+ * @param {number} [opciones.idUsuario] - Resetear solo ese usuario.
+ * @param {number} [opciones.idTienda]  - Resetear el usuario de esa tienda.
+ * @param {function} [alTerminar] - Se llama al cerrar, si se reseteó alguno.
+ */
+window.abrirResetearAccesos = async function(opciones, alTerminar) {
+  opciones = opciones || {};
+  var roles = opciones.roles || ['tienda', 'motorizado'];
+  _empezarAcc('reseteo', alTerminar);
+  _pintarAcc(_tituloAcc(), '<div class="accesos-ayuda"><i class="ti ti-loader"></i> Cargando usuarios...</div>', '');
 
-window.elegirFilaAcc = function(i, si) {
-  _accFilas[i].elegida = si;
+  var usuarios;
+  try {
+    var r = await fetch(API + '/auth/usuarios');
+    if (!r.ok) throw new Error('El servidor no respondió bien');
+    usuarios = await r.json();
+  } catch (err) {
+    return _errorCargaAcc(err);
+  }
+
+  var uno = opciones.idUsuario != null || opciones.idTienda != null;
+  _accFilas = usuarios.filter(function(u) {
+    if (roles.indexOf(u.rol) === -1) return false;
+    if (opciones.idUsuario != null && u.id != opciones.idUsuario) return false;
+    if (opciones.idTienda != null && u.id_tienda != opciones.idTienda) return false;
+    return true;
+  }).map(function(u) {
+    return {
+      id: u.id, nombre: u.nombre, email: u.email, activo: !!u.activo,
+      vinculo: (_ACC_ROLES[u.rol] || u.rol) + (u.tienda_nombre || u.motorizado_nombre ? ': ' + (u.tienda_nombre || u.motorizado_nombre) : ''),
+      /* De a uno ya viene elegido; en masa se elige a mano */
+      elegida: uno,
+    };
+  });
+
+  if (!_accFilas.length) {
+    return _avisoFinalAcc(uno ? 'No se encontró su usuario de acceso.' : 'No hay usuarios para resetear.');
+  }
   _pintarListaAcc();
 };
+
+/* ── Lista con casillas (crear y resetear) ───────────────────── */
+
+function _filasVisiblesAcc() {
+  var texto = _accBusqueda.toLowerCase().trim();
+  if (!texto) return _accFilas;
+  return _accFilas.filter(function(f) {
+    return (f.nombre + ' ' + f.email + ' ' + (f.vinculo || '')).toLowerCase().indexOf(texto) !== -1;
+  });
+}
+
+function _pintarListaAcc() {
+  var reseteo = _accTipo === 'reseteo';
+  var ayuda;
+  if (reseteo) {
+    ayuda = _accFilas.length === 1
+      ? 'Se le va a poner una contraseña nueva, aleatoria, a este usuario.'
+      : _accFilas.length + ' usuarios. Elige a quiénes resetearles la contraseña.';
+    ayuda += ' La anterior deja de funcionar. La nueva se muestra <strong>una sola vez</strong> al terminar.';
+  } else {
+    ayuda = (_accFilas.length === 1
+      ? 'Se va a crear este usuario con una contraseña aleatoria.'
+      : _accFilas.length + (_accTipo === 'tienda' ? ' tiendas activas' : ' motorizados activos') + ' sin usuario. Elige a quiénes crearles acceso.') +
+      ' La contraseña se genera al azar y se muestra <strong>una sola vez</strong> al terminar.';
+  }
+  var buscador = _accFilas.length > _ACC_FILAS_CON_BUSCADOR
+    ? '<div class="search-wrap"><i class="ti ti-search search-icon"></i>' +
+        '<input id="accesos-buscar" class="search-box" style="width:100%" placeholder="Buscar..." value="' + _escAcc(_accBusqueda) + '" oninput="buscarAcc(this.value)" />' +
+      '</div>'
+    : '';
+  var cabecera = reseteo
+    ? '<th>Nombre</th><th>Vinculado a</th><th>Correo</th><th>Estado</th>'
+    : '<th>' + (_accTipo === 'tienda' ? 'Tienda' : 'Motorizado') + '</th><th>Correo de acceso</th>';
+
+  _pintarAcc(_tituloAcc(),
+    '<div class="accesos-ayuda">' + ayuda + '</div>' + buscador +
+    '<table class="accesos-tabla"><thead><tr>' +
+      '<th style="width:28px">' + (_accFilas.length > 1 ? '<input type="checkbox" id="accesos-todas" onchange="elegirTodasAcc(this.checked)" title="Todas">' : '') + '</th>' +
+      cabecera +
+    '</tr></thead><tbody id="accesos-tbody"></tbody></table>',
+    '<span class="accesos-resumen" id="accesos-elegidas"></span>' +
+    '<button class="btn btn-sm" onclick="cerrarAccesos()">Cancelar</button>' +
+    '<button class="btn btn-primary btn-sm" id="btn-accesos-crear" onclick="' + (reseteo ? 'confirmarResetearAccesos()' : 'confirmarCrearAccesos()') + '"></button>');
+  _actualizarListaAcc();
+}
+
+/* Repinta solo las filas, la casilla "todas" y el botón: así el
+   buscador no pierde el foco mientras se escribe */
+function _actualizarListaAcc() {
+  var reseteo = _accTipo === 'reseteo';
+  var visibles = _filasVisiblesAcc();
+  var tbody = document.getElementById('accesos-tbody');
+  if (tbody) {
+    tbody.innerHTML = visibles.length ? visibles.map(function(f) {
+      var i = _accFilas.indexOf(f);
+      var celdas = reseteo
+        ? '<td>' + _escAcc(f.nombre) + '</td><td>' + _escAcc(f.vinculo) + '</td><td class="accesos-mono">' + _escAcc(f.email) + '</td>' +
+          '<td>' + (f.activo ? 'Activo' : '<span style="color:var(--color-text-secondary)">Inactivo</span>') + '</td>'
+        : '<td>' + _escAcc(f.nombre) + '</td><td class="accesos-mono">' + _escAcc(f.email) + '</td>';
+      return '<tr><td><input type="checkbox" ' + (f.elegida ? 'checked ' : '') + 'onchange="elegirFilaAcc(' + i + ', this.checked)"></td>' + celdas + '</tr>';
+    }).join('') : '<tr><td colspan="5" style="color:var(--color-text-tertiary)">Nada coincide con la búsqueda.</td></tr>';
+  }
+  var todas = document.getElementById('accesos-todas');
+  if (todas) todas.checked = visibles.length > 0 && visibles.every(function(f) { return f.elegida; });
+
+  var elegidas = _accFilas.filter(function(f) { return f.elegida; }).length;
+  var resumen = document.getElementById('accesos-elegidas');
+  if (resumen) resumen.textContent = _accFilas.length > 1 ? elegidas + ' de ' + _accFilas.length + ' elegidos' : '';
+  var btn = document.getElementById('btn-accesos-crear');
+  if (btn) {
+    btn.disabled = elegidas === 0;
+    btn.innerHTML = reseteo
+      ? '<i class="ti ti-key"></i> Resetear ' + elegidas + (elegidas === 1 ? ' contraseña' : ' contraseñas')
+      : '<i class="ti ti-user-plus"></i> Crear ' + elegidas + (elegidas === 1 ? ' acceso' : ' accesos');
+  }
+}
+
+window.buscarAcc = function(texto) {
+  _accBusqueda = texto || '';
+  _actualizarListaAcc();
+};
+window.elegirFilaAcc = function(i, si) {
+  _accFilas[i].elegida = si;
+  _actualizarListaAcc();
+};
+/* "Todas" marca o desmarca las que se ven (con búsqueda, solo esas) */
 window.elegirTodasAcc = function(si) {
-  _accFilas.forEach(function(f) { f.elegida = si; });
-  _pintarListaAcc();
+  _filasVisiblesAcc().forEach(function(f) { f.elegida = si; });
+  _actualizarListaAcc();
 };
 
 /* Recorre las filas de a una (el servidor hashea cada contraseña) y
    arma _accResultados. enviar(fila, password) → Promise<Response>. */
-async function _procesarAcc(filas, titulo, enviar) {
+async function _procesarAcc(filas, enviar) {
   _accTrabajando = true;
   _accResultados = [];
   for (var i = 0; i < filas.length; i++) {
-    _pintarAcc(titulo,
+    _pintarAcc(_tituloAcc(),
       '<div class="accesos-ayuda"><i class="ti ti-loader"></i> Procesando ' + (i + 1) + ' de ' + filas.length + '... no cierres esta ventana.</div>', '');
     var f = filas[i];
     var password = generarPasswordSegura();
@@ -221,14 +334,14 @@ async function _procesarAcc(filas, titulo, enviar) {
     _accResultados.push(res);
   }
   _accTrabajando = false;
-  _pintarResultadosAcc(titulo);
+  _pintarResultadosAcc();
 }
 
 window.confirmarCrearAccesos = function() {
   var filas = _accFilas.filter(function(f) { return f.elegida; });
   if (!filas.length) return;
   var rol = _accTipo;
-  _procesarAcc(filas, _accTipo === 'tienda' ? 'Crear accesos de tiendas' : 'Crear accesos de motorizados', function(f, password) {
+  _procesarAcc(filas, function(f, password) {
     var cuerpo = { nombre: f.nombre, email: f.email, password: password, rol: rol };
     if (rol === 'tienda') cuerpo.id_tienda = f.id; else cuerpo.id_motorizado = f.id;
     return fetch(API + '/auth/usuarios', {
@@ -239,16 +352,29 @@ window.confirmarCrearAccesos = function() {
   });
 };
 
+window.confirmarResetearAccesos = function() {
+  var filas = _accFilas.filter(function(f) { return f.elegida; });
+  if (!filas.length) return;
+  var quien = filas.length === 1 ? filas[0].nombre + ' (' + filas[0].email + ')' : filas.length + ' usuarios';
+  if (!confirm('Se va a poner una contraseña nueva a ' + quien + '.\n\n' +
+               'La contraseña anterior dejará de funcionar: hasta que le entregues la nueva, no podrá entrar a Velox.\n\n¿Resetear?')) {
+    return;
+  }
+  resetearAccesos(filas.map(function(f) { return { id: f.id, nombre: f.nombre, email: f.email }; }), _accAlTerminar);
+};
+
 /**
- * Fase 4 (todavía sin botón): resetea la contraseña de varios usuarios
- * a una aleatoria y muestra el mismo resultado (una sola vez, Copiar /
- * CSV). usuarios = [{ id, nombre, email }] (ej. de GET /auth/usuarios).
+ * Resetea la contraseña de varios usuarios a una aleatoria y muestra el
+ * resultado (una sola vez, Copiar / CSV). usuarios = [{ id, nombre, email }].
+ * Solo cambia la contraseña (PATCH /auth/usuarios/:id/password, que el
+ * admin puede usar sin la actual). Sin confirmación: la pide quien llama
+ * (ver confirmarResetearAccesos).
  */
 window.resetearAccesos = function(usuarios, alTerminar) {
   _accTipo = 'reseteo';
   _accEntregado = false;
   _accAlTerminar = alTerminar || null;
-  _procesarAcc(usuarios, 'Resetear contraseñas', function(u, password) {
+  _procesarAcc(usuarios, function(u, password) {
     return fetch(API + '/auth/usuarios/' + u.id + '/password', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -257,7 +383,7 @@ window.resetearAccesos = function(usuarios, alTerminar) {
   });
 };
 
-function _pintarResultadosAcc(titulo) {
+function _pintarResultadosAcc() {
   var buenos = _accResultados.filter(function(r) { return r.ok; });
   var malos  = _accResultados.filter(function(r) { return !r.ok; });
   var cuerpo = '';
@@ -286,7 +412,7 @@ function _pintarResultadosAcc(titulo) {
         '<button class="btn btn-sm" onclick="descargarAccesosCSV()"><i class="ti ti-download"></i> Descargar CSV</button>'
       : '') +
     '<button class="btn btn-primary btn-sm" onclick="cerrarAccesos()">Cerrar</button>';
-  _pintarAcc(titulo, cuerpo, pie);
+  _pintarAcc(_tituloAcc(), cuerpo, pie);
 }
 
 /* Texto para pegar en WhatsApp o en una nota: una línea por usuario */
@@ -319,7 +445,7 @@ window.descargarAccesosCSV = function() {
   var blob = new Blob(['﻿' + lineas.join('\r\n')], { type: 'text/csv;charset=utf-8' });
   var a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = 'accesos-velox-' + new Date().toISOString().slice(0, 10) + '.csv';
+  a.download = (_accTipo === 'reseteo' ? 'contrasenas-nuevas-velox-' : 'accesos-velox-') + new Date().toISOString().slice(0, 10) + '.csv';
   document.body.appendChild(a);
   a.click();
   a.remove();

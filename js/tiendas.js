@@ -2,8 +2,8 @@
    tiendas.js — Catálogo de tiendas (pages/tiendas.html)
    Lista completa (sin filtro de fecha) con buscador, estado y si
    tiene usuario de acceso. Gestores: agregar, editar, desactivar /
-   reactivar. Admin: además "Crear acceso" (por fila o los faltantes,
-   con js/accesos.js) y eliminar definitivamente.
+   reactivar. Admin: además "Crear acceso" y "Resetear contraseña" (por
+   fila o en masa, con js/accesos.js) y eliminar definitivamente.
    Una tienda activa aparece en las selecciones para crear órdenes;
    una inactiva sigue acá y en el historial, pero no se puede elegir
    (y POST /ordenes la rechaza).
@@ -28,8 +28,10 @@ function _esAdminTiendas()  { return _rolTiendas() === 'admin'; }
 window.initTiendas = function() {
   var btnAgregar = document.getElementById('btn-agregar-tienda');
   var btnAccesos = document.getElementById('btn-crear-accesos-tiendas');
+  var btnReseteo = document.getElementById('btn-resetear-tiendas');
   if (btnAgregar) btnAgregar.style.display = _esGestorTiendas() ? '' : 'none';
   if (btnAccesos) btnAccesos.style.display = _esAdminTiendas() ? '' : 'none';
+  if (btnReseteo) btnReseteo.style.display = _esAdminTiendas() ? '' : 'none';
   _recargarCatalogoTiendas(true);
 };
 
@@ -108,6 +110,9 @@ window.renderCatalogoTiendas = function() {
     }
     if (admin && t.activa && !t.tiene_usuario) {
       acciones += '<button class="btn btn-sm" onclick="crearAccesoTienda(' + t.id + ')" title="Crear usuario de acceso"><i class="ti ti-user-plus"></i> Crear acceso</button>';
+    }
+    if (admin && t.tiene_usuario) {
+      acciones += '<button class="btn btn-sm" onclick="resetearAccesoTienda(' + t.id + ')" title="Poner una contraseña nueva a su usuario"><i class="ti ti-key"></i> Resetear contraseña</button>';
     }
 
     return '<tr' + (t.activa ? '' : ' class="fila-inactiva"') + '>' +
@@ -280,4 +285,13 @@ window.crearAccesoTienda = function(id) {
 
 window.crearAccesosFaltantesTiendas = function() {
   abrirCrearAccesos('tienda', null, function() { _recargarCatalogoTiendas(false); });
+};
+
+/* Contraseña nueva para el usuario de una tienda, o de varias */
+window.resetearAccesoTienda = function(id) {
+  abrirResetearAccesos({ roles: ['tienda'], idTienda: id });
+};
+
+window.resetearAccesosTiendas = function() {
+  abrirResetearAccesos({ roles: ['tienda'] });
 };

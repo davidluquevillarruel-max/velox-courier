@@ -35,8 +35,16 @@ Velox Courier — internal management system for a courier/delivery company in L
     `POST /auth/usuarios`, correo armado con el nombre (número si está tomado) y **contraseña
     aleatoria** de 12 caracteres, mostrada **una sola vez** con Copiar y Descargar CSV. Se borró el
     masivo viejo de contraseña de fórmula (nombre + `Velox2026!`): los 89 usuarios de tienda que ya
-    existen la siguen teniendo (Fase 4); `resetearAccesos()` deja listo el reseteo en masa, sin botón.
+    existen la siguen teniendo (Fase 4: se arregla con el reseteo, abajo).
     `POST /auth/usuarios` ahora rechaza un segundo usuario para la misma tienda.
+  - **Resetear contraseña** (solo admin, mismo `js/accesos.js`: `abrirResetearAccesos` →
+    `resetearAccesos`): botón "Resetear contraseña" en cada tienda con acceso (Tiendas) y en cada
+    usuario de tienda o motorizado (Usuarios; no en admin/operador/visor), y "Resetear contraseñas"
+    en masa en las dos páginas (lista con casillas, nada marcado al abrir, buscador; en Usuarios
+    respeta el filtro de rol). Pide confirmación avisando que la anterior deja de funcionar; pone
+    una aleatoria de 12 con `PATCH /auth/usuarios/:id/password` (no toca correo, estado ni
+    vínculo) y la muestra una sola vez con Copiar / CSV. Las sesiones ya abiertas siguen hasta
+    que vence su token (12 h): el JWT no depende de la contraseña.
   - **Usuarios:** filtro por rol + buscador, vínculo con la tienda, y el rol tienda entra a ver su
     usuario (como el motorizado) para cambiar su contraseña. "Cambiar contraseña" ahora pide la
     actual a quien no es admin (antes no la mandaba y el servidor la exigía) y el servidor responde

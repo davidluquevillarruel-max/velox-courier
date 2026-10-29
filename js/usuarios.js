@@ -86,6 +86,9 @@ async function _renderTablaUsuarios() {
           '<button class="btn btn-sm" onclick="toggleEstadoUsuario(' + u.id + ',' + (u.activo ? 'false' : 'true') + ')">' +
             (u.activo ? '<i class="ti ti-lock"></i> Desactivar' : '<i class="ti ti-lock-open"></i> Activar') +
           '</button>' +
+          (u.rol === 'tienda' || u.rol === 'motorizado'
+            ? '<button class="btn btn-sm" onclick="resetearPasswordUsuario(' + u.id + ')" title="Poner una contraseña nueva, aleatoria"><i class="ti ti-key"></i> Resetear contraseña</button>'
+            : '') +
           '<button class="btn btn-sm" onclick="abrirEliminarUsuarioFisico(' + u.id + ',&quot;' + u.nombre + '&quot;)" style="color:#A32D2D;border-color:#F09595"><i class="ti ti-trash"></i></button>' +
         '</div>';
 
@@ -106,6 +109,18 @@ window.filtrarUsuarios = function() { _renderTablaUsuarios(); };
 /* Usuarios para los motorizados activos que no tienen (js/accesos.js) */
 window.crearAccesosMotorizados = function() {
   abrirCrearAccesos('motorizado', null, _renderTablaUsuarios);
+};
+
+/* Contraseña nueva y aleatoria (js/accesos.js), solo para usuarios de
+   tienda y motorizado: de a uno, o en masa (si el filtro de rol está
+   en Tienda o Motorizado, la lista trae solo ese rol) */
+window.resetearPasswordUsuario = function(id) {
+  abrirResetearAccesos({ roles: ['tienda', 'motorizado'], idUsuario: id });
+};
+
+window.resetearPasswordsMasivo = function() {
+  var rol = (document.getElementById('f-rol-usuarios') || {}).value;
+  abrirResetearAccesos({ roles: rol === 'tienda' || rol === 'motorizado' ? [rol] : ['tienda', 'motorizado'] });
 };
 
 window.abrirEliminarUsuarioFisico = function(id, nombre) {

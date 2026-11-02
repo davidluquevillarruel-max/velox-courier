@@ -333,7 +333,7 @@ function _renderPoolPendientes() {
 }
 
 /* ════════════════════════════════════════════
-   FOTO DEL PRODUCTO — miniatura en cada pendiente
+   FOTO DEL PRODUCTO — miniatura en pendientes y asignadas
    Es la misma foto_producto que ya está en R2 (no se sube nada).
    loading="lazy": el navegador pide solo las que están en pantalla
    (o por llegar), para no gastar datos en el celular. Al tocarla se
@@ -351,7 +351,7 @@ function _miniaturaFotoAsig(o) {
   return '<button type="button" class="assign-thumb" title="Ver la foto en grande" ' +
       'data-url="' + _escAsig(o.foto_producto_url) + '" data-codigo="' + _escAsig(o.codigo) + '" ' +
       'onclick="verFotoProductoAsig(this)">' +
-      '<img src="' + _escAsig(o.foto_producto_url) + '" alt="Foto del producto" width="48" height="48" ' +
+      '<img src="' + _escAsig(o.foto_producto_url) + '" alt="Foto del producto" width="64" height="64" ' +
         'loading="lazy" decoding="async" onerror="_fotoAsigNoCarga(this)">' +
     '</button>';
 }
@@ -410,6 +410,14 @@ function _renderPoolAsignados() {
   var sel        = document.getElementById('moto-select');
   var nombreMoto = sel ? sel.value : '';
 
+  /* Igual que en los pendientes: si nada cambió no se repinta, así
+     las miniaturas no parpadean con el sondeo de 10 s */
+  var firma = nombreMoto + '|' + JSON.stringify((nombreMoto ? _getOrdenesAsignadas(nombreMoto) : []).map(function(o) {
+    return [o.id, o.codigo, o.estado, o.tienda, o.distrito, o.foto_producto_url];
+  }));
+  if (pool._firmaAsignadas === firma) return;
+  pool._firmaAsignadas = firma;
+
   Array.from(pool.querySelectorAll('.assign-item')).forEach(function(el){ el.remove(); });
 
   if (!nombreMoto) {
@@ -439,10 +447,13 @@ function _renderPoolAsignados() {
     item.className = 'assign-item';
     item.dataset.id = o.id;
     item.innerHTML =
-      '<div class="assign-info" style="flex:1">' +
-        '<div class="assign-code">#' + o.codigo + '</div>' +
-        '<div class="assign-dest" style="font-size:11px">' + o.tienda + ' · ' + o.distrito + '</div>' +
-        '<div style="margin-top:3px">' + _badgeEstadoAsig(o.estado) + '</div>' +
+      '<div class="assign-item-main" style="flex:1">' +
+        _miniaturaFotoAsig(o) +
+        '<div class="assign-info">' +
+          '<div class="assign-code">#' + o.codigo + '</div>' +
+          '<div class="assign-dest" style="font-size:11px">' + o.tienda + ' · ' + o.distrito + '</div>' +
+          '<div style="margin-top:3px">' + _badgeEstadoAsig(o.estado) + '</div>' +
+        '</div>' +
       '</div>' +
       (esGestorAsig
         ? '<div style="display:flex;gap:4px;flex-shrink:0">' +

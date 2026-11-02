@@ -284,10 +284,19 @@ function _renderPoolPendientes() {
   if (!pool) return;
 
   var pendientes = _getOrdenesPendientesFiltradas();
+  var hayFiltro = _getOrdenesPendientes().length > 0; /* hay pendientes, pero el filtro no encontró ninguno */
+
+  /* El sondeo repinta cada 10 s: si nada cambió no se toca el DOM,
+     así las miniaturas no parpadean ni se vuelven a pedir. La firma
+     vive en el propio elemento (al volver a la página es uno nuevo). */
+  var firma = hayFiltro + '|' + JSON.stringify(pendientes.map(function(o) {
+    return [o.id, o.codigo, o.estado, o.tienda, o.distrito, o.dest_nombre, o.foto_producto_url];
+  }));
+  if (pool._firmaPendientes === firma) return;
+  pool._firmaPendientes = firma;
   pool.innerHTML = '';
 
   if (pendientes.length === 0) {
-    var hayFiltro = _getOrdenesPendientes().length > 0; /* hay pendientes, pero el filtro no encontró ninguno */
     pool.innerHTML = hayFiltro
       ? '<div style="padding:24px;text-align:center;color:var(--color-text-tertiary);font-size:13px">' +
         '<i class="ti ti-search-off" style="font-size:24px;display:block;margin-bottom:8px"></i>' +
@@ -306,11 +315,14 @@ function _renderPoolPendientes() {
     item.className = 'assign-item';
     item.dataset.id = o.id;
     item.innerHTML =
-      '<div class="assign-info">' +
-        '<div class="assign-code">#' + o.codigo + ' ' + reprogTag + '</div>' +
-        '<div class="assign-dest" style="font-size:11px">' + o.tienda + '</div>' +
-        '<div class="assign-dest" style="font-size:11px;color:var(--color-text-tertiary)">' +
-          o.distrito + (o.dest_nombre ? ' · ' + o.dest_nombre : '') +
+      '<div class="assign-item-main">' +
+        _miniaturaFotoAsig(o) +
+        '<div class="assign-info">' +
+          '<div class="assign-code">#' + o.codigo + ' ' + reprogTag + '</div>' +
+          '<div class="assign-dest" style="font-size:11px">' + o.tienda + '</div>' +
+          '<div class="assign-dest" style="font-size:11px;color:var(--color-text-tertiary)">' +
+            o.distrito + (o.dest_nombre ? ' · ' + o.dest_nombre : '') +
+          '</div>' +
         '</div>' +
       '</div>' +
       '<button class="btn btn-primary btn-sm" onclick="asignarOrden(' + o.id + ')">' +
@@ -318,6 +330,73 @@ function _renderPoolPendientes() {
       '</button>';
     pool.appendChild(item);
   });
+}
+
+/* ════════════════════════════════════════════
+   FOTO DEL PRODUCTO — miniatura en cada pendiente
+   Es la misma foto_producto que ya está en R2 (no se sube nada).
+   loading="lazy": el navegador pide solo las que están en pantalla
+   (o por llegar), para no gastar datos en el celular. Al tocarla se
+   ve en grande. Sin foto, o si no carga: ícono gris.
+════════════════════════════════════════════ */
+function _escAsig(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function _miniaturaFotoAsig(o) {
+  if (!o.foto_producto_url) {
+    return '<div class="assign-thumb assign-thumb-vacia" title="Sin foto del producto"><i class="ti ti-photo-off"></i></div>';
+  }
+  return '<button type="button" class="assign-thumb" title="Ver la foto en grande" ' +
+      'data-url="' + _escAsig(o.foto_producto_url) + '" data-codigo="' + _escAsig(o.codigo) + '" ' +
+      'onclick="verFotoProductoAsig(this)">' +
+      '<img src="' + _escAsig(o.foto_producto_url) + '" alt="Foto del producto" width="48" height="48" ' +
+        'loading="lazy" decoding="async" onerror="_fotoAsigNoCarga(this)">' +
+    '</button>';
+}
+
+/* La URL existe pero la imagen no llega (borrada, sin señal...):
+   queda el ícono gris en vez de la imagen rota */
+window._fotoAsigNoCarga = function(img) {
+  var boton = img.parentNode;
+  if (!boton) return;
+  var vacia = document.createElement('div');
+  vacia.className = 'assign-thumb assign-thumb-vacia';
+  vacia.title = 'No se pudo cargar la foto';
+  vacia.innerHTML = '<i class="ti ti-photo-off"></i>';
+  boton.replaceWith(vacia);
+};
+
+/* Vista en grande: capa sobre la página; se cierra tocando en
+   cualquier lado o con Escape */
+window.verFotoProductoAsig = function(boton) {
+  var url = boton && boton.dataset.url;
+  if (!url) return;
+  cerrarFotoProductoAsig();
+
+  var capa = document.createElement('div');
+  capa.id = 'asig-foto-grande';
+  capa.className = 'asig-foto-grande';
+  capa.innerHTML =
+    '<div class="asig-foto-grande-top">' +
+      '<span>#' + _escAsig(boton.dataset.codigo) + '</span>' +
+      '<button type="button" class="btn btn-sm" aria-label="Cerrar"><i class="ti ti-x"></i></button>' +
+    '</div>' +
+    '<img src="' + _escAsig(url) + '" alt="Foto del producto">';
+  capa.addEventListener('click', cerrarFotoProductoAsig);
+  document.addEventListener('keydown', _escFotoAsig);
+  document.body.appendChild(capa);
+};
+
+function cerrarFotoProductoAsig() {
+  var capa = document.getElementById('asig-foto-grande');
+  if (capa) capa.remove();
+  document.removeEventListener('keydown', _escFotoAsig);
+}
+
+function _escFotoAsig(e) {
+  if (e.key === 'Escape') cerrarFotoProductoAsig();
 }
 
 /* ════════════════════════════════════════════

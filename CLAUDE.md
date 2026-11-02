@@ -10,7 +10,22 @@ Velox Courier — internal management system for a courier/delivery company in L
 
 ## Estado actual
 
-Última actualización: 29 de octubre de 2026.
+Última actualización: 2 de noviembre de 2026.
+
+- **Asignación con foto del producto (2 de noviembre de 2026, SOLO EN LOCAL, falta subir).** Sin
+  migración ni cambios en el servidor: basta `git push` y, en el servidor, `git pull` +
+  `pm2 restart velox`. Commits `4894925`, `167c29e`, `16f4eca` (todo en `js/asignacion.js` y
+  `css/components.css`). Probado por el usuario en local.
+  - En "Pedidos pendientes de asignación" y en "Órdenes asignadas al motorizado" cada orden
+    muestra una miniatura de 64 px de su `foto_producto_url` (la que ya devuelve `GET /ordenes`,
+    también al motorizado para las sin asignar), con `loading="lazy"` para gastar menos datos.
+    Al tocarla se ve en grande (capa `#asig-foto-grande`, se cierra tocando o con Escape). Sin
+    foto, o si no carga, un ícono gris. Es la foto completa de R2 (no hay miniaturas aparte).
+  - Los dos paneles usan el mismo bloque de datos (`_datosOrdenAsig`): tienda, distrito y
+    cliente grandes y en negrita; el código chico abajo con su etiqueta de estado. Las asignadas
+    ahora muestran también el cliente. Los datos se escapan al armar el HTML.
+  - El sondeo de 10 s ya no repinta un panel si nada cambió (firma guardada en el elemento),
+    para que las miniaturas no parpadeen ni se vuelvan a pedir.
 
 - **Deploy del 29/10 HECHO en producción** (confirmado por el usuario el 29 de octubre de
   2026). Sin migración: `git pull` + `pm2 restart velox`. Último commit en producción:

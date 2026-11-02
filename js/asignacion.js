@@ -317,13 +317,7 @@ function _renderPoolPendientes() {
     item.innerHTML =
       '<div class="assign-item-main">' +
         _miniaturaFotoAsig(o) +
-        '<div class="assign-info">' +
-          '<div class="assign-code">#' + o.codigo + ' ' + reprogTag + '</div>' +
-          '<div class="assign-dest" style="font-size:11px">' + o.tienda + '</div>' +
-          '<div class="assign-dest" style="font-size:11px;color:var(--color-text-tertiary)">' +
-            o.distrito + (o.dest_nombre ? ' · ' + o.dest_nombre : '') +
-          '</div>' +
-        '</div>' +
+        _datosOrdenAsig(o, reprogTag) +
       '</div>' +
       '<button class="btn btn-primary btn-sm" onclick="asignarOrden(' + o.id + ')">' +
         'Asignar <i class="ti ti-arrow-right"></i>' +
@@ -342,6 +336,18 @@ function _renderPoolPendientes() {
 function _escAsig(s) {
   return String(s == null ? '' : s)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+/* Datos de la orden en pendientes y asignadas: tienda, distrito y
+   cliente grandes y en negrita (es lo que se mira para asignar); el
+   código va chico abajo, con la etiqueta de estado que corresponda */
+function _datosOrdenAsig(o, etiqueta) {
+  return '<div class="assign-info">' +
+      '<div class="assign-tienda">' + _escAsig(o.tienda) + '</div>' +
+      '<div class="assign-dato"><i class="ti ti-map-pin"></i> ' + _escAsig(o.distrito) + '</div>' +
+      (o.dest_nombre ? '<div class="assign-dato"><i class="ti ti-user"></i> ' + _escAsig(o.dest_nombre) + '</div>' : '') +
+      '<div class="assign-code">#' + _escAsig(o.codigo) + ' ' + (etiqueta || '') + '</div>' +
+    '</div>';
 }
 
 function _miniaturaFotoAsig(o) {
@@ -413,7 +419,7 @@ function _renderPoolAsignados() {
   /* Igual que en los pendientes: si nada cambió no se repinta, así
      las miniaturas no parpadean con el sondeo de 10 s */
   var firma = nombreMoto + '|' + JSON.stringify((nombreMoto ? _getOrdenesAsignadas(nombreMoto) : []).map(function(o) {
-    return [o.id, o.codigo, o.estado, o.tienda, o.distrito, o.foto_producto_url];
+    return [o.id, o.codigo, o.estado, o.tienda, o.distrito, o.dest_nombre, o.foto_producto_url];
   }));
   if (pool._firmaAsignadas === firma) return;
   pool._firmaAsignadas = firma;
@@ -449,11 +455,7 @@ function _renderPoolAsignados() {
     item.innerHTML =
       '<div class="assign-item-main" style="flex:1">' +
         _miniaturaFotoAsig(o) +
-        '<div class="assign-info">' +
-          '<div class="assign-code">#' + o.codigo + '</div>' +
-          '<div class="assign-dest" style="font-size:11px">' + o.tienda + ' · ' + o.distrito + '</div>' +
-          '<div style="margin-top:3px">' + _badgeEstadoAsig(o.estado) + '</div>' +
-        '</div>' +
+        _datosOrdenAsig(o, _badgeEstadoAsig(o.estado)) +
       '</div>' +
       (esGestorAsig
         ? '<div style="display:flex;gap:4px;flex-shrink:0">' +

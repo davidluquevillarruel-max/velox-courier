@@ -83,7 +83,10 @@ async function _cargarPendientesHoy() {
   if (!r.ok) throw new Error('No se pudieron cargar tus órdenes');
   var ordenes = await r.json();
   return ordenes
-    .filter(function(o) { return o.estado === 'en-proceso' && !o.datos_pendientes; })
+    /* Incluye las que tienen datos por completar (el servidor solo
+       manda las asignables): se ven, pero sin EMPEZAR hasta que la
+       oficina las complete (el refresco de 8 s habilita el botón) */
+    .filter(function(o) { return o.estado === 'en-proceso'; })
     .sort(function(a, b) {
       var ha = a.hora_asignacion || '', hb = b.hora_asignacion || '';
       if (ha !== hb) return ha < hb ? -1 : 1;
@@ -114,16 +117,30 @@ async function _recargarEntregasHoy(inicial) {
   } else {
     html += '<div class="entregas-hoy-lista">' + _entPendientes.map(function(o) {
       var cond = o.condicionEspecial ? ' · <span class="badge ausente">' + _escEnt(_ENT_CONDICIONES[o.condicionEspecial] || o.condicionEspecial) + '</span>' : '';
-      var cobro = o.metodo_pago === 'contraentrega'
-        ? '<span class="entrega-item-cobro">Por cobrar ' + _soles(o.monto_cobrado) + '</span>'
-        : 'Sin cobro';
+      /* Con datos por completar no se muestra "Sin cobro · S/ 0": el
+         monto todavía no se sabe (lo carga la oficina) */
+      var pendiente = !!o.datos_pendientes;
+      var cobro = pendiente
+        ? '<span class="entrega-item-falta">Por cobrar: por completar</span>'
+        : o.metodo_pago === 'contraentrega'
+          ? '<span class="entrega-item-cobro">Por cobrar ' + _soles(o.monto_cobrado) + '</span>'
+          : 'Sin cobro';
+      var distrito = o.distrito === 'SIN DEFINIR'
+        ? '<span class="entrega-item-falta">Distrito por definir</span>'
+        : _escEnt(o.distrito);
+      var cliente = o.dest_nombre
+        ? _escEnt(o.dest_nombre)
+        : (pendiente ? '<span class="entrega-item-falta">Cliente por completar</span>' : '—');
+      var accion = pendiente
+        ? '<div class="entrega-item-espera"><i class="ti ti-clock-exclamation"></i> Faltan datos: la oficina los está completando</div>'
+        : '<button type="button" class="btn-empezar" onclick="empezarEntrega(' + o.id + ')">EMPEZAR</button>';
       return '<div class="entrega-item">' +
         '<div class="entrega-item-datos">' +
-          '<strong>#' + _escEnt(o.codigo) + '</strong> · ' + _escEnt(o.distrito) + '<br>' +
-          _escEnt(o.dest_nombre || '—') + ' · ' + _escEnt(o.tienda) + '<br>' +
+          '<strong>#' + _escEnt(o.codigo) + '</strong> · ' + distrito + '<br>' +
+          cliente + ' · ' + _escEnt(o.tienda) + '<br>' +
           cobro + cond +
         '</div>' +
-        '<button type="button" class="btn-empezar" onclick="empezarEntrega(' + o.id + ')">EMPEZAR</button>' +
+        accion +
       '</div>';
     }).join('') + '</div>';
   }
@@ -164,7 +181,7 @@ function _overlayEnt() {
 
 window.empezarEntrega = function(ordenId) {
   var o = _entPendientes.find(function(x) { return x.id == ordenId; });
-  if (!o) return;
+  if (!o || o.datos_pendientes) return; /* sin datos completos no se cierra */
   _entOrden = o;
   _entGuardando = false;
   _pintarOverlayEnt();
@@ -632,12 +649,14 @@ async function _irASiguienteEnt(idCerrada) {
   _recargarEntregasHoy(false);
 
   /* La que seguía en la lista; si ya no está, la primera que quede */
+  /* Las que todavía tienen datos por completar no se abren */
+  var listas = _entPendientes.filter(function(x) { return !x.datos_pendientes; });
   var desde = anterior.indexOf(idCerrada);
   var siguiente = null;
   for (var i = desde + 1; i < anterior.length && !siguiente; i++) {
-    siguiente = _entPendientes.find(function(x) { return x.id == anterior[i]; }) || null;
+    siguiente = listas.find(function(x) { return x.id == anterior[i]; }) || null;
   }
-  siguiente = siguiente || _entPendientes.find(function(x) { return x.id != idCerrada; }) || null;
+  siguiente = siguiente || listas.find(function(x) { return x.id != idCerrada; }) || null;
 
   if (siguiente) {
     empezarEntrega(siguiente.id);

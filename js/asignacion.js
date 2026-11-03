@@ -61,12 +61,13 @@ async function _cargarDatosAsignacion() {
       fetch(API + '/motorizados'),
       fetch(API + '/tiendas'),
     ]);
-    /* Las órdenes de foto en ráfaga con datos pendientes no se
-       reparten hasta que se completan (botón "Pendiente" en "Todos
-       los pedidos"). El servidor ya rechaza asignarlas y al
-       motorizado ni se las manda; esto las saca de la pantalla
-       para admin / operador. */
-    ORDENES_ASIG     = (await rO.json()).filter(function(o) { return !o.datos_pendientes; });
+    /* Solo las asignables (lo calcula el servidor, SQL_ASIGNABLE):
+       las completas, y las de ráfaga con datos pendientes que ya
+       tienen tienda real y foto (se asignan a mano por la foto y
+       siguen "Por completar" hasta que la oficina las completa). El
+       servidor ya rechaza asignar las demás y al motorizado ni se
+       las manda; esto las saca de la pantalla para admin / operador. */
+    ORDENES_ASIG     = (await rO.json()).filter(function(o) { return o.asignable; });
     MOTORIZADOS_ASIG = await rM.json();
     TIENDAS_ASIG      = (await rT.json()).filter(function(t){ return t.activa; });
   } catch (err) {
@@ -290,7 +291,7 @@ function _renderPoolPendientes() {
      así las miniaturas no parpadean ni se vuelven a pedir. La firma
      vive en el propio elemento (al volver a la página es uno nuevo). */
   var firma = hayFiltro + '|' + JSON.stringify(pendientes.map(function(o) {
-    return [o.id, o.codigo, o.estado, o.tienda, o.distrito, o.dest_nombre, o.foto_producto_url];
+    return [o.id, o.codigo, o.estado, o.tienda, o.distrito, o.dest_nombre, o.foto_producto_url, o.datos_pendientes];
   }));
   if (pool._firmaPendientes === firma) return;
   pool._firmaPendientes = firma;
@@ -341,12 +342,23 @@ function _escAsig(s) {
 /* Datos de la orden en pendientes y asignadas: tienda, distrito y
    cliente grandes y en negrita (es lo que se mira para asignar); el
    código va chico abajo, con la etiqueta de estado que corresponda */
+/* Orden con datos pendientes (ráfaga): en ámbar lo que falta.
+   "SIN DEFINIR" es el distrito comodín (también el de la cámara azul) */
 function _datosOrdenAsig(o, etiqueta) {
+  var distrito = o.distrito === 'SIN DEFINIR'
+    ? '<div class="assign-dato assign-falta"><i class="ti ti-map-pin"></i> Distrito por definir</div>'
+    : '<div class="assign-dato"><i class="ti ti-map-pin"></i> ' + _escAsig(o.distrito) + '</div>';
+  var cliente = o.dest_nombre
+    ? '<div class="assign-dato"><i class="ti ti-user"></i> ' + _escAsig(o.dest_nombre) + '</div>'
+    : (o.datos_pendientes ? '<div class="assign-dato assign-falta"><i class="ti ti-user"></i> Cliente por completar</div>' : '');
+  var porCompletar = o.datos_pendientes
+    ? ' <span class="assign-por-completar" title="Le faltan datos: se completan en &quot;Pendiente&quot;. Se puede asignar, pero no cerrar hasta completarlos.">' +
+        '<i class="ti ti-bolt"></i> Por completar</span>'
+    : '';
   return '<div class="assign-info">' +
       '<div class="assign-tienda">' + _escAsig(o.tienda) + '</div>' +
-      '<div class="assign-dato"><i class="ti ti-map-pin"></i> ' + _escAsig(o.distrito) + '</div>' +
-      (o.dest_nombre ? '<div class="assign-dato"><i class="ti ti-user"></i> ' + _escAsig(o.dest_nombre) + '</div>' : '') +
-      '<div class="assign-code">#' + _escAsig(o.codigo) + ' ' + (etiqueta || '') + '</div>' +
+      distrito + cliente +
+      '<div class="assign-code">#' + _escAsig(o.codigo) + ' ' + (etiqueta || '') + porCompletar + '</div>' +
     '</div>';
 }
 
@@ -419,7 +431,7 @@ function _renderPoolAsignados() {
   /* Igual que en los pendientes: si nada cambió no se repinta, así
      las miniaturas no parpadean con el sondeo de 10 s */
   var firma = nombreMoto + '|' + JSON.stringify((nombreMoto ? _getOrdenesAsignadas(nombreMoto) : []).map(function(o) {
-    return [o.id, o.codigo, o.estado, o.tienda, o.distrito, o.dest_nombre, o.foto_producto_url];
+    return [o.id, o.codigo, o.estado, o.tienda, o.distrito, o.dest_nombre, o.foto_producto_url, o.datos_pendientes];
   }));
   if (pool._firmaAsignadas === firma) return;
   pool._firmaAsignadas = firma;
@@ -534,10 +546,16 @@ window.desasignarOrden = async function(ordenId) {
 ════════════════════════════════════════════ */
 window.autoAsignar = async function() {
   var activos    = MOTORIZADOS_ASIG.filter(function(m){ return m.activo; });
-  var pendientes = _getOrdenesPendientes();
+  /* Solo las completas: las que tienen datos por completar no tienen
+     distrito (ni zona) y se asignan a mano, guiándose por la foto */
+  var pendientes = _getOrdenesPendientes().filter(function(o) { return !o.datos_pendientes; });
 
   if (pendientes.length === 0) {
-    if (typeof showNotif === 'function') showNotif('No hay pedidos pendientes');
+    if (typeof showNotif === 'function') {
+      showNotif(_getOrdenesPendientes().length
+        ? 'Solo quedan órdenes con datos por completar: esas se asignan a mano'
+        : 'No hay pedidos pendientes');
+    }
     return;
   }
   if (activos.length === 0) {

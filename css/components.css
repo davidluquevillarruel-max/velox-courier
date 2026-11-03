@@ -295,6 +295,18 @@
   color: var(--color-text-primary);
 }
 .assign-dato .ti { color: var(--color-text-tertiary); font-size: 13px; }
+/* Orden con datos por completar: lo que falta va en ámbar */
+.assign-falta,
+.assign-falta .ti { color: var(--color-amber-text); }
+.assign-por-completar {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--color-amber-text);
+  background: var(--color-amber-bg);
+  padding: 1px 6px;
+  border-radius: 8px;
+  white-space: nowrap;
+}
 .assign-code {
   margin-top: 2px;
   font-size: 11px;
@@ -647,6 +659,24 @@
 .entrega-item-cobro {
   font-weight: 600;
   color: var(--color-text-primary);
+}
+/* Orden con datos por completar (la oficina los carga): en ámbar lo
+   que falta y, en vez de EMPEZAR, el aviso */
+.entrega-item-falta {
+  font-weight: 600;
+  color: var(--color-amber-text);
+}
+.entrega-item-espera {
+  flex-shrink: 0;
+  max-width: 150px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--color-amber-text);
+  background: var(--color-amber-bg);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+  text-align: center;
 }
 .btn-empezar {
   flex-shrink: 0;

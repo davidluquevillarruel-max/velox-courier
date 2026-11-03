@@ -235,11 +235,19 @@ async function _sincronizarListaPendientes() {
         if (!lista.querySelector('[data-pendiente]')) lista.innerHTML = '';
         lista.insertAdjacentHTML('beforeend', _filaPendienteHTML(o, enCola[o.id]));
         _initFilaPendiente(o);
-      } else if (o.foto_producto_url && !_pendientesOrdenes[o.id].foto_producto_url) {
-        /* Llegó la foto: se cambia solo la foto, la versión de la fila no */
-        _pendientesOrdenes[o.id].foto_producto_url = o.foto_producto_url;
-        var foto = document.getElementById('pend-foto-' + o.id);
-        if (foto) foto.innerHTML = _fotoPendienteHTML(_pendientesOrdenes[o.id], false);
+      } else {
+        if (o.foto_producto_url && !_pendientesOrdenes[o.id].foto_producto_url) {
+          /* Llegó la foto: se cambia solo la foto, la versión de la fila no */
+          _pendientesOrdenes[o.id].foto_producto_url = o.foto_producto_url;
+          var foto = document.getElementById('pend-foto-' + o.id);
+          if (foto) foto.innerHTML = _fotoPendienteHTML(_pendientesOrdenes[o.id], false);
+        }
+        if ((o.motorizado || '') !== (_pendientesOrdenes[o.id].motorizado || '')) {
+          /* La asignaron (o desasignaron) en Asignación: solo la marca */
+          _pendientesOrdenes[o.id].motorizado = o.motorizado;
+          var marca = document.getElementById('pend-asignada-' + o.id);
+          if (marca) marca.innerHTML = _asignadaPendienteHTML(o);
+        }
       }
     });
 
@@ -272,6 +280,16 @@ function _fotoPendienteHTML(o, subiendo) {
   '</div>';
 }
 
+/* Ya tiene motorizado (se asignó por la foto antes de completar los
+   datos): conviene completarla primero, porque ya está en ruta y no se
+   puede cerrar hasta tener sus datos */
+function _asignadaPendienteHTML(o) {
+  if (!o.motorizado) return '';
+  return ' <span title="Ya está en ruta: no se puede cerrar hasta completar sus datos" ' +
+    'style="font-size:11px;font-weight:600;color:var(--color-amber-text);background:var(--color-amber-bg);padding:2px 8px;border-radius:8px;white-space:nowrap">' +
+    '<i class="ti ti-motorbike"></i> Asignada a ' + _escPend(o.motorizado) + '</span>';
+}
+
 function _filaPendienteHTML(o, subiendo) {
   var id = _escPend(o.id);
   var hora = _horaPend(o.hora_asignacion);
@@ -279,6 +297,7 @@ function _filaPendienteHTML(o, subiendo) {
     ' <span style="font-weight:400;color:var(--color-text-tertiary)">· ' +
     (typeof _fechaDisplay === 'function' ? _fechaDisplay(o.fecha) : _escPend(o.fecha)) +
     (hora ? ' · ' + _escPend(hora) : '') + '</span>' +
+    '<span id="pend-asignada-' + id + '">' + _asignadaPendienteHTML(o) + '</span>' +
     (o.falta_tienda ? '' :
       '<div style="font-size:13px;font-weight:500;margin-top:2px"><i class="ti ti-building-store"></i> ' + _escPend(o.tienda) + '</div>');
 

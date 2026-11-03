@@ -12,6 +12,30 @@ Velox Courier — internal management system for a courier/delivery company in L
 
 Última actualización: 3 de noviembre de 2026.
 
+- **Asignar órdenes pendientes con foto + tienda (3 de noviembre de 2026, SOLO EN LOCAL, falta
+  subir).** Sin migración. `server/routes/ordenes.js`, `js/asignacion.js`, `js/entregas-moto.js`,
+  `js/ordenes-pendientes.js`, `css/components.css`. **Toca el servidor:** hay que reiniciarlo.
+  - **Asignable** = no pendiente (como siempre, con o sin foto) **o** pendiente con tienda real
+    y foto del producto (`SQL_ASIGNABLE`; `SELECT_ORDEN` devuelve `asignable`). Lo usan
+    Asignación, `filtroPorRol()` (el motorizado ve y se autoasigna las asignables) y
+    `/asignar` (400 explicando si falta la tienda o la foto).
+  - **Sigue pendiente después de asignarla:** la marca `datos_pendientes` no depende del
+    motorizado; queda en "Pendiente" (con la marca "Asignada a X") y con "Por completar" hasta
+    que se completan sus datos.
+  - **No se puede cerrar con datos pendientes** (`ERROR_CIERRE_PENDIENTE`, 400 con
+    `datosPendientes: true`): `/resolver` (ya estaba) y `/estado` cuando cambia a algo distinto
+    de `en-proceso` (mandar el mismo estado pasa). `/completo` no cambia el estado; como
+    "Actualizar orden" lo manda antes que `/estado`, completar los datos y cerrar en el mismo
+    guardado funciona. Motivo: delivery, pago al moto y cobrado salen del distrito y del monto,
+    que faltan; la Caja contaría ceros.
+  - **"Autoasignar todos" no las reparte** (sin distrito no hay zona): se asignan a mano por la
+    foto.
+  - Pantallas: en Asignación, "Por completar", "Distrito por definir" (para todo distrito
+    `SIN DEFINIR`, también el de la cámara azul) y "Cliente por completar", en ámbar. En "Mis
+    entregas de hoy", en vez de EMPEZAR: "Faltan datos: la oficina los está completando", y
+    "Por cobrar: por completar" en vez de "Sin cobro"; al completarse, el refresco de 8 s
+    habilita EMPEZAR. Al cerrar una orden no se salta a una pendiente.
+
 - **"Subir imagen" en las dos cámaras de "Todos los pedidos" (3 de noviembre de 2026, SOLO EN
   LOCAL, falta subir).** Sin migración ni cambios en el servidor (`js/pedidos.js`,
   `pages/pedidos.html`).
@@ -332,9 +356,11 @@ Velox Courier — internal management system for a courier/delivery company in L
     cualquier fecha con su foto y los campos al costado, "Guardar" por fila
     (`PATCH /:id/completar-datos`, con `ifVersion`). Endpoints: `GET /pendientes-datos` y
     `GET /pendientes-datos/total`. Solo admin/operador.
-  - En "Todos los pedidos" se ven con la marca "Por completar". **No** aparecen en
-    Asignación, el motorizado no las ve (`filtroPorRol`) y `/asignar` las rechaza. La tienda
-    comodín no se lista en `GET /tiendas` ni se puede editar.
+  - En "Todos los pedidos" se ven con la marca "Por completar". Desde el 3/11 se pueden
+    **asignar** apenas tienen tienda real + foto (ver la nota de esa fecha arriba); sin eso no
+    aparecen en Asignación, el motorizado no las ve (`filtroPorRol`) y `/asignar` las rechaza.
+    Con datos pendientes **no se pueden cerrar**. La tienda comodín no se lista en
+    `GET /tiendas` ni se puede editar.
   - `POST /` y `/rafaga` reintentan si dos órdenes calculan el mismo código `C-xxxx` a la vez
     (`insertarConCodigoNuevo`).
 

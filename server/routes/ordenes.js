@@ -64,6 +64,24 @@ const CAMPOS_PENDIENTES = ['destinatario', 'distrito', 'cobrado'];
 
 const tieneTiendaReal = f => !!f.tienda && f.tienda !== TIENDA_SIN_DEFINIR;
 
+/* ASIGNABLE: una orden pendiente igual se puede asignar (y sale a la
+   calle) apenas tiene tienda real y foto del producto: el motorizado
+   se guía por la foto. Sigue pendiente ("Por completar", ventana
+   "Pendiente") hasta que se completan sus datos, y mientras tanto no
+   se puede cerrar (ver ERROR_CIERRE_PENDIENTE). Las órdenes no
+   pendientes son asignables como siempre, con o sin foto.
+   SQL_ASIGNABLE espera los alias o (ordenes) y t (tiendas). */
+const SQL_TIENE_FOTO_PRODUCTO = `EXISTS (SELECT 1 FROM ordenes_fotos fp
+  WHERE fp.id_orden = o.id AND fp.tipo = 'foto_producto' AND fp.url <> '')`;
+const SQL_ASIGNABLE = `(o.datos_pendientes = 0 OR (t.nombre <> '${TIENDA_SIN_DEFINIR}' AND ${SQL_TIENE_FOTO_PRODUCTO}))`;
+
+/* Una orden con datos pendientes no se cierra (entregado, ausente,
+   cancelado, reprogramado, no entregado...): delivery, pago al moto y
+   cobrado salen del distrito y del monto, que todavía faltan, y la
+   Caja contaría ceros. La oficina completa los datos y recién ahí se
+   puede cerrar. La usan /estado y /resolver. */
+const ERROR_CIERRE_PENDIENTE = 'A esta orden todavía le faltan datos ("Por completar"): la oficina tiene que completarlos antes de cerrarla.';
+
 /* f = fila con tienda y distrito (nombres), dest_nombre y dest_telefono */
 const CHEQUEOS_DATOS_PENDIENTES = {
   tienda:       tieneTiendaReal,
@@ -196,16 +214,18 @@ function leerIdSubida(valor) {
    · admin / operador / visor → ven todo
    · motorizado               → las suyas + las que no tienen a
      nadie asignado todavía (para poder autoasignarse en
-     "Asignación"; nunca las de otro motorizado). Nunca ve las de
-     ráfaga con datos pendientes: no hay nada que repartir todavía.
+     "Asignación"; nunca las de otro motorizado). De las de ráfaga
+     con datos pendientes ve solo las asignables (tienda real + foto,
+     ver SQL_ASIGNABLE): las demás no tienen nada que repartir todavía.
    · tienda                   → solo las de su tienda
    Se aplica en el servidor: el cliente no puede saltárselo.
+   Espera los alias o (ordenes) y t (tiendas), como SELECT_ORDEN.
 ──────────────────────────────────────────────────────────── */
 function filtroPorRol(usuario, request) {
   if (usuario.rol === 'motorizado') {
     if (!usuario.id_motorizado) return { sql: 'AND 1 = 0' }; // sin vínculo: no ve nada
     request.input('scopeMoto', sql.Int, usuario.id_motorizado);
-    return { sql: 'AND (o.id_motorizado = @scopeMoto OR o.id_motorizado IS NULL) AND o.datos_pendientes = 0' };
+    return { sql: `AND (o.id_motorizado = @scopeMoto OR o.id_motorizado IS NULL) AND ${SQL_ASIGNABLE}` };
   }
   if (usuario.rol === 'tienda') {
     if (!usuario.id_tienda) return { sql: 'AND 1 = 0' };
@@ -256,6 +276,9 @@ const SELECT_ORDEN = `
     (SELECT COUNT(*) FROM ordenes_fotos WHERE id_orden = o.id AND tipo = 'foto_devolucion') AS fotos_devolucion_total,
     /* Orden de ráfaga a la que todavía le faltan datos ("Por completar") */
     o.datos_pendientes,
+    /* Se puede asignar (Asignación): no pendiente, o pendiente con
+       tienda real y foto (ver SQL_ASIGNABLE) */
+    CAST(CASE WHEN ${SQL_ASIGNABLE} THEN 1 ELSE 0 END AS BIT) AS asignable,
     o.delivery_base, o.monto_adicional, o.delivery_total,
     o.monto_cobrado, o.monto_producto,
     o.pago_moto_base, o.pago_moto_adicional, o.pago_moto_total,
@@ -817,6 +840,18 @@ router.patch('/:id/estado', async (req, res) => {
       return res.status(400).json({ error: 'Condición especial no válida' });
     }
 
+    /* Con datos pendientes no se cierra (ver ERROR_CIERRE_PENDIENTE).
+       "Actualizar orden" manda siempre el estado: si no cambia, pasa.
+       Como /completo va antes, si ese mismo guardado completó los
+       datos, la marca ya se apagó y el cierre pasa. */
+    const previa = await pool.request()
+      .input('id', sql.BigInt, req.params.id)
+      .query(`SELECT estado, datos_pendientes FROM ordenes WHERE id = @id`);
+    if (!previa.recordset[0]) return res.status(404).json({ error: 'Orden no encontrada' });
+    if (previa.recordset[0].datos_pendientes && estado !== 'en-proceso' && estado !== previa.recordset[0].estado) {
+      return res.status(400).json({ error: ERROR_CIERRE_PENDIENTE, datosPendientes: true });
+    }
+
     /* Un motorizado no puede cambiar el método de pago ni la condición
        especial (aunque los mande en el body) — se ignoran y se
        conserva lo que ya había. La UI ya los muestra bloqueados; esto
@@ -909,7 +944,7 @@ router.patch('/:id/resolver', async (req, res) => {
       return res.status(400).json({ error: 'Esta orden no tiene motorizado asignado.' });
     }
     if (orden.datos_pendientes) {
-      return res.status(400).json({ error: 'A esta orden todavía le faltan datos ("Por completar").' });
+      return res.status(400).json({ error: ERROR_CIERRE_PENDIENTE, datosPendientes: true });
     }
 
     /* Medio de pago: solo al entregar una contraentrega */
@@ -1287,11 +1322,15 @@ router.patch('/:id/asignar', async (req, res) => {
     const actualRes = await pool.request()
       .input('id', sql.BigInt, req.params.id)
       .query(`
-        SELECT id_tienda, id_motorizado, estado, pago_velox, datos_pendientes,
-               CONVERT(varchar, fecha, 23)            AS fecha,
-               CONVERT(varchar, fecha_asignacion, 23) AS fecha_asignacion,
-               CONVERT(varchar, fecha_reparto, 23)    AS fecha_reparto
-        FROM ordenes WHERE id = @id
+        SELECT o.id_tienda, o.id_motorizado, o.estado, o.pago_velox, o.datos_pendientes,
+               CONVERT(varchar, o.fecha, 23)            AS fecha,
+               CONVERT(varchar, o.fecha_asignacion, 23) AS fecha_asignacion,
+               CONVERT(varchar, o.fecha_reparto, 23)    AS fecha_reparto,
+               t.nombre AS tienda,
+               CASE WHEN ${SQL_TIENE_FOTO_PRODUCTO} THEN 1 ELSE 0 END AS tiene_foto
+        FROM ordenes o
+        JOIN tiendas t ON t.id = o.id_tienda
+        WHERE o.id = @id
       `);
     const actual = actualRes.recordset[0];
     if (!actual) return res.status(404).json({ error: 'Orden no encontrada' });
@@ -1302,10 +1341,17 @@ router.patch('/:id/asignar', async (req, res) => {
       return res.status(400).json({ error: 'Ese motorizado está inactivo: no se le pueden asignar órdenes.' });
     }
 
-    /* Una orden de ráfaga con datos pendientes no se puede asignar:
-       todavía no se sabe de qué tienda es ni a quién se entrega */
+    /* Una orden de ráfaga con datos pendientes se puede asignar solo
+       si ya tiene tienda real y foto (ver SQL_ASIGNABLE): el
+       motorizado se guía por la foto. Sigue pendiente hasta que se
+       completan los datos, y hasta entonces no se puede cerrar. */
     if (id_motorizado && actual.datos_pendientes) {
-      return res.status(400).json({ error: 'Esta orden todavía tiene datos por completar (ver "Pendiente").' });
+      if (!tieneTiendaReal(actual)) {
+        return res.status(400).json({ error: 'A esta orden le falta la tienda: elígela en "Pendiente" antes de asignarla.' });
+      }
+      if (!actual.tiene_foto) {
+        return res.status(400).json({ error: 'Esta orden todavía no tiene la foto del producto (puede estar subiendo): espera a que llegue para asignarla.' });
+      }
     }
 
     /* fecha_asignacion = día de reparto (lo que manda para la lista,

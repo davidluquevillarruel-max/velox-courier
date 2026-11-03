@@ -29,9 +29,6 @@ var _ENT_MAX_FOTOS_DETALLE = 3;
    orden" solo la piden Pago tienda y Pago Velox: ver _MEDIOS_PAGO) */
 var _ENT_MEDIOS_CON_FOTO = ['yape-motorizado', 'efectivo-motorizado', 'pago-tienda', 'pago-empresa'];
 
-/* Tipos de foto que además se pueden subir desde la galería */
-var _ENT_TIPOS_CON_GALERIA = ['evidencia_medio_pago', 'foto_no_entregado'];
-
 var _ENT_OTROS = [
   { value: 'reprogramado', label: 'Reprogramado', foto: 'foto_reprogramado' },
   { value: 'ausente',      label: 'Ausente',      foto: 'foto_ausente' },
@@ -255,31 +252,24 @@ window.elegirModoEntrega = function(modo) {
 };
 
 /* Casillero de foto. idx solo para las de "no entregado" (varias).
-   Los tipos de _ENT_TIPOS_CON_GALERIA llevan dos botones abajo:
-   "Tomar foto" (cámara) y "Subir imagen" (galería). */
+   Todos llevan dos botones abajo: "Tomar foto" (cámara) y "Subir
+   imagen" (galería), por si la cámara del teléfono falla. Las dos
+   terminan igual en el borrador (ver _guardarFotoEnt). */
 function _slotFotoEnt(tipo, titulo, blob, idx) {
   var url = blob ? _urlBlobEnt(blob) : '';
   var arg = '\'' + tipo + '\'' + (idx != null ? ', ' + idx : '');
-  if (_ENT_TIPOS_CON_GALERIA.indexOf(tipo) !== -1) {
-    return '<div class="foto-slot-doble">' +
-        '<div class="foto-slot' + (blob ? ' lista' : '') + '">' +
-          (blob ? '<img src="' + url + '" alt="">' : '<i class="ti ti-photo"></i>') +
-          '<span>' + _escEnt(titulo) +
-            '<span class="foto-slot-estado">' + (blob ? 'Lista — puedes cambiarla' : 'Falta') + '</span>' +
-          '</span>' +
-        '</div>' +
-        '<div class="foto-slot-botones">' +
-          '<button type="button" class="entrega-opcion" onclick="tomarFotoEntrega(' + arg + ')"><i class="ti ti-camera"></i> Tomar foto</button>' +
-          '<button type="button" class="entrega-opcion" onclick="subirImagenEntrega(' + arg + ')"><i class="ti ti-photo-up"></i> Subir imagen</button>' +
-        '</div>' +
-      '</div>';
-  }
-  return '<button type="button" class="foto-slot' + (blob ? ' lista' : '') + '" onclick="tomarFotoEntrega(' + arg + ')">' +
-      (blob ? '<img src="' + url + '" alt="">' : '<i class="ti ti-camera"></i>') +
-      '<span>' + _escEnt(titulo) +
-        '<span class="foto-slot-estado">' + (blob ? 'Lista — toca para repetirla' : 'Falta — toca para tomarla') + '</span>' +
-      '</span>' +
-    '</button>';
+  return '<div class="foto-slot-doble">' +
+      '<div class="foto-slot' + (blob ? ' lista' : '') + '">' +
+        (blob ? '<img src="' + url + '" alt="">' : '<i class="ti ti-photo"></i>') +
+        '<span>' + _escEnt(titulo) +
+          '<span class="foto-slot-estado">' + (blob ? 'Lista — puedes cambiarla' : 'Falta') + '</span>' +
+        '</span>' +
+      '</div>' +
+      '<div class="foto-slot-botones">' +
+        '<button type="button" class="entrega-opcion" onclick="tomarFotoEntrega(' + arg + ')"><i class="ti ti-camera"></i> Tomar foto</button>' +
+        '<button type="button" class="entrega-opcion" onclick="subirImagenEntrega(' + arg + ')"><i class="ti ti-photo-up"></i> Subir imagen</button>' +
+      '</div>' +
+    '</div>';
 }
 
 /* Una URL por Blob, reusada entre repintados (se liberan al cerrar la orden) */
@@ -460,8 +450,9 @@ window.tomarFotoEntrega = async function(tipo, idx) {
 };
 
 /* Galería: el input sin "capture" deja elegir una imagen ya guardada
-   (captura del Yape, foto del voucher). Se comprime igual que la de
-   la cámara y queda en el borrador; la sube la cola al confirmar. */
+   (captura del Yape, foto del voucher, o cualquier foto si la cámara
+   falla). Se comprime igual que la de la cámara y queda en el
+   borrador; la sube la cola al confirmar. */
 var _entDestinoGaleria = null;
 
 function _inputGaleriaEnt() {

@@ -12,6 +12,13 @@ Velox Courier — internal management system for a courier/delivery company in L
 
 Última actualización: 2 de noviembre de 2026.
 
+- **"Subir imagen" en todas las fotos del motorizado (2 de noviembre de 2026, SOLO EN LOCAL,
+  falta subir).** Sin migración ni cambios en el servidor. En "Mis entregas de hoy"
+  (`js/entregas-moto.js`, `_slotFotoEnt`) la foto de entrega, la del cambio y las de OTROS
+  (reprogramado / ausente / cancelado) ahora tienen "Tomar foto" y "Subir imagen", como ya
+  tenían el pago y DETALLE, por si la cámara falla. Se borró `_ENT_TIPOS_CON_GALERIA`. Mismo
+  camino que antes: galería → compresión → borrador → cola → R2 después de `/resolver`.
+
 - **Asignación con foto del producto (2 de noviembre de 2026, SOLO EN LOCAL, falta subir).** Sin
   migración ni cambios en el servidor: basta `git push` y, en el servidor, `git pull` +
   `pm2 restart velox`. Commits `4894925`, `167c29e`, `16f4eca` (todo en `js/asignacion.js` y
@@ -131,10 +138,11 @@ Velox Courier — internal management system for a courier/delivery company in L
     **OTROS**: reprogramado / ausente / cancelado, cada uno con su foto y un comentario opcional.
     **DETALLE** (no entregado): motivo de una lista (no contesta, dirección errada, cliente no
     tenía el dinero, rechazó el producto, otro + texto) y de 1 a 3 fotos.
-  - La foto del pago y las de DETALLE tienen dos botones: "Tomar foto" (cámara) y "Subir imagen"
-    (galería, para la captura del Yape o del voucher; `_ENT_TIPOS_CON_GALERIA`). La imagen se
-    comprime igual que la foto y sigue el mismo camino (borrador → cola → R2). Entrega, cambio y
-    OTROS: solo cámara en vivo.
+  - **Todas** las fotos de esta vista (entrega, cambio, pago, OTROS y DETALLE) tienen dos
+    botones: "Tomar foto" (cámara) y "Subir imagen" (galería: captura del Yape, voucher, o
+    cualquier foto si la cámara falla; `subirImagenEntrega`). La imagen se comprime igual que la
+    foto y sigue el mismo camino (borrador → cola → R2). Hasta el 2/11 entrega, cambio y OTROS
+    eran solo cámara (ver la nota de esa fecha arriba).
   - Cerrar es un solo pedido nuevo, `PATCH /ordenes/:id/resolver` (un UPDATE: estado, medio de
     pago, motivo). Solo órdenes `en-proceso` con motorizado (409 `yaResuelta` si ya se cerró),
     con `ifVersion`, y revisa que el día no esté pagado en la Caja (`bloqueoPorResolverEnDiaPagado`;

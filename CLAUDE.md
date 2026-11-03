@@ -12,17 +12,18 @@ Velox Courier — internal management system for a courier/delivery company in L
 
 Última actualización: 2 de noviembre de 2026.
 
-- **"Subir imagen" en todas las fotos del motorizado (2 de noviembre de 2026, SOLO EN LOCAL,
-  falta subir).** Sin migración ni cambios en el servidor. En "Mis entregas de hoy"
+- **"Subir imagen" en todas las fotos del motorizado (2 de noviembre de 2026, commit `d764f63`,
+  pusheado a GitHub; FALTA `git pull` + `pm2 restart velox` en el servidor).** Sin migración ni
+  cambios en el servidor. En "Mis entregas de hoy"
   (`js/entregas-moto.js`, `_slotFotoEnt`) la foto de entrega, la del cambio y las de OTROS
   (reprogramado / ausente / cancelado) ahora tienen "Tomar foto" y "Subir imagen", como ya
   tenían el pago y DETALLE, por si la cámara falla. Se borró `_ENT_TIPOS_CON_GALERIA`. Mismo
   camino que antes: galería → compresión → borrador → cola → R2 después de `/resolver`.
 
-- **Asignación con foto del producto (2 de noviembre de 2026, SOLO EN LOCAL, falta subir).** Sin
-  migración ni cambios en el servidor: basta `git push` y, en el servidor, `git pull` +
-  `pm2 restart velox`. Commits `4894925`, `167c29e`, `16f4eca` (todo en `js/asignacion.js` y
-  `css/components.css`). Probado por el usuario en local.
+- **Asignación con foto del producto (2 de noviembre de 2026, HECHO en producción).** Confirmado
+  por el usuario el 2 de noviembre de 2026: `git pull` + `pm2 restart velox`, sin migración.
+  Último commit en producción: `f5a39f4`. Commits `4894925`, `167c29e`, `16f4eca` (todo en
+  `js/asignacion.js` y `css/components.css`).
   - En "Pedidos pendientes de asignación" y en "Órdenes asignadas al motorizado" cada orden
     muestra una miniatura de 64 px de su `foto_producto_url` (la que ya devuelve `GET /ordenes`,
     también al motorizado para las sin asignar), con `loading="lazy"` para gastar menos datos.

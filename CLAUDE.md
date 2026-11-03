@@ -12,9 +12,9 @@ Velox Courier — internal management system for a courier/delivery company in L
 
 Última actualización: 2 de noviembre de 2026.
 
-- **"Subir imagen" en todas las fotos del motorizado (2 de noviembre de 2026, commit `d764f63`,
-  pusheado a GitHub; FALTA `git pull` + `pm2 restart velox` en el servidor).** Sin migración ni
-  cambios en el servidor. En "Mis entregas de hoy"
+- **"Subir imagen" en todas las fotos del motorizado (2 de noviembre de 2026, HECHO en
+  producción).** Confirmado por el usuario el 2 de noviembre de 2026: `git pull` + `pm2 restart
+  velox`, sin migración. Último commit en producción: `036875a` (cambio en `d764f63`). En "Mis entregas de hoy"
   (`js/entregas-moto.js`, `_slotFotoEnt`) la foto de entrega, la del cambio y las de OTROS
   (reprogramado / ausente / cancelado) ahora tienen "Tomar foto" y "Subir imagen", como ya
   tenían el pago y DETALLE, por si la cámara falla. Se borró `_ENT_TIPOS_CON_GALERIA`. Mismo

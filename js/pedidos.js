@@ -488,9 +488,26 @@ window.cerrarModalOrden = function() {
 var _FOTO_MAX_ANCHO = 1280;
 var _FOTO_CALIDAD   = 0.7;
 
-/* Cámara en vivo: stream activo y si la captura viene del flujo rápido */
+/* Cámara en vivo: stream activo y si la captura viene del flujo rápido.
+   _camaraSinVivo: la cámara en vivo no está (sin soporte o no abrió);
+   entonces "Capturar" abre la cámara nativa del teléfono. */
 var _camaraStream      = null;
 var _camaraFlujoRapido = false;
+var _camaraSinVivo     = false;
+
+/* Aviso dentro de un visor de cámara cuando la cámara en vivo no está:
+   se oculta el video y quedan "Capturar" (cámara nativa) y "Subir
+   imagen" (galería). Lo comparten la cámara azul y la ráfaga. */
+function _avisoSinCamaraEnVivo(idVideo, idAviso, detalle) {
+  var video = document.getElementById(idVideo);
+  var aviso = document.getElementById(idAviso);
+  if (video) video.style.display = detalle == null ? 'block' : 'none';
+  if (!aviso) return;
+  aviso.style.display = detalle == null ? 'none' : 'block';
+  aviso.textContent = detalle == null ? '' :
+    'No se pudo abrir la cámara en vivo' + (detalle ? ' (' + detalle + ')' : '') +
+    '. «Capturar» abre la cámara del teléfono, o subí la imagen desde la galería.';
+}
 
 /* Botón de cámara de la barra: abre la cámara y, con la foto tomada,
    abre el modal en modo rápido */
@@ -530,9 +547,13 @@ function _overlayCamara() {
     '<div style="width:100%;max-width:520px;display:flex;flex-direction:column;gap:12px">' +
       '<video id="camara-orden-video" autoplay playsinline muted ' +
              'style="width:100%;max-height:68vh;background:#000;border-radius:var(--radius-md);object-fit:contain"></video>' +
+      '<div id="camara-orden-aviso" style="display:none;color:#fff;text-align:center;font-size:14px;padding:24px 8px"></div>' +
       '<div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">' +
         '<button type="button" class="btn btn-primary" onclick="capturarFotoCamara()">' +
           '<i class="ti ti-camera"></i> Capturar' +
+        '</button>' +
+        '<button type="button" class="btn btn-primary" onclick="subirImagenCamaraOrden()">' +
+          '<i class="ti ti-photo-up"></i> Subir imagen' +
         '</button>' +
         '<button type="button" class="btn" onclick="cerrarCamaraOrden()">' +
           '<i class="ti ti-x"></i> Cancelar' +
@@ -551,29 +572,47 @@ function _dispararInputCamara(esFlujoRapido) {
 
 window.abrirCamaraOrden = async function(esFlujoRapido) {
   _camaraFlujoRapido = !!esFlujoRapido;
+  _camaraSinVivo = false;
 
-  /* Navegador sin getUserMedia o sin contexto seguro (http por IP) */
+  var overlay = _overlayCamara();
+  _avisoSinCamaraEnVivo('camara-orden-video', 'camara-orden-aviso', null);
+  overlay.style.display = 'flex';
+
+  /* Navegador sin getUserMedia o sin contexto seguro (http por IP):
+     el visor queda con "Capturar" (cámara nativa) y "Subir imagen" */
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-    _dispararInputCamara(esFlujoRapido);
+    _camaraSinVivo = true;
+    _avisoSinCamaraEnVivo('camara-orden-video', 'camara-orden-aviso', '');
     return;
   }
 
-  var overlay = _overlayCamara();
-  overlay.style.display = 'flex';
   var video = document.getElementById('camara-orden-video');
-
   try {
-    _camaraStream = await _pedirStreamCamara();
+    var stream = await _pedirStreamCamara();
+    /* Ya se cerró el visor (Cancelar / "Subir imagen" mientras se
+       pedía el permiso): no dejar la cámara prendida */
+    if (overlay.style.display === 'none') {
+      stream.getTracks().forEach(function(t) { t.stop(); });
+      return;
+    }
+    _camaraStream = stream;
     video.srcObject = _camaraStream;
     try { await video.play(); } catch (e) { /* autoplay ya se encarga */ }
   } catch (err) {
-    /* Permiso denegado, cámara ocupada, o sin cámara: se usa el input */
-    cerrarCamaraOrden();
-    if (typeof showNotif === 'function') {
-      showNotif('No se pudo abrir la cámara (' + (err.name || 'error') + '). Elegí la foto a mano.', 4000);
-    }
-    _dispararInputCamara(esFlujoRapido);
+    /* Permiso denegado, cámara ocupada o rota: el visor no se cierra,
+       así se puede elegir la cámara nativa o la galería */
+    _camaraSinVivo = true;
+    _avisoSinCamaraEnVivo('camara-orden-video', 'camara-orden-aviso', err.name || 'error');
   }
+};
+
+/* "Subir imagen" del visor: elige de la galería y sigue el mismo
+   camino que la foto tomada (onFotoProductoSeleccionada). En el flujo
+   rápido abre "Nueva orden"; desde el modal usa su adjuntar de siempre. */
+window.subirImagenCamaraOrden = function() {
+  var input = document.getElementById(_camaraFlujoRapido ? 'f-orden-foto-galeria-rapida' : 'f-orden-foto-archivo');
+  if (input) input.click();
+  cerrarCamaraOrden();
 };
 
 /* Pide la cámara (la comparten la foto de la orden y la ráfaga).
@@ -601,6 +640,11 @@ function _cuadroDeVideo(video) {
 
 /* Toma el frame actual del video, ya escalado, y lo deja listo */
 window.capturarFotoCamara = function() {
+  if (_camaraSinVivo) {
+    _dispararInputCamara(_camaraFlujoRapido);
+    cerrarCamaraOrden();
+    return;
+  }
   var canvas = _cuadroDeVideo(document.getElementById('camara-orden-video'));
   if (!canvas) {
     if (typeof showNotif === 'function') showNotif('La cámara todavía no está lista, probá de nuevo');
@@ -750,6 +794,10 @@ var _rafagaCreadas      = {};   /* idSubida → código, de las órdenes ya crea
 var _rafagaUltimoCodigo = '';
 var _rafagaAvisoMemoria = false;
 var _rafagaMiniaturaUrl = null;
+var _rafagaSinVivo      = false; /* sin cámara en vivo: "Capturar" usa la cámara nativa */
+/* Sube en cada ráfaga: una imagen de la galería que termina de
+   prepararse después de "Terminar" no toca el contador de la siguiente */
+var _rafagaSesion       = 0;
 
 /* Cuándo se tomó la foto: la orden queda con esa fecha aunque se
    cree al otro día (si recién vuelve la señal) */
@@ -777,9 +825,13 @@ function _overlayRafaga() {
         '<img id="rafaga-miniatura" alt="Última foto" ' +
              'style="display:none;position:absolute;left:8px;bottom:8px;width:64px;height:64px;object-fit:cover;border:2px solid #fff;border-radius:var(--radius-md)">' +
       '</div>' +
+      '<div id="camara-rafaga-aviso" style="display:none;color:#fff;text-align:center;font-size:14px;padding:24px 8px"></div>' +
       '<div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">' +
         '<button type="button" class="btn btn-rafaga" onclick="capturarFotoRafaga()">' +
           '<i class="ti ti-camera-bolt"></i> Capturar' +
+        '</button>' +
+        '<button type="button" class="btn btn-rafaga" onclick="subirImagenesRafaga()">' +
+          '<i class="ti ti-photo-up"></i> Subir imágenes' +
         '</button>' +
         '<button type="button" class="btn" onclick="terminarRafaga()">' +
           '<i class="ti ti-check"></i> Terminar' +
@@ -798,7 +850,7 @@ function _pintarContadorRafaga() {
   var creadas = Object.keys(_rafagaIds).filter(function(id) { return _rafagaCreadas[id]; }).length;
 
   if (!_rafagaTomadas) {
-    el.textContent = 'Cada foto crea una orden. Los datos se completan después en "Pendiente".';
+    el.textContent = 'Cada foto (tomada o subida) crea una orden. Los datos se completan después en "Pendiente".';
     return;
   }
   var partes = [
@@ -837,12 +889,9 @@ window.abrirCamaraRafaga = function() {
       return CATALOGO_TIENDAS.map(function(t) { return { value: t.nombre, label: t.nombre }; });
     });
   }
-  /* Con cámara en vivo arranca vacío, para elegirla a conciencia en
-     cada ráfaga. Sin cámara en vivo (una foto por toque de ⚡) se
-     repite la última, así no hay que buscarla en cada foto. */
-  var sinCamaraEnVivo = !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia;
-  if (sinCamaraEnVivo && _rafagaTienda) _comboTiendaRafaga.setValor(_rafagaTienda);
-  else _comboTiendaRafaga.limpiar();
+  /* Arranca vacío, para elegirla a conciencia en cada ráfaga (el visor
+     queda abierto aun sin cámara en vivo, así que se elige una vez) */
+  _comboTiendaRafaga.limpiar();
 
   var errEl = document.getElementById('rafaga-tienda-error');
   if (errEl) errEl.style.display = 'none';
@@ -864,49 +913,57 @@ window.confirmarTiendaRafaga = function() {
   }
   _rafagaTienda = tienda;
   cerrarSelectorTiendaRafaga();
-  /* Sin await: el respaldo sin cámara en vivo hace input.click() antes
-     del primer await, todavía dentro del toque del usuario */
   _iniciarCamaraRafaga();
 };
 
 async function _iniciarCamaraRafaga() {
+  _rafagaSesion++;
   _rafagaTomadas = 0;
   _rafagaIds = {};
   _rafagaUltimoCodigo = '';
   _rafagaAvisoMemoria = false;
-
-  /* Sin cámara en vivo (http por IP): una foto por vez con el input */
-  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-    var input = document.getElementById('f-orden-foto-rafaga');
-    if (input) input.click();
-    return;
-  }
+  _rafagaSinVivo = false;
 
   var overlay = _overlayRafaga();
   var mini = document.getElementById('rafaga-miniatura');
   if (mini) mini.style.display = 'none';
+  _avisoSinCamaraEnVivo('camara-rafaga-video', 'camara-rafaga-aviso', null);
   _pintarContadorRafaga();
   overlay.style.display = 'flex';
-  var video = document.getElementById('camara-rafaga-video');
 
+  /* Sin cámara en vivo (http por IP): el visor queda con "Capturar"
+     (cámara nativa, de a una) y "Subir imágenes" (galería, varias) */
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    _rafagaSinVivo = true;
+    _avisoSinCamaraEnVivo('camara-rafaga-video', 'camara-rafaga-aviso', '');
+    return;
+  }
+
+  var video = document.getElementById('camara-rafaga-video');
   try {
-    _rafagaStream = await _pedirStreamCamara();
+    var stream = await _pedirStreamCamara();
+    /* Ya se terminó mientras se pedía el permiso: apagar la cámara */
+    if (overlay.style.display === 'none') {
+      stream.getTracks().forEach(function(t) { t.stop(); });
+      return;
+    }
+    _rafagaStream = stream;
     video.srcObject = _rafagaStream;
     try { await video.play(); } catch (e) { /* autoplay ya se encarga */ }
     _pedirPantallaEncendida();
   } catch (err) {
-    _cerrarCamaraRafaga();
-    if (typeof showNotif === 'function') {
-      showNotif('No se pudo abrir la cámara (' + (err.name || 'error') + '). Tomá las fotos de a una.', 4000);
-    }
-    var inputRespaldo = document.getElementById('f-orden-foto-rafaga');
-    if (inputRespaldo) inputRespaldo.click();
+    /* Permiso denegado, cámara ocupada o rota: el visor no se cierra */
+    _rafagaSinVivo = true;
+    _avisoSinCamaraEnVivo('camara-rafaga-video', 'camara-rafaga-aviso', err.name || 'error');
   }
 };
 
-/* Guarda una foto de la ráfaga en la cola. No espera a la red. */
-async function _encolarFotoDeRafaga(blob, momento) {
-  var r = await encolarFotoRafaga(blob, momento, _rafagaTienda);
+/* Guarda una foto de la ráfaga en la cola. No espera a la red. La
+   tienda y la sesión son las del momento de la foto (no las de ahora:
+   una imagen de la galería puede terminar de prepararse más tarde). */
+async function _encolarFotoDeRafaga(blob, momento, tienda, sesion) {
+  var r = await encolarFotoRafaga(blob, momento, tienda);
+  if (sesion !== _rafagaSesion) return;
   _rafagaIds[r.idSubida] = true;
   if (!r.persistente && !_rafagaAvisoMemoria) {
     _rafagaAvisoMemoria = true;
@@ -917,6 +974,14 @@ async function _encolarFotoDeRafaga(blob, momento) {
 }
 
 window.capturarFotoRafaga = function() {
+  /* Sin cámara en vivo: cámara nativa, una foto por vez (el visor
+     sigue abierto y la cuenta en onFotoRafagaSeleccionada) */
+  if (_rafagaSinVivo) {
+    var input = document.getElementById('f-orden-foto-rafaga');
+    if (input) input.click();
+    return;
+  }
+
   var canvas = _cuadroDeVideo(document.getElementById('camara-rafaga-video'));
   if (!canvas) {
     if (typeof showNotif === 'function') showNotif('La cámara todavía no está lista, probá de nuevo');
@@ -925,6 +990,7 @@ window.capturarFotoRafaga = function() {
 
   /* Se cuenta ya, sin esperar al JPEG: así se puede seguir tocando */
   var momento = _momentoFoto();
+  var tienda = _rafagaTienda, sesion = _rafagaSesion;
   _rafagaTomadas++;
   _pintarContadorRafaga();
   var destello = document.getElementById('rafaga-destello');
@@ -936,20 +1002,32 @@ window.capturarFotoRafaga = function() {
   canvas.toBlob(async function(blob) {
     try {
       if (!blob) throw new Error('No se pudo capturar la foto');
-      var mini = document.getElementById('rafaga-miniatura');
-      if (mini) {
-        if (_rafagaMiniaturaUrl) URL.revokeObjectURL(_rafagaMiniaturaUrl);
-        _rafagaMiniaturaUrl = URL.createObjectURL(blob);
-        mini.src = _rafagaMiniaturaUrl;
-        mini.style.display = 'block';
-      }
-      await _encolarFotoDeRafaga(blob, momento);
+      _mostrarMiniaturaRafaga(blob, sesion);
+      await _encolarFotoDeRafaga(blob, momento, tienda, sesion);
     } catch (err) {
-      _rafagaTomadas--;
+      if (sesion === _rafagaSesion) _rafagaTomadas--;
       if (typeof showNotif === 'function') showNotif((err && err.message) || 'No se pudo guardar la foto');
     }
     _pintarContadorRafaga();
   }, 'image/jpeg', _FOTO_CALIDAD);
+};
+
+/* La última foto en la esquina del visor (solo si sigue siendo la
+   misma ráfaga) */
+function _mostrarMiniaturaRafaga(blob, sesion) {
+  if (sesion !== _rafagaSesion) return;
+  var mini = document.getElementById('rafaga-miniatura');
+  if (!mini) return;
+  if (_rafagaMiniaturaUrl) URL.revokeObjectURL(_rafagaMiniaturaUrl);
+  _rafagaMiniaturaUrl = URL.createObjectURL(blob);
+  mini.src = _rafagaMiniaturaUrl;
+  mini.style.display = 'block';
+}
+
+/* "Subir imágenes": varias de la galería de una vez */
+window.subirImagenesRafaga = function() {
+  var input = document.getElementById('f-orden-fotos-rafaga-galeria');
+  if (input) input.click();
 };
 
 function _cerrarCamaraRafaga() {
@@ -979,26 +1057,42 @@ window.terminarRafaga = function() {
      aparecen solas a medida que se crean. */
   if (typeof abrirPendientes === 'function') abrirPendientes();
   if (typeof showNotif === 'function') {
-    showNotif(tomadas + (tomadas === 1 ? ' foto tomada' : ' fotos tomadas') +
+    showNotif(tomadas + (tomadas === 1 ? ' foto' : ' fotos') +
       ' de ' + _rafagaTienda + '. Las órdenes se crean en segundo plano.', 5000);
   }
 };
 
-/* Respaldo sin cámara en vivo: cada foto elegida crea su orden igual */
+/* Imágenes elegidas para la ráfaga: varias de la galería ("Subir
+   imágenes") o una de la cámara nativa (sin cámara en vivo). Cada
+   una crea su orden igual que una foto capturada: se cuentan ya, se
+   comprimen de a una (en el orden elegido) y entran a la cola, que
+   crea las órdenes y sube las fotos en segundo plano. El visor sigue
+   abierto: "Terminar" cuando ya no hay más que agregar. */
 window.onFotoRafagaSeleccionada = async function(input) {
-  var file = input.files && input.files[0];
-  input.value = '';
-  if (!file) return;
+  var files = Array.prototype.slice.call(input.files || []);
+  input.value = ''; /* permite volver a elegir las mismas */
+  if (!files.length) return;
 
-  try {
-    var blob = await comprimirImagenJPEG(file, _FOTO_MAX_ANCHO, _FOTO_CALIDAD);
-    await _encolarFotoDeRafaga(blob, _momentoFoto());
-  } catch (err) {
-    if (typeof showNotif === 'function') showNotif(err.message || 'No se pudo procesar la foto');
-    return;
+  var tienda = _rafagaTienda, sesion = _rafagaSesion;
+  _rafagaTomadas += files.length;
+  _pintarContadorRafaga();
+
+  var fallidas = 0;
+  for (var i = 0; i < files.length; i++) {
+    try {
+      var blob = await comprimirImagenJPEG(files[i], _FOTO_MAX_ANCHO, _FOTO_CALIDAD);
+      _mostrarMiniaturaRafaga(blob, sesion);
+      await _encolarFotoDeRafaga(blob, _momentoFoto(), tienda, sesion);
+    } catch (err) {
+      fallidas++;
+      if (sesion === _rafagaSesion) _rafagaTomadas--;
+    }
+    _pintarContadorRafaga();
   }
-  if (typeof showNotif === 'function') {
-    showNotif('Foto guardada: la orden se crea en segundo plano. Tocá ⚡ para la siguiente.', 3500);
+
+  if (fallidas && typeof showNotif === 'function') {
+    showNotif(fallidas === 1 ? 'Una imagen no se pudo usar (¿es una foto?).'
+      : fallidas + ' imágenes no se pudieron usar (¿son fotos?).', 5000);
   }
 };
 

@@ -66,9 +66,19 @@
 <input type="file" id="f-orden-foto-rapida" accept="image/*" capture="environment"
        style="display:none" onchange="onFotoProductoSeleccionada(this, true)" />
 
-<!-- Respaldo de la ráfaga cuando no hay cámara en vivo (http por IP):
-     una foto por vez, cada una crea su orden igual -->
+<!-- "Subir imagen" del flujo rápido: imagen ya guardada en la galería
+     (sin capture), sigue el mismo camino que la foto tomada -->
+<input type="file" id="f-orden-foto-galeria-rapida" accept="image/*"
+       style="display:none" onchange="onFotoProductoSeleccionada(this, true)" />
+
+<!-- Respaldo de la ráfaga cuando no hay cámara en vivo (http por IP o
+     la cámara no abre): "Capturar" abre la cámara nativa, una foto por vez -->
 <input type="file" id="f-orden-foto-rafaga" accept="image/*" capture="environment"
+       style="display:none" onchange="onFotoRafagaSeleccionada(this)" />
+
+<!-- "Subir imágenes" de la ráfaga: varias de la galería de una vez,
+     cada una crea su orden igual que una foto capturada -->
+<input type="file" id="f-orden-fotos-rafaga-galeria" accept="image/*" multiple
        style="display:none" onchange="onFotoRafagaSeleccionada(this)" />
 
 <!-- ── KPI Cards ── -->
@@ -449,7 +459,7 @@
       </button>
     </div>
     <div style="font-size:12px;color:var(--color-text-secondary);margin-bottom:16px">
-      Todas las fotos de esta ráfaga se crean con la tienda que elijas. Para otra tienda, terminá y volvé a tocar ⚡.
+      Todas las fotos de esta ráfaga (tomadas o subidas de la galería) se crean con la tienda que elijas. Para otra tienda, terminá y volvé a tocar ⚡.
     </div>
 
     <div>

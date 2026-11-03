@@ -10,7 +10,25 @@ Velox Courier — internal management system for a courier/delivery company in L
 
 ## Estado actual
 
-Última actualización: 2 de noviembre de 2026.
+Última actualización: 3 de noviembre de 2026.
+
+- **"Subir imagen" en las dos cámaras de "Todos los pedidos" (3 de noviembre de 2026, SOLO EN
+  LOCAL, falta subir).** Sin migración ni cambios en el servidor (`js/pedidos.js`,
+  `pages/pedidos.html`).
+  - **Cámara azul** (y la de adentro de "Nueva orden"): el visor tiene "Capturar", "Subir
+    imagen" y "Cancelar". La imagen de la galería sigue el mismo camino que la foto tomada
+    (`onFotoProductoSeleccionada`: comprime, queda en memoria, abre "Nueva orden" en el flujo
+    rápido; entra a la cola al guardar la orden). Input nuevo `f-orden-foto-galeria-rapida`.
+  - **Ráfaga ⚡:** después de la tienda, el visor tiene "Capturar", "Subir imágenes" (varias de
+    la galería, input `f-orden-fotos-rafaga-galeria` con `multiple`) y "Terminar". Cada imagen
+    se cuenta al instante, se comprime de a una en el orden elegido y entra a la cola con
+    `encolarFotoRafaga` y la tienda de esa ráfaga, igual que una foto capturada (la cola crea
+    la orden y sube la foto). `_rafagaSesion` evita que las que terminan de prepararse después
+    de "Terminar" toquen el contador o la tienda de la ráfaga siguiente.
+  - **Si la cámara en vivo no abre** (permiso, cámara rota, http por IP), los dos visores ya no
+    se cierran: ocultan el video, muestran un aviso y "Capturar" abre la cámara nativa
+    (`_camaraSinVivo` / `_rafagaSinVivo`, el respaldo de antes). Si se cierra el visor mientras
+    se pide el permiso, la cámara se apaga al llegar.
 
 - **"Subir imagen" en todas las fotos del motorizado (2 de noviembre de 2026, HECHO en
   producción).** Confirmado por el usuario el 2 de noviembre de 2026: `git pull` + `pm2 restart

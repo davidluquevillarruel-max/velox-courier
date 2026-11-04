@@ -388,7 +388,8 @@ antes: no son parte de este cambio.
 
 ## D-011 · Foto del pago en "Marcar pagado" de Caja Tienda (liquidaciones)
 
-**Estado:** Implementado en local el 4 de noviembre de 2026 (sin push). **Con migración:**
+**Estado:** HECHO: probado y aprobado en local el 4 de noviembre de 2026, pendiente de deploy
+(commit `5d9e9c0`, pusheado a GitHub). **Con migración:**
 `velox_agregar_fotos_pago_tienda.sql` (aplicada en local; en producción va con `sa` antes del
 `git pull`).
 

@@ -12,8 +12,9 @@ Velox Courier — internal management system for a courier/delivery company in L
 
 Última actualización: 3 de noviembre de 2026.
 
-- **Asignar órdenes pendientes con foto + tienda (3 de noviembre de 2026, SOLO EN LOCAL, falta
-  subir).** Sin migración. `server/routes/ordenes.js`, `js/asignacion.js`, `js/entregas-moto.js`,
+- **Asignar órdenes pendientes con foto + tienda (3 de noviembre de 2026, commit `0347988`,
+  pusheado a GitHub; FALTA `git pull` + `pm2 restart velox` en el servidor).** Sin migración
+  (ver D-010 en `DECISIONES.md`). `server/routes/ordenes.js`, `js/asignacion.js`, `js/entregas-moto.js`,
   `js/ordenes-pendientes.js`, `css/components.css`. **Toca el servidor:** hay que reiniciarlo.
   - **Asignable** = no pendiente (como siempre, con o sin foto) **o** pendiente con tienda real
     y foto del producto (`SQL_ASIGNABLE`; `SELECT_ORDEN` devuelve `asignable`). Lo usan
@@ -36,8 +37,8 @@ Velox Courier — internal management system for a courier/delivery company in L
     "Por cobrar: por completar" en vez de "Sin cobro"; al completarse, el refresco de 8 s
     habilita EMPEZAR. Al cerrar una orden no se salta a una pendiente.
 
-- **"Subir imagen" en las dos cámaras de "Todos los pedidos" (3 de noviembre de 2026, SOLO EN
-  LOCAL, falta subir).** Sin migración ni cambios en el servidor (`js/pedidos.js`,
+- **"Subir imagen" en las dos cámaras de "Todos los pedidos" (3 de noviembre de 2026, commit
+  `6d1a986`, pusheado a GitHub; FALTA `git pull` + `pm2 restart velox` en el servidor).** Sin migración ni cambios en el servidor (`js/pedidos.js`,
   `pages/pedidos.html`).
   - **Cámara azul** (y la de adentro de "Nueva orden"): el visor tiene "Capturar", "Subir
     imagen" y "Cancelar". La imagen de la galería sigue el mismo camino que la foto tomada

@@ -4,7 +4,7 @@
 > Sirve también como contexto de arranque para Claude Code: si se copia a `CLAUDE.md`
 > en la raíz del repo, la herramienta lo lee automáticamente al iniciar.
 >
-> Última actualización: 29 de octubre de 2026
+> Última actualización: 3 de noviembre de 2026
 
 ---
 
@@ -334,6 +334,54 @@ transacción (dos gestores al mismo instante podrían colarlo; es improbable). C
 *estado* de una orden en un día ya pagado sigue sin bloquearse, como antes (no es parte de este
 cambio). Al confirmar la devolución de una reprogramada vuelve a su día de creación hasta que se
 reasigne, como pidió el usuario: el día del intento fallido no guarda rastro de ella.
+
+---
+
+## D-010 · Asignar rápido por la foto sin descuadrar la Caja (y "Subir imagen" en las cámaras)
+
+**Estado:** Implementado el 3 de noviembre de 2026 (commits `6d1a986` y `0347988`). Sin
+migración. Pusheado a GitHub; falta `git pull` + `pm2 restart velox` en el servidor.
+
+**Problema.** Cuando llegan muchos pedidos de golpe se cargan con la ráfaga ⚡: cada foto crea una
+orden con su tienda y el resto de los datos (cliente, distrito, monto) se completa después en
+"Pendiente". Hasta ahora esas órdenes **no se podían asignar** hasta completarlas, aunque los
+motorizados se guían por cómo se ve el paquete y podrían salir antes. Además, si la cámara del
+teléfono falla, no había forma de cargar una foto que ya está en la galería.
+
+**Decisión 1: una orden pendiente se puede asignar con tienda real + foto.**
+- "Asignable" = no pendiente (como siempre, con o sin foto) **o** pendiente con tienda real
+  (no el comodín `SIN DEFINIR`) y foto del producto. La regla vive en un solo lugar
+  (`SQL_ASIGNABLE` en `server/routes/ordenes.js`) y la usan la lista de Asignación, el filtro del
+  motorizado (`filtroPorRol`, para que vea y se autoasigne las mismas) y `PATCH /asignar`.
+- **Asignar no la completa:** la marca `datos_pendientes` depende solo de los datos, no del
+  motorizado. Sigue en "Pendiente" (con "Asignada a X", para completar primero las que ya están
+  en ruta) y con "Por completar" hasta que la oficina carga los datos.
+- **"Autoasignar todos" no las reparte:** sin distrito no hay zona; se asignan a mano, por la foto.
+
+**Decisión 2: una orden pendiente no se puede cerrar** (entregada, ausente, cancelada,
+reprogramada, no entregada) hasta completar sus datos: `/resolver` y `/estado` responden 400.
+**Por qué:** el delivery y el pago al motorizado salen de la tarifa del distrito, y el cobrado lo
+carga la oficina. Una orden de ráfaga sin completar tiene todo en 0 y método "sin cobro": si se
+cerrara así, la Caja de ese día contaría ceros (la tienda no pagaría el delivery, el motorizado no
+cobraría, una contraentrega no figuraría y ni siquiera se preguntaría cómo se cobró), y al
+completarla después los montos cambiarían en un día que quizás ya está pagado (ni
+`completar-datos` ni `/completo` revisan días pagados). Así, la orden sale a la calle enseguida
+pero no entra a la Caja hasta tener sus datos. El motorizado la ve en "Mis entregas de hoy" sin
+EMPEZAR ("Faltan datos: la oficina los está completando"); al completarse, el botón aparece solo.
+- **Descartado: dejar cerrarla y completar después.** Habría obligado a definir cómo se registra
+  el cobro sin monto y a recalcular la Caja de días ya pagados.
+
+**Decisión 3: "Subir imagen" en todas las cámaras.** Además de "Tomar foto": la cámara azul
+("Nueva orden"), la ráfaga (varias imágenes de la galería de una vez, cada una crea su orden con
+la tienda de la ráfaga) y, desde el 2/11, todas las fotos de "Mis entregas de hoy". Mismo
+pipeline de siempre (compresión → cola `js/cola-fotos.js` → R2 en segundo plano), sin nada nuevo
+de almacenamiento (ver D-003 y D-008). Si la cámara en vivo no abre, el visor queda abierto con
+un aviso y las dos opciones, en vez de cerrarse.
+
+**Límites aceptados.** Una orden pendiente asignada no tiene dirección ni teléfono hasta que la
+oficina los completa: el motorizado depende de que se carguen mientras está en ruta. Las órdenes
+de la cámara azul (distrito `SIN DEFINIR` pero no pendientes) se siguen pudiendo cerrar como
+antes: no son parte de este cambio.
 
 ---
 

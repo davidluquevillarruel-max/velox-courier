@@ -209,7 +209,7 @@ function _detalleTiendaHTML(idTienda) {
     filas = '<tr><td colspan="10" style="text-align:center;padding:16px;color:var(--color-text-tertiary)">Sin pedidos en este filtro</td></tr>';
   }
   var t = d.totales;
-  return '<div class="caja-detalle"><table>' +
+  return _liquidacionesHTML(d.liquidaciones) + '<div class="caja-detalle"><table>' +
     '<thead><tr><th>N° pedido</th><th>Fecha</th><th>Estado</th><th>Medio de pago</th><th>Delivery</th>' +
       '<th>Retenido</th><th>Saldo</th><th>Pre/Post</th><th>Pago</th><th></th></tr></thead>' +
     '<tbody>' + filas +
@@ -326,10 +326,118 @@ window.toggleDetalleTiendaCaja = async function(idTienda) {
   pintarTiendasCaja();
 };
 
-/* Liquida los días pendientes de la tienda dentro del período filtrado */
-window.marcarTiendaPagada = async function(idTienda) {
-  var t = _cajaResumenTiendas && _cajaResumenTiendas.tiendas.find(function(x) { return x.id === idTienda; });
+/* ════════════════════════════════════════════
+   MARCAR PAGADO con foto del pago
+   1) Paso de foto: cámara (pedirFoto) o "Subir imagen", mín. 1 y
+      hasta 5; las fotos quedan en memoria, ya comprimidas.
+   2) Confirmación de días + monto (la de siempre).
+   3) POST /caja/tiendas/pagar → crea la liquidación (necesita señal).
+   4) Recién ahí cada foto entra a la cola (encolarFotoPagoTienda): el
+      await solo espera IndexedDB, la subida sigue en segundo plano.
+   Si el POST falla, la ventana sigue abierta con las fotos.
+════════════════════════════════════════════ */
+var _MAX_FOTOS_PAGO = 5;
+var _pagoFotos = null;  /* { idTienda, tienda, fotos: [{ blob, url }] } */
+
+function _tiendaCaja(idTienda) {
+  return _cajaResumenTiendas && _cajaResumenTiendas.tiendas.find(function(x) { return x.id === idTienda; });
+}
+
+function _pintarFotosPago() {
+  if (!_pagoFotos) return;
+  var grilla = document.getElementById('pago-foto-grilla');
+  if (grilla) {
+    grilla.innerHTML = _pagoFotos.fotos.map(function(f, i) {
+      return '<div class="pago-foto-mini"><img src="' + f.url + '" alt="Foto ' + (i + 1) + '" />' +
+        '<button type="button" title="Quitar" onclick="quitarFotoPagoTienda(' + i + ')"><i class="ti ti-x"></i></button></div>';
+    }).join('');
+  }
+  var n = _pagoFotos.fotos.length;
+  var lleno = n >= _MAX_FOTOS_PAGO;
+  var set = function(id, prop, v) { var el = document.getElementById(id); if (el) el[prop] = v; };
+  set('pago-foto-contador', 'textContent', n + ' de ' + _MAX_FOTOS_PAGO);
+  set('pago-foto-btn-camara', 'disabled', lleno);
+  set('pago-foto-btn-galeria', 'disabled', lleno);
+  set('pago-foto-btn-continuar', 'disabled', n === 0);
+}
+
+function _agregarFotoPago(blob) {
+  if (!_pagoFotos || !blob) return false;
+  if (_pagoFotos.fotos.length >= _MAX_FOTOS_PAGO) return false;
+  _pagoFotos.fotos.push({ blob: blob, url: URL.createObjectURL(blob) });
+  _pintarFotosPago();
+  return true;
+}
+
+function _cerrarFotosPago() {
+  if (_pagoFotos) _pagoFotos.fotos.forEach(function(f) { URL.revokeObjectURL(f.url); });
+  _pagoFotos = null;
+  var ov = document.getElementById('pago-foto-overlay');
+  if (ov) ov.style.display = 'none';
+}
+
+/* "Marcar pagado": primero el paso de foto */
+window.marcarTiendaPagada = function(idTienda) {
+  var t = _tiendaCaja(idTienda);
   if (!t) return;
+  _cerrarFotosPago();
+  _pagoFotos = { idTienda: idTienda, tienda: t.tienda, fotos: [] };
+  var titulo = document.getElementById('pago-foto-titulo');
+  if (titulo) titulo.textContent = 'Foto del pago · ' + t.tienda;
+  var saldo = parseFloat(t.saldo_pendiente) || 0;
+  var sub = document.getElementById('pago-foto-sub');
+  if (sub) {
+    sub.textContent = t.dias_pendientes + ' día' + (t.dias_pendientes === 1 ? '' : 's') + ' pendiente' + (t.dias_pendientes === 1 ? '' : 's') + ' · ' +
+      (saldo > 0 ? 'La tienda nos paga ' : saldo < 0 ? 'Le pagamos ' : 'Saldo ') + _soles(saldo);
+  }
+  _pintarFotosPago();
+  var ov = document.getElementById('pago-foto-overlay');
+  if (ov) ov.style.display = 'flex';
+};
+
+window.tomarFotoPagoTienda = async function() {
+  if (!_pagoFotos || typeof pedirFoto !== 'function') return;
+  var actual = _pagoFotos;
+  var blob = await pedirFoto({ titulo: 'Foto del pago · ' + actual.tienda, textoOk: 'Agregar foto' });
+  if (blob && _pagoFotos === actual) _agregarFotoPago(blob);
+};
+
+/* "Subir imagen": varias de la galería; se comprimen de a una */
+window.onImagenesPagoTienda = async function(input) {
+  var archivos = Array.prototype.slice.call(input.files || []);
+  input.value = ''; /* permite volver a elegir las mismas */
+  if (!_pagoFotos || !archivos.length) return;
+  var actual = _pagoFotos;
+  var sobran = 0;
+  for (var i = 0; i < archivos.length; i++) {
+    if (_pagoFotos !== actual) return;  /* cerraron la ventana mientras tanto */
+    if (actual.fotos.length >= _MAX_FOTOS_PAGO) { sobran = archivos.length - i; break; }
+    try {
+      _agregarFotoPago(await comprimirImagenJPEG(archivos[i], _FOTO_MAX_ANCHO, _FOTO_CALIDAD));
+    } catch (err) {
+      if (typeof showNotif === 'function') showNotif(err.message || 'No se pudo procesar una imagen');
+    }
+  }
+  if (sobran && typeof showNotif === 'function') {
+    showNotif('Máximo ' + _MAX_FOTOS_PAGO + ' fotos: ' + sobran + ' imagen(es) no se agregaron');
+  }
+};
+
+window.quitarFotoPagoTienda = function(i) {
+  if (!_pagoFotos || !_pagoFotos.fotos[i]) return;
+  URL.revokeObjectURL(_pagoFotos.fotos[i].url);
+  _pagoFotos.fotos.splice(i, 1);
+  _pintarFotosPago();
+};
+
+window.cancelarFotoPagoTienda = function() { _cerrarFotosPago(); };
+
+/* Con al menos 1 foto: confirmación de días + monto, y liquida */
+window.continuarPagoTienda = async function() {
+  if (!_pagoFotos || !_pagoFotos.fotos.length) return;
+  var actual = _pagoFotos;
+  var t = _tiendaCaja(actual.idTienda);
+  if (!t) { _cerrarFotosPago(); return; }
   var periodo = _cajaFiltroDesde && _cajaFiltroHasta
       ? 'del ' + _fechaDisplayCaja(_cajaFiltroDesde) + ' al ' + _fechaDisplayCaja(_cajaFiltroHasta)
     : _cajaFiltroDesde ? 'del ' + _fechaDisplayCaja(_cajaFiltroDesde)
@@ -339,23 +447,106 @@ window.marcarTiendaPagada = async function(idTienda) {
   var sentido = saldo > 0 ? 'La tienda nos paga ' + _soles(saldo)
               : saldo < 0 ? 'Le pagamos a la tienda ' + _soles(saldo)
               : 'Saldo pendiente S/ 0.00';
+  var nFotos = actual.fotos.length;
   if (!confirm('Marcar pagado ' + t.tienda + ': ' + t.dias_pendientes + ' día(s) pendiente(s) ' + periodo + '.\n' +
-               sentido + '.\n\nLa Caja no tiene "desmarcar". ¿Continuar?')) return;
+               sentido + '.\n' + nFotos + ' foto(s) del pago.\n\nLa Caja no tiene "desmarcar". ¿Continuar?')) return;
+
+  var btn = document.getElementById('pago-foto-btn-continuar');
+  if (btn) btn.disabled = true;  /* evita un doble "Marcar pagado" mientras responde */
+  var json;
   try {
     var resp = await fetch(API + '/caja/tiendas/pagar', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id_tienda: idTienda, desde: _cajaFiltroDesde, hasta: _cajaFiltroHasta }),
+      body: JSON.stringify({ id_tienda: actual.idTienda, desde: _cajaFiltroDesde, hasta: _cajaFiltroHasta, fotos: nFotos }),
     });
-    var json = await resp.json().catch(function() { return {}; });
+    json = await resp.json().catch(function() { return {}; });
     if (!resp.ok || !json.ok) {
+      if (btn) btn.disabled = false;
       if (typeof showNotif === 'function') showNotif('Error: ' + (json.error || 'No se pudo marcar pagado'));
+      if (resp.status === 409) renderTiendasCaja();
       return;
     }
-    renderTiendasCaja();
-    if (typeof showNotif === 'function') showNotif('Pago registrado · ' + t.tienda + ' · ' + json.dias + ' día(s)');
-  } catch (err) { console.error(err); }
+  } catch (err) {
+    /* Sin señal: no se liquidó nada; la ventana y las fotos siguen */
+    console.error(err);
+    if (btn) btn.disabled = false;
+    if (typeof showNotif === 'function') showNotif('Sin conexión: el pago no se registró. Las fotos siguen acá, vuelve a intentar.', 5000);
+    return;
+  }
+
+  /* La liquidación ya existe: las fotos entran a la cola (solo espera
+     el guardado en el teléfono) y suben solas */
+  var fallaronCola = 0;
+  for (var i = 0; i < actual.fotos.length; i++) {
+    try {
+      await encolarFotoPagoTienda(json.id_liquidacion, actual.fotos[i].blob, t.tienda);
+    } catch (errCola) {
+      console.error('Cola de fotos (pago tienda):', errCola);
+      fallaronCola++;
+    }
+  }
+  _cerrarFotosPago();
+  renderTiendasCaja();
+  if (typeof showNotif === 'function') {
+    showNotif(fallaronCola
+      ? 'Pago registrado, pero ' + fallaronCola + ' foto(s) no se pudieron guardar en este dispositivo.'
+      : 'Pago registrado · ' + t.tienda + ' · ' + json.dias + ' día(s)', fallaronCola ? 5000 : 2500);
+  }
 };
+
+/* ── Historial: pagos registrados con sus fotos ── */
+var _cajaLiqAbiertas = {};
+
+window.toggleFotosLiquidacion = function(idLiq) {
+  if (_cajaLiqAbiertas[idLiq]) delete _cajaLiqAbiertas[idLiq];
+  else _cajaLiqAbiertas[idLiq] = true;
+  pintarTiendasCaja();
+};
+
+window.verFotoPagoGrande = function(url) {
+  var ov = document.getElementById('caja-foto-grande');
+  var img = document.getElementById('caja-foto-grande-img');
+  if (!ov || !img) return;
+  img.src = url;
+  ov.style.display = 'flex';
+};
+window.cerrarFotoPagoGrande = function() {
+  var ov = document.getElementById('caja-foto-grande');
+  if (ov) ov.style.display = 'none';
+};
+
+function _liquidacionesHTML(liqs) {
+  if (!liqs || !liqs.length) return '';
+  return '<div class="caja-liqs"><div class="caja-liqs-titulo"><i class="ti ti-receipt"></i> Pagos registrados</div>' +
+    liqs.map(function(l) {
+      var abierta = !!_cajaLiqAbiertas[l.id];
+      var dias = l.primer_dia === l.ultimo_dia
+        ? _fechaDisplayCaja(l.primer_dia)
+        : _fechaDisplayCaja(l.primer_dia) + ' – ' + _fechaDisplayCaja(l.ultimo_dia);
+      var faltan = Math.max((l.fotos_declaradas || 0) - l.fotos.length, 0);
+      var fotos = '';
+      if (abierta) {
+        fotos = '<div class="caja-liq-fotos">' +
+          l.fotos.map(function(f, i) {
+            var u = _escCaja(f.url);
+            return '<img src="' + u + '" loading="lazy" alt="Foto del pago ' + (i + 1) + '" onclick="verFotoPagoGrande(\'' + u + '\')" />';
+          }).join('') +
+          (l.fotos.length ? '' : '<span class="caja-tenue">Sin fotos todavía</span>') +
+        '</div>';
+      }
+      return '<div class="caja-liq"><div class="caja-liq-fila">' +
+        '<span class="caja-chip pagado">Pagado ' + _fechaDisplayCaja(l.fecha_pago) + '</span>' +
+        '<span>' + l.dias + ' día' + (l.dias === 1 ? '' : 's') + ' · ' + dias + '</span>' +
+        '<span class="caja-saldo ' + (l.neto > 0 ? 'pos' : l.neto < 0 ? 'neg' : 'cero') + '" style="font-size:12px">' +
+          (l.neto > 0 ? 'Nos pagó ' : l.neto < 0 ? 'Le pagamos ' : 'Saldado ') + _soles(l.neto) + '</span>' +
+        (l.usuario ? '<span class="caja-tenue">por ' + _escCaja(l.usuario) + '</span>' : '') +
+        (faltan ? '<span class="caja-medio-falta">' + faltan + ' foto' + (faltan === 1 ? '' : 's') + ' por subir</span>' : '') +
+        '<button class="btn btn-sm" style="margin-left:auto" onclick="toggleFotosLiquidacion(\'' + _escCaja(l.id) + '\')">' +
+          '<i class="ti ' + (abierta ? 'ti-eye-off' : 'ti-photo') + '"></i> ' + (abierta ? 'Ocultar' : 'Ver') + ' fotos (' + l.fotos.length + ')</button>' +
+      '</div>' + fotos + '</div>';
+    }).join('') + '</div>';
+}
 
 /* ════════════════════════════════════════════
    TAB LIQUIDEZ DIARIA
@@ -697,6 +888,7 @@ window.initCaja = function() {
   _cajaFiltroDesde = ''; _cajaFiltroHasta = '';
   _cajaFiltroPago  = 'pendientes';
   _cajaResumenTiendas = null; _cajaDetallesTienda = {}; _cajaFirmaTiendas = '';
+  _cerrarFotosPago(); _cajaLiqAbiertas = {};
   _motoFiltroDesde = ''; _motoFiltroHasta = '';
   _mostrarPagadosMotos   = false;
   ['tiendas','liquidez','motorizados'].forEach(function(t){
@@ -713,6 +905,14 @@ window.initCaja = function() {
     iniciarRefrescoAutomatico('tbody-tiendas-caja', _refrescarCajaActual);
   }
 };
+
+/* Llegó una foto de un pago: el historial abierto la muestra sin
+   esperar el refresco de 8 s (no hace nada fuera de Caja) */
+window.addEventListener('velox:foto-subida', function(e) {
+  if (e.detail && e.detail.tipo === 'foto_pago_tienda' && document.getElementById('tbody-tiendas-caja')) {
+    renderTiendasCaja();
+  }
+});
 
 /* ── Editar orden desde Caja ── */
 window.editarOrdenDesdeCaja = function(ordenId, diaPagado, fecha) {

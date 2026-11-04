@@ -386,6 +386,44 @@ antes: no son parte de este cambio.
 
 ---
 
+## D-011 · Foto del pago en "Marcar pagado" de Caja Tienda (liquidaciones)
+
+**Estado:** Implementado en local el 4 de noviembre de 2026 (sin push). **Con migración:**
+`velox_agregar_fotos_pago_tienda.sql` (aplicada en local; en producción va con `sa` antes del
+`git pull`).
+
+**Problema.** "Marcar pagado" liquida en un solo acto varios días de una tienda, y no quedaba
+ninguna prueba de que el pago se hizo (voucher, Yape, efectivo). `caja_pagos_tiendas` guarda una
+fila por día, así que no había dónde colgar las fotos de *ese* acto.
+
+**Decisión.**
+- **Liquidación como entidad propia:** tabla `caja_liquidaciones_tiendas` (tienda, período
+  filtrado, días, totales, fecha de pago en Lima, quién, `fotos_declaradas`). Cada día liquidado
+  apunta a ella (`caja_pagos_tiendas.id_liquidacion`). Las fotos van en
+  `caja_liquidaciones_tiendas_fotos` (url + `id_subida` con índice único filtrado, como
+  `ordenes_fotos`).
+- **Mismo pipeline de fotos (D-003, D-008):** la cola de `js/cola-fotos.js` acepta un destino
+  opcional (`encolarFotoPagoTienda`) y sube por las mismas tres rutas (URL firmada → PUT a R2 →
+  registrar; disco en modo prueba) colgadas de `/caja/tiendas/liquidaciones/:id/` en vez de
+  `/ordenes/:id/`. Carpeta R2 `pagos-tienda/liquidacion-<id>/`. Reintentos, `idSubida`,
+  indicador y retomar al volver la señal: lo de siempre.
+- **Orden del flujo:** foto (mín. 1, hasta 5) → confirmación de días + monto → `POST /pagar`
+  (crea la liquidación; necesita señal) → recién ahí las fotos entran a la cola. La liquidación
+  no espera la subida; mientras falten, el historial dice "N fotos por subir".
+- `/pagar` ahora es una transacción con bloqueo por día: si otro usuario liquidó un día en el
+  medio, se deshace todo y responde 409 (antes pisaba el pago).
+
+**Por qué una tabla aparte y no `ordenes_fotos`:** la regla de fotos pide "un tipo nuevo en
+`ordenes_fotos`", pero `id_orden` es obligatorio (FK a `ordenes`) y un pago no es de ninguna
+orden. Colgarlo de una orden cualquiera de la tienda mezclaría las fotos con las del producto y
+se rompería si esa orden se edita. Excepción acordada con el usuario el 4/11; el almacenamiento
+y la subida siguen siendo los únicos que hay (R2 + cola).
+
+**Límites aceptados.** Los días pagados antes de esto no tienen liquidación ni fotos. Las fotos
+solo las ven los gestores (todo `/caja` es admin/operador).
+
+---
+
 ## Costos de operación
 
 | Concepto | Mensual |

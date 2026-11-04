@@ -186,7 +186,9 @@ async function _colaErrorHttp(res, mensaje) {
    generalizado a los dos tipos de foto y con idSubida. */
 async function _colaSubir(item) {
   var blob = new Blob([item.datos], { type: 'image/jpeg' });
-  var base = API + '/ordenes/' + item.ordenId;
+  /* destino: fotos que no son de una orden (la del pago de Caja Tienda,
+     encolarFotoPagoTienda) usan las mismas tres rutas bajo otra base */
+  var base = API + (item.destino ? item.destino.base : '/ordenes/' + item.ordenId);
 
   var rPre = await _colaFetch(base + '/evidencia/presigned', {
     method: 'POST',
@@ -418,6 +420,21 @@ async function encolarFotoRafaga(blob, momento, tienda) {
   return _colaAgregar(item);
 }
 
+/**
+ * Foto del pago de "Marcar pagado" (Caja Tienda): la liquidación ya se
+ * creó en el servidor (POST /caja/tiendas/pagar) y la foto se cuelga de
+ * ella, no de una orden. Misma cola, mismos reintentos e idSubida.
+ * @param {number|string} idLiquidacion - id que devolvió /pagar.
+ * @param {Blob}   blob     - JPEG ya comprimido.
+ * @param {string} etiqueta - Texto para el indicador (ej. nombre de la tienda).
+ * @returns {Promise<{idSubida: string, persistente: boolean}>}
+ */
+async function encolarFotoPagoTienda(idLiquidacion, blob, etiqueta) {
+  var item = await _colaNuevoItem(null, 'foto_pago_tienda', blob, etiqueta);
+  item.destino = { base: '/caja/tiendas/liquidaciones/' + encodeURIComponent(idLiquidacion) };
+  return _colaAgregar(item);
+}
+
 /* Arma un ítem de la cola (compartido por encolarFoto y encolarFotoRafaga) */
 async function _colaNuevoItem(ordenId, tipo, blob, codigoOrden) {
   /* Pedir que el navegador no borre la cola si el teléfono se
@@ -464,6 +481,8 @@ async function obtenerColaFotos() {
       /* Foto en ráfaga: true mientras la orden todavía no se creó */
       ordenPorCrear: !!it.rafaga && !it.ordenId,
       esRafaga: !!it.rafaga,
+      /* Foto de un pago de Caja Tienda: codigoOrden es la tienda */
+      esPagoTienda: !!it.destino,
     };
   });
 }

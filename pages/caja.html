@@ -225,6 +225,40 @@
 
 </div>
 
+<!-- Paso de foto de "Marcar pagado" (Caja Tienda) — ver marcarTiendaPagada en js/caja.js -->
+<div id="pago-foto-overlay" class="pago-foto-overlay" style="display:none">
+  <div class="pago-foto-caja" role="dialog" aria-modal="true" aria-labelledby="pago-foto-titulo">
+    <div class="pago-foto-head">
+      <div>
+        <div class="pago-foto-titulo" id="pago-foto-titulo">Foto del pago</div>
+        <div class="pago-foto-sub" id="pago-foto-sub"></div>
+      </div>
+      <button class="btn btn-sm" onclick="cancelarFotoPagoTienda()" title="Cancelar"><i class="ti ti-x"></i></button>
+    </div>
+    <div class="pago-foto-ayuda">
+      Foto del voucher, Yape o efectivo entregado. Mínimo 1, hasta 5. Se suben solas en segundo plano.
+    </div>
+    <div class="pago-foto-grilla" id="pago-foto-grilla"></div>
+    <div class="pago-foto-acciones">
+      <button class="btn btn-sm" id="pago-foto-btn-camara" onclick="tomarFotoPagoTienda()"><i class="ti ti-camera"></i> Tomar foto</button>
+      <button class="btn btn-sm" id="pago-foto-btn-galeria" onclick="document.getElementById('pago-foto-input').click()"><i class="ti ti-photo-up"></i> Subir imagen</button>
+      <span class="pago-foto-contador" id="pago-foto-contador">0 de 5</span>
+    </div>
+    <input type="file" id="pago-foto-input" accept="image/*" multiple style="display:none" onchange="onImagenesPagoTienda(this)" />
+    <div class="pago-foto-pie">
+      <button class="btn" onclick="cancelarFotoPagoTienda()">Cancelar</button>
+      <button class="btn btn-primary" id="pago-foto-btn-continuar" onclick="continuarPagoTienda()" disabled>
+        <i class="ti ti-check"></i> Continuar
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Foto del pago en grande (Historial) -->
+<div id="caja-foto-grande" class="caja-foto-grande" style="display:none" onclick="cerrarFotoPagoGrande()">
+  <img id="caja-foto-grande-img" alt="Foto del pago" />
+</div>
+
 <style>
 .caja-tab { padding:10px 20px; border:none; background:transparent; cursor:pointer; font-size:13px; color:var(--color-text-secondary); border-bottom:2px solid transparent; margin-bottom:-1.5px; display:inline-flex; align-items:center; gap:6px; transition:all .15s; }
 .caja-tab:hover { color:var(--color-text-primary); }
@@ -267,4 +301,28 @@
 .caja-medio-falta { color:var(--color-amber-text); font-weight:500; }
 .caja-tenue { color:var(--color-text-tertiary); }
 @media (max-width: 900px) { .caja-kpis-tiendas { grid-template-columns:repeat(2,1fr); } }
+
+/* ── Foto del pago (Marcar pagado) ── */
+.pago-foto-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.45); z-index:1200; display:flex; align-items:center; justify-content:center; padding:16px; }
+.pago-foto-caja { background:var(--color-bg-primary); border-radius:var(--radius-lg, 12px); width:100%; max-width:480px; max-height:calc(100vh - 32px); overflow:auto; padding:16px; display:flex; flex-direction:column; gap:12px; }
+.pago-foto-head { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; }
+.pago-foto-titulo { font-size:15px; font-weight:600; color:var(--color-text-primary); }
+.pago-foto-sub { font-size:12px; color:var(--color-text-secondary); margin-top:2px; }
+.pago-foto-ayuda { font-size:12px; color:var(--color-text-tertiary); }
+.pago-foto-grilla { display:grid; grid-template-columns:repeat(auto-fill, minmax(80px, 1fr)); gap:8px; }
+.pago-foto-grilla:empty::before { content:'Todavía no hay fotos'; grid-column:1/-1; text-align:center; padding:22px 0; font-size:12px; color:var(--color-text-tertiary); border:1px dashed var(--color-border-secondary); border-radius:var(--radius-md); }
+.pago-foto-mini { position:relative; aspect-ratio:1; border-radius:var(--radius-md); overflow:hidden; background:var(--color-bg-secondary); }
+.pago-foto-mini img { width:100%; height:100%; object-fit:cover; display:block; }
+.pago-foto-mini button { position:absolute; top:4px; right:4px; width:24px; height:24px; border-radius:50%; border:none; background:rgba(0,0,0,0.6); color:#fff; cursor:pointer; display:flex; align-items:center; justify-content:center; padding:0; }
+.pago-foto-acciones { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.pago-foto-contador { margin-left:auto; font-size:12px; color:var(--color-text-secondary); }
+.pago-foto-pie { display:flex; justify-content:flex-end; gap:8px; border-top:0.5px solid var(--color-border-tertiary); padding-top:12px; }
+.caja-liqs { padding:10px 12px 4px 24px; }
+.caja-liqs-titulo { font-size:12px; font-weight:600; color:var(--color-text-secondary); margin-bottom:6px; }
+.caja-liq { background:var(--color-bg-primary); border:0.5px solid var(--color-border-tertiary); border-radius:var(--radius-md); padding:8px 12px; margin-bottom:6px; font-size:12px; }
+.caja-liq-fila { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.caja-liq-fotos { display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; }
+.caja-liq-fotos img { width:72px; height:72px; object-fit:cover; border-radius:var(--radius-md); cursor:zoom-in; background:var(--color-bg-secondary); }
+.caja-foto-grande { position:fixed; inset:0; background:rgba(0,0,0,0.88); z-index:1250; display:flex; align-items:center; justify-content:center; padding:16px; cursor:zoom-out; }
+.caja-foto-grande img { max-width:100%; max-height:100%; border-radius:var(--radius-md); }
 </style>

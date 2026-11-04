@@ -12,6 +12,29 @@ Velox Courier — internal management system for a courier/delivery company in L
 
 Última actualización: 4 de noviembre de 2026.
 
+- **Foto del pago en "Marcar pagado" de Caja Tienda (4 de noviembre de 2026, commit local, SIN
+  push).** **CON MIGRACIÓN** `velox_agregar_fotos_pago_tienda.sql` (aplicada en local por el
+  usuario; en producción con `sa` **antes** del pull, ver "Migraciones pendientes"). Ver D-011
+  en `DECISIONES.md`. `server/routes/caja.js`, `server/r2.js`, `server/almacenamiento-local.js`,
+  `js/cola-fotos.js`, `js/indicador-fotos.js`, `js/caja.js`, `pages/caja.html`. **Toca el
+  servidor.**
+  - "Marcar pagado" abre primero el paso de foto (Tomar foto con `pedirFoto` / Subir imagen,
+    varias; mín. 1, hasta 5, quitar con la ×), después la confirmación de días + monto, después
+    `POST /caja/tiendas/pagar` con `fotos` (1–5; sin eso, 400), que crea la liquidación
+    (`caja_liquidaciones_tiendas`) y le cuelga los días (`caja_pagos_tiendas.id_liquidacion`).
+    Recién con la liquidación creada las fotos entran a la cola (`encolarFotoPagoTienda`). Si
+    el POST falla (sin señal, 409), la ventana sigue abierta con las fotos.
+  - Subida: la cola de siempre con un destino opcional (`item.destino.base`): mismas tres rutas
+    bajo `/api/caja/tiendas/liquidaciones/:id/` (`evidencia/presigned`, `foto/registrar`,
+    `foto/local` + `GET foto/:fotoId`), carpeta R2 `pagos-tienda/liquidacion-<id>/`, tabla
+    `caja_liquidaciones_tiendas_fotos`, tope 5, dedup por `idSubida`. En el indicador sale como
+    "Pago a tienda · <tienda>".
+  - Historial: con "Pagados" o "Todos", el detalle de la tienda lista "Pagos registrados"
+    (fecha, días, monto, quién, "N fotos por subir") y "Ver fotos" abre las miniaturas (lazy);
+    tocar agranda. Se refresca solo cuando llega una foto (`velox:foto-subida`).
+  - `/pagar` ahora es transaccional con bloqueo por día: si otro usuario liquidó un día en el
+    medio, 409 y no se pisa nada.
+
 - **Caja Tienda rehecha (4 de noviembre de 2026, HECHO: probada y aprobada por el usuario en
   local el 4/11; commit `18f2c5f`, SIN push — se deploya junto con la foto del pago).** Sin migración: usa
   las columnas que ya existían. `server/routes/caja.js`, `server/routes/ordenes.js`, `js/caja.js`,
@@ -557,7 +580,11 @@ Roles: `admin`, `operador`, `visor`, `tienda`, `motorizado`. `GESTORES = ['admin
 
 ## Migraciones pendientes de aplicar en producción
 
-Ninguna por ahora.
+- **`velox_agregar_fotos_pago_tienda.sql`** (foto del pago de Caja Tienda, D-011): tablas
+  `caja_liquidaciones_tiendas` y `caja_liquidaciones_tiendas_fotos` + columna
+  `caja_pagos_tiendas.id_liquidacion`. Aplicada en local el 4 de noviembre de 2026. Idempotente.
+  En el servidor: copiarla, correrla con `sa` y `sqlcmd -I` **antes** del `git pull` (sin ella,
+  "Marcar pagado" de tiendas da 500).
 
 `velox_agregar_motivo_no_entrega.sql` (columna `ordenes.motivo_no_entrega NVARCHAR(300) NULL`,
 para la vista del motorizado y `PATCH /ordenes/:id/resolver`) se aplicó en local el 28 de
@@ -642,7 +669,9 @@ del producto (`js/pedidos.js`) y la evidencia de pago (`js/motorizados.js`):
   (endpoints que ya usa la cola en `server/routes/ordenes.js`).
 - **Una clase de foto nueva = un `tipo` nuevo** en `ordenes_fotos`: sumarlo a `TIPOS_FOTO` en
   `server/routes/ordenes.js` (y revisar quién puede verla en `puedeVerFotoOrden()`). No crear
-  columnas, tablas ni rutas de subida aparte.
+  columnas, tablas ni rutas de subida aparte. **Única excepción acordada:** la foto del pago de
+  Caja Tienda no es de una orden, va en `caja_liquidaciones_tiendas_fotos` por la misma cola
+  (destino opcional) y las mismas tres rutas bajo `/caja/tiendas/liquidaciones/:id/` (D-011).
 - **Prohibido:** un mecanismo de almacenamiento nuevo, guardar fotos en otra tabla o columna,
   como base64 en la BD, en disco o en otro servicio. `server/almacenamiento-local.js` es solo el
   respaldo automático del mismo pipeline cuando faltan las variables `R2_*`; no se usa directo.

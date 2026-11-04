@@ -13,6 +13,8 @@ const express = require('express');
 const router  = express.Router();
 const { getPool, sql } = require('../db');
 const { requireAuth, requireRol } = require('../middleware/auth');
+const { r2Habilitado, generarUrlSubidaPagoTienda, esUrlDePagoTienda } = require('../r2');
+const { guardarFoto, rutaArchivo, existeFoto } = require('../almacenamiento-local');
 
 /* Caja maneja dinero: solo admin y operador, sin excepción */
 router.use(requireAuth);
@@ -62,12 +64,12 @@ const FECHA_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 /* Filtro de fechas de la Caja Tienda. Solo "desde" = ese único día;
    solo "hasta" = hasta ese día; nada = todo. */
-function filtroFechaTienda(request, desde, hasta) {
+function filtroFechaTienda(request, desde, hasta, columna = 'o.fecha_reparto') {
   if (desde) request.input('desde', sql.Date, desde);
   if (hasta) request.input('hasta', sql.Date, hasta);
-  if (desde && hasta) return 'AND o.fecha_reparto BETWEEN @desde AND @hasta';
-  if (desde)          return 'AND o.fecha_reparto = @desde';
-  if (hasta)          return 'AND o.fecha_reparto <= @hasta';
+  if (desde && hasta) return `AND ${columna} BETWEEN @desde AND @hasta`;
+  if (desde)          return `AND ${columna} = @desde`;
+  if (hasta)          return `AND ${columna} <= @hasta`;
   return '';
 }
 
@@ -216,6 +218,8 @@ router.get('/tiendas/:id/detalle', async (req, res) => {
         pedidos: pedidos.length,
         delivery: aSoles(tot.delivery), retenido: aSoles(tot.retenido), saldo: aSoles(tot.saldo),
       },
+      /* "Pagados" / "Todos": los pagos registrados, con sus fotos */
+      liquidaciones: estado === 'pendientes' ? [] : await liquidacionesDeTienda(pool, idTienda, desde, hasta),
     });
   } catch (err) {
     console.error('GET /caja/tiendas/:id/detalle:', err.message);
@@ -223,15 +227,62 @@ router.get('/tiendas/:id/detalle', async (req, res) => {
   }
 });
 
-/* POST /api/caja/tiendas/pagar  { id_tienda, desde?, hasta? }
+/* Liquidaciones ("Marcar pagado") de una tienda que tocan algún día
+   del período, con sus fotos. Los días pagados antes de que existieran
+   las liquidaciones (id_liquidacion NULL) no aparecen acá. */
+async function liquidacionesDeTienda(pool, idTienda, desde, hasta) {
+  const request = pool.request().input('id_tienda', sql.Int, idTienda);
+  const filtro = filtroFechaTienda(request, desde, hasta, 'cp.fecha_ciclo');
+  const r = await request.query(`
+    SELECT l.id, CONVERT(varchar, l.fecha_pago, 23) AS fecha_pago, l.dias,
+           l.monto_cobrar, l.monto_devolver, l.fotos_declaradas, u.nombre AS usuario,
+           (SELECT CONVERT(varchar, MIN(x.fecha_ciclo), 23) FROM caja_pagos_tiendas x WHERE x.id_liquidacion = l.id) AS primer_dia,
+           (SELECT CONVERT(varchar, MAX(x.fecha_ciclo), 23) FROM caja_pagos_tiendas x WHERE x.id_liquidacion = l.id) AS ultimo_dia
+    FROM caja_liquidaciones_tiendas l
+    LEFT JOIN usuarios u ON u.id = l.id_usuario
+    WHERE l.id_tienda = @id_tienda
+      AND EXISTS (SELECT 1 FROM caja_pagos_tiendas cp WHERE cp.id_liquidacion = l.id ${filtro})
+    ORDER BY l.id DESC
+  `);
+  const liqs = r.recordset;
+  if (!liqs.length) return [];
+
+  const fotos = await pool.request().query(`
+    SELECT id, id_liquidacion, url FROM caja_liquidaciones_tiendas_fotos
+    WHERE id_liquidacion IN (${liqs.map(l => parseInt(l.id, 10)).join(',')}) AND url <> ''
+    ORDER BY id
+  `);
+  return liqs.map(l => {
+    const cobrar = Number(l.monto_cobrar), devolver = Number(l.monto_devolver);
+    return {
+      id: l.id, fecha_pago: l.fecha_pago, dias: l.dias, usuario: l.usuario,
+      primer_dia: l.primer_dia, ultimo_dia: l.ultimo_dia,
+      monto_cobrar: cobrar, monto_devolver: devolver, neto: Math.round((cobrar - devolver) * 100) / 100,
+      fotos_declaradas: l.fotos_declaradas,
+      fotos: fotos.recordset.filter(f => String(f.id_liquidacion) === String(l.id)).map(f => ({ id: f.id, url: f.url })),
+    };
+  });
+}
+
+const MAX_FOTOS_PAGO_TIENDA = 5;
+
+/* POST /api/caja/tiendas/pagar  { id_tienda, desde?, hasta?, fotos }
    Liquida los días PENDIENTES de la tienda en el período (mismo
    filtro de fechas que la lista). Por cada día guarda lo que se
    cobra y lo que se devuelve, con la misma calcularCajaTienda().
-   fecha_pago = hoy en Lima. */
+   fecha_pago = hoy en Lima.
+   Crea la liquidación (caja_liquidaciones_tiendas) y le cuelga los
+   días. fotos = cuántas fotos del pago se tomaron (1 a 5): las fotos
+   NO vienen acá, entran después a la cola del teléfono y llegan por
+   /tiendas/liquidaciones/:id/... (regla de fotos de CLAUDE.md). */
 router.post('/tiendas/pagar', async (req, res) => {
   const idTienda = parseInt(req.body.id_tienda, 10);
   if (!idTienda) return res.status(400).json({ error: 'Falta la tienda' });
   const { desde, hasta } = leerFiltrosTienda(req.body);
+  const fotos = Number(req.body.fotos);
+  if (!Number.isInteger(fotos) || fotos < 1 || fotos > MAX_FOTOS_PAGO_TIENDA) {
+    return res.status(400).json({ error: `Falta la foto del pago (de 1 a ${MAX_FOTOS_PAGO_TIENDA}).` });
+  }
 
   let tx;
   try {
@@ -249,39 +300,291 @@ router.post('/tiendas/pagar', async (req, res) => {
       porDia.set(o.fecha, d);
     }
 
+    let totCobrar = 0, totDevolver = 0;
+    for (const d of porDia.values()) { totCobrar += d.cobrar; totDevolver += d.devolver; }
+
     const hoy = hoyEnLima();
     tx = new sql.Transaction(pool);
     await tx.begin();
+    const liq = await new sql.Request(tx)
+      .input('id_tienda',      sql.Int,           idTienda)
+      .input('desde',          sql.Date,          desde || null)
+      .input('hasta',          sql.Date,          hasta || null)
+      .input('dias',           sql.Int,           porDia.size)
+      .input('monto_cobrar',   sql.Decimal(10,2), aSoles(totCobrar))
+      .input('monto_devolver', sql.Decimal(10,2), aSoles(totDevolver))
+      .input('hoy',            sql.Date,          hoy)
+      .input('fotos',          sql.Int,           fotos)
+      .input('id_usuario',     sql.Int,           req.usuario.id)
+      .query(`
+        INSERT INTO caja_liquidaciones_tiendas
+          (id_tienda, desde, hasta, dias, monto_cobrar, monto_devolver, fecha_pago, fotos_declaradas, id_usuario)
+        OUTPUT INSERTED.id
+        VALUES (@id_tienda, @desde, @hasta, @dias, @monto_cobrar, @monto_devolver, @hoy, @fotos, @id_usuario)
+      `);
+    const idLiquidacion = liq.recordset[0].id;
+
     for (const [fecha, d] of porDia) {
-      await new sql.Request(tx)
+      /* Si otro usuario liquidó este día mientras tanto (UPDATE sin
+         filas), se deshace todo: no se pisa un pago ya registrado */
+      const r = await new sql.Request(tx)
         .input('id_tienda',      sql.Int,           idTienda)
         .input('fecha_ciclo',    sql.Date,          fecha)
         .input('monto_cobrar',   sql.Decimal(10,2), aSoles(d.cobrar))
         .input('monto_devolver', sql.Decimal(10,2), aSoles(d.devolver))
         .input('hoy',            sql.Date,          hoy)
+        .input('id_liq',         sql.BigInt,        idLiquidacion)
         .query(`
           IF EXISTS (
-            SELECT 1 FROM caja_pagos_tiendas
+            SELECT 1 FROM caja_pagos_tiendas WITH (UPDLOCK, HOLDLOCK)
             WHERE id_tienda = @id_tienda AND fecha_ciclo = @fecha_ciclo
           )
+          BEGIN
             UPDATE caja_pagos_tiendas
-            SET pagado = 1, fecha_pago = @hoy,
+            SET pagado = 1, fecha_pago = @hoy, id_liquidacion = @id_liq,
                 monto_cobrar = @monto_cobrar, monto_devolver = @monto_devolver
-            WHERE id_tienda = @id_tienda AND fecha_ciclo = @fecha_ciclo;
+            WHERE id_tienda = @id_tienda AND fecha_ciclo = @fecha_ciclo AND pagado = 0;
+            SELECT @@ROWCOUNT AS filas;
+          END
           ELSE
+          BEGIN
             INSERT INTO caja_pagos_tiendas
-              (id_tienda, fecha_ciclo, monto_cobrar, monto_devolver, pagado, fecha_pago)
+              (id_tienda, fecha_ciclo, monto_cobrar, monto_devolver, pagado, fecha_pago, id_liquidacion)
             VALUES
-              (@id_tienda, @fecha_ciclo, @monto_cobrar, @monto_devolver, 1, @hoy);
+              (@id_tienda, @fecha_ciclo, @monto_cobrar, @monto_devolver, 1, @hoy, @id_liq);
+            SELECT 1 AS filas;
+          END
         `);
+      if (!r.recordset[0].filas) {
+        const e = new Error('día ya pagado'); e.yaPagado = true; throw e;
+      }
     }
     await tx.commit();
 
-    res.json({ ok: true, dias: porDia.size, fecha_pago: hoy });
+    res.json({ ok: true, dias: porDia.size, fecha_pago: hoy, id_liquidacion: idLiquidacion });
   } catch (err) {
     if (tx) { try { await tx.rollback(); } catch (_) { /* ya cerrada */ } }
+    if (err.yaPagado || err.number === 2601 || err.number === 2627) {
+      return res.status(409).json({ error: 'Otro usuario acaba de marcar pagado un día de esta tienda. Revisa y vuelve a intentar.' });
+    }
     console.error('POST /caja/tiendas/pagar:', err.message);
     res.status(500).json({ error: 'Error al registrar el pago' });
+  }
+});
+
+/* ════════════════════════════════════════════════════════════
+   FOTOS DEL PAGO (liquidación de Caja Tienda)
+   Las sube la MISMA cola de js/cola-fotos.js (encolarFotoPagoTienda),
+   por las mismas tres rutas que las fotos de una orden, colgadas de
+   la liquidación en vez de la orden:
+   · R2 activo → /evidencia/presigned + PUT directo a R2 (carpeta
+     pagos-tienda/liquidacion-<id>/) + /foto/registrar.
+   · MODO PRUEBA → /foto/local (disco) y GET /foto/:fotoId la sirve.
+   Reintentos sin duplicar por idSubida (índice único filtrado).
+   Tope: MAX_FOTOS_PAGO_TIENDA por liquidación.
+   ════════════════════════════════════════════════════════════ */
+const REGEX_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/* null = no vino · false = vino mal · string = UUID en minúsculas
+   (como leerIdSubida de routes/ordenes.js) */
+function leerIdSubida(valor) {
+  if (valor === undefined || valor === null || valor === '') return null;
+  return (typeof valor === 'string' && REGEX_UUID.test(valor)) ? valor.toLowerCase() : false;
+}
+
+async function liquidacionExiste(pool, id) {
+  const r = await pool.request()
+    .input('id', sql.BigInt, id)
+    .query('SELECT TOP 1 1 AS x FROM caja_liquidaciones_tiendas WHERE id = @id');
+  return r.recordset.length > 0;
+}
+
+async function fotoPagoPorIdSubida(pool, idSubida) {
+  if (!idSubida) return null;
+  const r = await pool.request()
+    .input('id_subida', sql.UniqueIdentifier, idSubida)
+    .query(`SELECT id, CAST(id_liquidacion AS VARCHAR(20)) AS id_liquidacion, url
+            FROM caja_liquidaciones_tiendas_fotos WHERE id_subida = @id_subida`);
+  return r.recordset[0] || null;
+}
+
+async function topeFotosPago(pool, id) {
+  const r = await pool.request()
+    .input('id', sql.BigInt, id)
+    .query('SELECT COUNT(*) AS total FROM caja_liquidaciones_tiendas_fotos WHERE id_liquidacion = @id');
+  return r.recordset[0].total >= MAX_FOTOS_PAGO_TIENDA;
+}
+
+/* Inserta la foto; si otro reintento con el mismo idSubida ganó la
+   carrera, devuelve esa */
+async function registrarFotoPago(pool, id, url, idSubida) {
+  try {
+    const r = await pool.request()
+      .input('id_liq',    sql.BigInt,           id)
+      .input('url',       sql.NVarChar,         url)
+      .input('id_subida', sql.UniqueIdentifier, idSubida || null)
+      .query(`INSERT INTO caja_liquidaciones_tiendas_fotos (id_liquidacion, url, id_subida)
+              OUTPUT INSERTED.id VALUES (@id_liq, @url, @id_subida)`);
+    return { fotoId: r.recordset[0].id, nueva: true };
+  } catch (err) {
+    if (idSubida && (err.number === 2601 || err.number === 2627)) {
+      const existente = await fotoPagoPorIdSubida(pool, idSubida);
+      if (existente) return { fotoId: existente.id, nueva: false, existente };
+    }
+    throw err;
+  }
+}
+
+/* Valida :id y que la liquidación exista; responde y devuelve null si no */
+async function leerLiquidacion(req, res, pool) {
+  const id = parseInt(req.params.id, 10);
+  if (!id) { res.status(400).json({ error: 'Liquidación no válida' }); return null; }
+  if (!(await liquidacionExiste(pool, id))) { res.status(404).json({ error: 'Liquidación no encontrada' }); return null; }
+  return id;
+}
+
+/* POST /api/caja/tiendas/liquidaciones/:id/evidencia/presigned
+   Body: { contentType, idSubida } */
+router.post('/tiendas/liquidaciones/:id/evidencia/presigned', async (req, res) => {
+  try {
+    const pool = await getPool();
+    const id = await leerLiquidacion(req, res, pool);
+    if (!id) return;
+    if (!r2Habilitado()) {
+      return res.status(503).json({ error: 'El almacenamiento de fotos todavía no está configurado.' });
+    }
+    const idSubida = leerIdSubida(req.body.idSubida);
+    if (idSubida === false) return res.status(400).json({ error: 'Identificador de subida no válido' });
+
+    /* Un reintento de una foto ya registrada no rebota contra el tope */
+    if (!(await fotoPagoPorIdSubida(pool, idSubida)) && await topeFotosPago(pool, id)) {
+      return res.status(409).json({ error: `Este pago ya tiene ${MAX_FOTOS_PAGO_TIENDA} fotos` });
+    }
+    const { uploadUrl, publicUrl } = await generarUrlSubidaPagoTienda(id, req.body.contentType, idSubida);
+    res.json({ uploadUrl, publicUrl });
+  } catch (err) {
+    console.error('POST /caja/tiendas/liquidaciones/:id/evidencia/presigned:', err.message);
+    res.status(400).json({ error: err.message || 'Error al generar la URL de subida' });
+  }
+});
+
+/* POST /api/caja/tiendas/liquidaciones/:id/foto/registrar
+   Body: { url, idSubida } — URL ya subida a R2 */
+router.post('/tiendas/liquidaciones/:id/foto/registrar', async (req, res) => {
+  try {
+    const pool = await getPool();
+    const id = await leerLiquidacion(req, res, pool);
+    if (!id) return;
+    const idSubida = leerIdSubida(req.body.idSubida);
+    if (idSubida === false) return res.status(400).json({ error: 'Identificador de subida no válido' });
+    const { url } = req.body;
+    if (!url || typeof url !== 'string' || url.length > 500 || !esUrlDePagoTienda(url, id)) {
+      return res.status(400).json({ error: 'URL de foto no válida' });
+    }
+
+    const previa = await fotoPagoPorIdSubida(pool, idSubida);
+    if (previa) {
+      if (previa.id_liquidacion !== String(id)) {
+        return res.status(409).json({ error: 'Ese identificador de subida ya se usó para otra foto' });
+      }
+      return res.json({ ok: true, fotoId: previa.id, url: previa.url, repetida: true });
+    }
+    if (await topeFotosPago(pool, id)) {
+      return res.status(409).json({ error: `Este pago ya tiene ${MAX_FOTOS_PAGO_TIENDA} fotos` });
+    }
+
+    const reg = await registrarFotoPago(pool, id, url, idSubida);
+    if (!reg.nueva) {
+      if (reg.existente.id_liquidacion !== String(id)) {
+        return res.status(409).json({ error: 'Ese identificador de subida ya se usó para otra foto' });
+      }
+      return res.json({ ok: true, fotoId: reg.fotoId, url: reg.existente.url, repetida: true });
+    }
+    res.status(201).json({ ok: true, fotoId: reg.fotoId, url });
+  } catch (err) {
+    console.error('POST /caja/tiendas/liquidaciones/:id/foto/registrar:', err.message);
+    res.status(500).json({ error: 'Error al registrar la foto' });
+  }
+});
+
+/* POST /api/caja/tiendas/liquidaciones/:id/foto/local?idSubida= — MODO PRUEBA
+   (solo sin R2). El body es el JPEG. */
+router.post('/tiendas/liquidaciones/:id/foto/local',
+  express.raw({ type: 'image/jpeg', limit: '6mb' }),
+  async (req, res) => {
+    try {
+      const pool = await getPool();
+      if (r2Habilitado()) {
+        return res.status(409).json({ error: 'R2 ya está configurado: la foto debe subirse a R2, no al disco local.' });
+      }
+      if (!Buffer.isBuffer(req.body) || req.body.length === 0) {
+        return res.status(400).json({ error: 'No llegó ninguna imagen (se espera un JPEG).' });
+      }
+      const id = await leerLiquidacion(req, res, pool);
+      if (!id) return;
+      const idSubida = leerIdSubida(req.query.idSubida);
+      if (idSubida === false) return res.status(400).json({ error: 'Identificador de subida no válido' });
+
+      const urlLocal = fotoId => `/api/caja/tiendas/liquidaciones/${id}/foto/${fotoId}`;
+      let reg;
+      const previa = await fotoPagoPorIdSubida(pool, idSubida);
+      if (previa) {
+        reg = { fotoId: previa.id, nueva: false, existente: previa };
+      } else {
+        if (await topeFotosPago(pool, id)) {
+          return res.status(409).json({ error: `Este pago ya tiene ${MAX_FOTOS_PAGO_TIENDA} fotos` });
+        }
+        reg = await registrarFotoPago(pool, id, '', idSubida);
+      }
+      if (!reg.nueva) {
+        if (reg.existente.id_liquidacion !== String(id)) {
+          return res.status(409).json({ error: 'Ese identificador de subida ya se usó para otra foto' });
+        }
+        if (existeFoto(id, reg.fotoId, 'liquidacion') && reg.existente.url) {
+          return res.json({ ok: true, fotoId: reg.fotoId, url: reg.existente.url, modo: 'local', repetida: true });
+        }
+      }
+
+      try {
+        await guardarFoto(id, reg.fotoId, req.body, 'liquidacion');
+      } catch (errDisco) {
+        if (reg.nueva) {
+          await pool.request().input('id', sql.BigInt, reg.fotoId)
+            .query('DELETE FROM caja_liquidaciones_tiendas_fotos WHERE id = @id');
+        }
+        throw errDisco;
+      }
+      await pool.request()
+        .input('id',  sql.BigInt,   reg.fotoId)
+        .input('url', sql.NVarChar, urlLocal(reg.fotoId))
+        .query('UPDATE caja_liquidaciones_tiendas_fotos SET url = @url WHERE id = @id');
+
+      res.status(reg.nueva ? 201 : 200).json({ ok: true, fotoId: reg.fotoId, url: urlLocal(reg.fotoId), modo: 'local' });
+    } catch (err) {
+      console.error('POST /caja/tiendas/liquidaciones/:id/foto/local:', err.message);
+      res.status(500).json({ error: 'Error al guardar la foto' });
+    }
+  }
+);
+
+/* GET /api/caja/tiendas/liquidaciones/:id/foto/:fotoId — sirve la foto
+   local (modo prueba), con sesión de gestor (todo /caja lo exige) */
+router.get('/tiendas/liquidaciones/:id/foto/:fotoId', async (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    const fotoId = parseInt(req.params.fotoId, 10);
+    if (!id || !fotoId) return res.status(400).json({ error: 'Identificador no válido' });
+    const pool = await getPool();
+    const r = await pool.request()
+      .input('id', sql.BigInt, fotoId).input('id_liq', sql.BigInt, id)
+      .query('SELECT TOP 1 1 AS x FROM caja_liquidaciones_tiendas_fotos WHERE id = @id AND id_liquidacion = @id_liq');
+    if (!r.recordset.length || !existeFoto(id, fotoId, 'liquidacion')) {
+      return res.status(404).json({ error: 'Foto no encontrada' });
+    }
+    res.sendFile(rutaArchivo(id, fotoId, 'liquidacion'));
+  } catch (err) {
+    console.error('GET /caja/tiendas/liquidaciones/:id/foto/:fotoId:', err.message);
+    res.status(500).json({ error: 'Error al obtener la foto' });
   }
 });
 

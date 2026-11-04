@@ -30,22 +30,24 @@ const CARPETA = path.join(__dirname, 'uploads_local');
    puede reconstruir desde los ids sin guardar la extensión aparte. */
 const EXTENSION = 'jpg';
 
-function nombreArchivo(ordenId, fotoId) {
-  return `orden-${parseInt(ordenId, 10)}-foto-${parseInt(fotoId, 10)}.${EXTENSION}`;
+/* prefijo: 'orden' (fotos de órdenes) o 'liquidacion' (foto del pago
+   de Caja Tienda, ver routes/caja.js) */
+function nombreArchivo(ordenId, fotoId, prefijo = 'orden') {
+  return `${prefijo}-${parseInt(ordenId, 10)}-foto-${parseInt(fotoId, 10)}.${EXTENSION}`;
 }
 
-function rutaArchivo(ordenId, fotoId) {
-  return path.join(CARPETA, nombreArchivo(ordenId, fotoId));
+function rutaArchivo(ordenId, fotoId, prefijo) {
+  return path.join(CARPETA, nombreArchivo(ordenId, fotoId, prefijo));
 }
 
-async function guardarFoto(ordenId, fotoId, buffer) {
+async function guardarFoto(ordenId, fotoId, buffer, prefijo) {
   await fs.promises.mkdir(CARPETA, { recursive: true });
-  await fs.promises.writeFile(rutaArchivo(ordenId, fotoId), buffer);
-  return nombreArchivo(ordenId, fotoId);
+  await fs.promises.writeFile(rutaArchivo(ordenId, fotoId, prefijo), buffer);
+  return nombreArchivo(ordenId, fotoId, prefijo);
 }
 
-function existeFoto(ordenId, fotoId) {
-  return fs.existsSync(rutaArchivo(ordenId, fotoId));
+function existeFoto(ordenId, fotoId, prefijo) {
+  return fs.existsSync(rutaArchivo(ordenId, fotoId, prefijo));
 }
 
 module.exports = { guardarFoto, rutaArchivo, existeFoto, CARPETA };

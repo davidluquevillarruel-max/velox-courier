@@ -12,7 +12,8 @@ Velox Courier — internal management system for a courier/delivery company in L
 
 Última actualización: 4 de noviembre de 2026.
 
-- **Caja Tienda rehecha (4 de noviembre de 2026, commit local, SIN push).** Sin migración: usa
+- **Caja Tienda rehecha (4 de noviembre de 2026, HECHO: probada y aprobada por el usuario en
+  local el 4/11; commit `18f2c5f`, SIN push — se deploya junto con la foto del pago).** Sin migración: usa
   las columnas que ya existían. `server/routes/caja.js`, `server/routes/ordenes.js`, `js/caja.js`,
   `pages/caja.html`, `js/pedidos.js`, `js/motorizados.js`. **Toca el servidor:** hay que reiniciarlo.
   Liquidez y la Caja de motorizados no se tocaron.

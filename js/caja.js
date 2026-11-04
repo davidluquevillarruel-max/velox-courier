@@ -1,15 +1,15 @@
 /* ============================================================
    caja.js — Módulo de Caja
-   Estados con cobro: entregado, ausente
-   Estados sin cobro: todo lo demás
+   Tiendas: entregado, ausente y devolución (cálculo en el servidor,
+   calcularCajaTienda en server/routes/caja.js).
+   Liquidez y motorizados: entregado, ausente.
    ============================================================ */
 var API = '/api';
 var _cajaFiltroDesde = '';
 var _cajaFiltroHasta = '';
+var _cajaFiltroPago  = 'pendientes';
 var _motoFiltroDesde = '';
 var _motoFiltroHasta = '';
-var _EC = ['entregado', 'ausente'];
-var _mostrarPagadosTiendas = false;
 var _mostrarPagadosMotos   = false;
 
 function _fechaDisplayCaja(f) {
@@ -124,204 +124,237 @@ window.filtroRapidoTiendas = function(tipo) {
   renderTiendasCaja();
 };
 
-/* ════════════════════════════════════════════
-   TAB TIENDAS
-════════════════════════════════════════════ */
-window.renderTiendasCaja = async function() {
-  var tbody = document.getElementById('tbody-tiendas-caja');
-  if (!tbody) return;
-
-  var btnHistorial = document.getElementById('btn-historial-tiendas');
-  if (btnHistorial) {
-    btnHistorial.innerHTML = _mostrarPagadosTiendas
-      ? '<i class="ti ti-eye-off"></i> Ocultar pagados'
-      : '<i class="ti ti-history"></i> Historial de pagados';
-  }
-
-  var url = API + '/caja/tiendas';
-  var params = [];
-  if (_cajaFiltroDesde) params.push('desde='+_cajaFiltroDesde);
-  if (_cajaFiltroHasta) params.push('hasta='+_cajaFiltroHasta);
-  if (params.length) url += '?' + params.join('&');
-
-  try {
-    var r    = await fetch(url);
-    var todos = await r.json();
-
-    /* KPIs — calculados sobre todos los pendientes */
-    var totalPorCobrar=0, totalPorDev=0, alDia=0, conSaldo=0;
-    var resumenT = {};
-    todos.forEach(function(f) {
-      var saldo = parseFloat(f.saldo_neto||0);
-      if (!resumenT[f.tienda]) resumenT[f.tienda] = 0;
-      if (!f.pagado) resumenT[f.tienda] += saldo;
-    });
-    Object.values(resumenT).forEach(function(s) {
-      if (s > 0)      { totalPorCobrar += s; conSaldo++; }
-      else if (s < 0) { totalPorDev += Math.abs(s); conSaldo++; }
-      else              alDia++;
-    });
-
-    var set = function(id,v){ var el=document.getElementById(id); if(el) el.textContent=v; };
-    set('kpi-cobrar',   'S/ '+totalPorCobrar.toFixed(2));
-    set('kpi-devolver', 'S/ '+totalPorDev.toFixed(2));
-    set('kpi-aldia',    alDia);
-    set('kpi-consaldo', conSaldo);
-
-    /* Filtrar según toggle */
-    var data = _mostrarPagadosTiendas
-      ? todos.filter(function(f){ return f.pagado; })
-      : todos.filter(function(f){ return !f.pagado; });
-
-    /* Agrupar por tienda */
-    var porTienda = {};
-    data.forEach(function(f) {
-      if (!porTienda[f.tienda]) porTienda[f.tienda] = { id:f.id, ciclo:f.ciclo_pago, dias:[] };
-      porTienda[f.tienda].dias.push(f);
-    });
-
-    var html = '';
-    Object.keys(porTienda).sort().forEach(function(nombre) {
-      var g       = porTienda[nombre];
-      var rowspan = g.dias.length;
-
-      g.dias.forEach(function(f, i) {
-        var saldo    = parseFloat(f.saldo_neto||0);
-        var delivery = parseFloat(f.delivery_cobrable||0);
-        var cobrado  = parseFloat(f.cobrado||0);
-
-        var saldoHTML = saldo > 0
-          ? '<span style="color:var(--color-green);font-weight:600">S/ '+saldo.toFixed(2)+' — tienda nos debe</span>'
-          : saldo < 0
-          ? '<span style="color:var(--color-red-text);font-weight:600">S/ '+Math.abs(saldo).toFixed(2)+' — le debemos</span>'
-          : '<span style="color:var(--color-text-secondary)">S/ 0.00</span>';
-
-        var estadoDeuda, accion;
-        if (saldo === 0) {
-          estadoDeuda = '<span class="badge-pago-si">✓ Sin deuda</span>';
-          accion = '—';
-        } else if (f.pagado) {
-          estadoDeuda = '<span class="badge-pago-si">✓ Pagado '+(f.fecha_pago?_fechaDisplayCaja(f.fecha_pago):'')+'</span>';
-          accion = '<span style="font-size:12px;color:var(--color-text-tertiary)">Liquidado</span>';
-        } else {
-          estadoDeuda = '<span class="badge-pago-no">✗ Pendiente</span>';
-          /* FIX: pasamos id_tienda y fecha del ciclo correctamente */
-          accion = '<button class="btn-pagar" onclick="marcarTiendaPagada('+f.id+',\''+f.fecha+'\')">Marcar pagado</button>';
-        }
-
-        var celdaTienda = i===0
-          ? '<td rowspan="'+rowspan+'" style="vertical-align:top;padding-top:13px"><strong>'+nombre+'</strong><br><span style="font-size:11px;color:var(--color-text-secondary)">'+g.ciclo+'</span></td>'
-          : '';
-        var celdaVer = i===0
-          ? '<td rowspan="'+rowspan+'" class="col-ver-tienda-fijo" style="vertical-align:top;padding-top:10px"><button class="btn btn-sm" onclick="verDetalleTiendaCaja(\''+nombre+'\')"><i class="ti ti-eye"></i></button></td>'
-          : '';
-
-        html += '<tr>'+celdaTienda+
-          '<td style="font-size:12px;color:var(--color-text-secondary)">'+_fechaDisplayCaja(f.fecha)+'</td>'+
-          '<td style="font-weight:500">S/ '+delivery.toFixed(2)+'</td>'+
-          '<td style="font-weight:500">S/ '+cobrado.toFixed(2)+'</td>'+
-          '<td>'+saldoHTML+'</td>'+
-          '<td>'+estadoDeuda+'</td>'+
-          '<td>'+accion+'</td>'+
-          celdaVer+'</tr>';
-      });
-    });
-
-    var msgVacio = _mostrarPagadosTiendas
-      ? 'No hay pagos registrados aún'
-      : 'No hay pendientes — todo al día ✓';
-
-    tbody.innerHTML = html || '<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--color-text-tertiary)">'+msgVacio+'</td></tr>';
-
-  } catch(err) { console.error('Error caja tiendas:', err); }
-};
-
-window.togglePagadosTiendas = function() {
-  _mostrarPagadosTiendas = !_mostrarPagadosTiendas;
+/* Pendientes / Pagados / Todos */
+window.filtroPagoTiendas = function(estado) {
+  _cajaFiltroPago = estado;
+  ['pendientes','pagados','todos'].forEach(function(e) {
+    var b = document.getElementById('btn-pago-'+e);
+    if (b) b.classList.toggle('active', e === estado);
+  });
   renderTiendasCaja();
 };
 
-/* FIX CLAVE: ahora manda { id_tienda, fecha } correctamente.
-   El parámetro idTienda viene de f.id que en el GET /caja/tiendas
-   es t.id (el ID real de la tienda). */
-window.marcarTiendaPagada = async function(idTienda, fecha) {
+/* ════════════════════════════════════════════
+   TAB TIENDAS
+   El cálculo (delivery, retenido, saldo) lo hace el servidor con una
+   sola función (calcularCajaTienda en server/routes/caja.js); acá
+   solo se pinta. El detalle por pedido se abre inline debajo de la
+   tienda (ojito) y queda abierto entre refrescos.
+════════════════════════════════════════════ */
+var _cajaResumenTiendas = null;   /* última respuesta de GET /caja/tiendas */
+var _cajaDetallesTienda = {};     /* idTienda → respuesta de /detalle (las abiertas) */
+var _cajaFirmaTiendas   = '';
+var _cajaSecTiendas     = 0;
+
+function _escCaja(s) {
+  return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+function _soles(v) { return 'S/ ' + Math.abs(parseFloat(v) || 0).toFixed(2); }
+
+function _paramsCajaTiendas() {
+  var p = ['estado=' + _cajaFiltroPago];
+  if (_cajaFiltroDesde) p.push('desde=' + _cajaFiltroDesde);
+  if (_cajaFiltroHasta) p.push('hasta=' + _cajaFiltroHasta);
+  return '?' + p.join('&');
+}
+
+/* Saldo con su sentido: > 0 nos debe (verde) · < 0 le debemos (ámbar) */
+function _saldoCajaHTML(saldo, grande) {
+  saldo = parseFloat(saldo) || 0;
+  var clase = saldo > 0 ? 'pos' : saldo < 0 ? 'neg' : 'cero';
+  var texto = saldo > 0 ? 'nos debe' : saldo < 0 ? 'le debemos' : 'saldado';
+  if (!grande) {
+    return '<span class="caja-saldo ' + clase + '" style="font-size:12px">' + (saldo < 0 ? '− ' : '') + _soles(saldo) +
+      ' <span style="font-weight:500">· ' + texto + '</span></span>';
+  }
+  return '<div class="caja-saldo ' + clase + '">' + _soles(saldo) + '<small>' + texto + '</small></div>';
+}
+
+var _MEDIO_PAGO_CAJA = {
+  'yape-motorizado': 'Yape moto', 'efectivo-motorizado': 'Efectivo moto',
+  'pago-tienda': 'Pago tienda', 'pago-empresa': 'Pago Velox',
+};
+function _medioPagoCajaHTML(p) {
+  if (p.metodo_pago !== 'contraentrega') return '<span class="caja-tenue">Sin cobro</span>';
+  if (!p.medio_pago) return '<span class="caja-medio-falta">Por definir</span>';
+  return _escCaja(_MEDIO_PAGO_CAJA[p.medio_pago] || p.medio_pago);
+}
+
+var _ESTADO_CAJA_LABEL = { entregado: 'Entregado', ausente: 'Ausente', devolucion: 'Devolución' };
+
+function _detalleTiendaHTML(idTienda) {
+  var d = _cajaDetallesTienda[idTienda];
+  if (!d || d.cargando) {
+    return '<div class="caja-detalle" style="padding:14px 24px;color:var(--color-text-tertiary);font-size:12px">Cargando pedidos…</div>';
+  }
+  if (d.error) {
+    return '<div class="caja-detalle" style="padding:14px 24px;color:var(--color-red-text);font-size:12px">No se pudo cargar el detalle.</div>';
+  }
+  var filas = d.pedidos.map(function(p) {
+    return '<tr>' +
+      '<td><strong>#' + _escCaja(p.codigo) + '</strong><div class="caja-tenue" style="font-size:11px">' + _escCaja(p.dest_nombre || '—') + '</div></td>' +
+      '<td style="white-space:nowrap">' + _fechaDisplayCaja(p.fecha) + '</td>' +
+      '<td><span class="caja-estado ' + _escCaja(p.estado) + '">' + _escCaja(_ESTADO_CAJA_LABEL[p.estado] || p.estado) + '</span></td>' +
+      '<td>' + _medioPagoCajaHTML(p) + '</td>' +
+      '<td>' + _soles(p.delivery) + '</td>' +
+      '<td>' + (p.retenido ? _soles(p.retenido) : '<span class="caja-tenue">S/ 0.00</span>') + '</td>' +
+      '<td>' + _saldoCajaHTML(p.saldo, false) + '</td>' +
+      '<td>' + (p.pago_oficina === 'pre' ? 'Prepago' : 'Postpago') + '</td>' +
+      '<td><span class="caja-chip ' + (p.pago === 'PAGADO' ? 'pagado">PAGADO' : 'pendiente">Pendiente') + '</span></td>' +
+      '<td><button class="btn btn-sm" title="Editar orden" onclick="editarOrdenDesdeCaja(' + p.id + ',' + (p.dia_pagado ? 1 : 0) + ',\'' + p.fecha + '\')">' +
+        '<i class="ti ti-pencil"></i> Editar orden</button></td>' +
+    '</tr>';
+  }).join('');
+  if (!filas) {
+    filas = '<tr><td colspan="10" style="text-align:center;padding:16px;color:var(--color-text-tertiary)">Sin pedidos en este filtro</td></tr>';
+  }
+  var t = d.totales;
+  return '<div class="caja-detalle"><table>' +
+    '<thead><tr><th>N° pedido</th><th>Fecha</th><th>Estado</th><th>Medio de pago</th><th>Delivery</th>' +
+      '<th>Retenido</th><th>Saldo</th><th>Pre/Post</th><th>Pago</th><th></th></tr></thead>' +
+    '<tbody>' + filas +
+      '<tr class="caja-totales"><td colspan="4">TOTALES · ' + t.pedidos + ' pedido' + (t.pedidos === 1 ? '' : 's') + '</td>' +
+        '<td>' + _soles(t.delivery) + '</td><td>' + _soles(t.retenido) + '</td>' +
+        '<td colspan="4">' + _saldoCajaHTML(t.saldo, false) + '</td></tr>' +
+    '</tbody></table></div>';
+}
+
+/* Pinta KPIs + lista con lo que ya está en memoria (el buscador usa
+   esto directo, sin volver a pedir). No repinta si nada cambió. */
+window.pintarTiendasCaja = function() {
+  var tbody = document.getElementById('tbody-tiendas-caja');
+  if (!tbody || !_cajaResumenTiendas) return;
+  var k = _cajaResumenTiendas.kpis;
+
+  var set = function(id, v){ var el = document.getElementById(id); if (el) el.textContent = v; };
+  set('kpi-cobrar',   _soles(k.por_cobrar));
+  set('kpi-devolver', _soles(k.por_devolver));
+  set('kpi-neta',     _soles(k.posicion_neta));
+  set('kpi-neta-nota', k.posicion_neta > 0 ? 'nos deben' : k.posicion_neta < 0 ? 'le debemos' : 'saldado');
+  var elNeta = document.getElementById('kpi-neta');
+  if (elNeta) elNeta.className = 'metric-val ' + (k.posicion_neta > 0 ? 'green' : k.posicion_neta < 0 ? 'amber' : '');
+  set('kpi-aldia',    k.al_dia);
+  set('kpi-consaldo', k.con_saldo);
+
+  var inpBuscar = document.getElementById('caja-buscar-tienda');
+  var buscar = (inpBuscar && inpBuscar.value || '').trim().toLowerCase();
+  var tiendas = _cajaResumenTiendas.tiendas.filter(function(t) {
+    return !buscar || String(t.tienda).toLowerCase().indexOf(buscar) !== -1;
+  });
+
+  var html = tiendas.map(function(t) {
+    var abierta = !!_cajaDetallesTienda[t.id];
+    var estado = t.estado === 'pagado'
+      ? '<span class="caja-chip pagado">Pagado</span>' +
+        (t.ultimo_pago ? '<div class="caja-tenue" style="font-size:11px;margin-top:3px">' + _fechaDisplayCaja(t.ultimo_pago) + '</div>' : '')
+      : '<span class="caja-chip pendiente">Pendiente</span>' +
+        '<div class="caja-tenue" style="font-size:11px;margin-top:3px">' + t.dias_pendientes + ' día' + (t.dias_pendientes === 1 ? '' : 's') + '</div>';
+    var accion = t.dias_pendientes > 0
+      ? '<button class="btn-pagar" onclick="marcarTiendaPagada(' + t.id + ')">Marcar pagado</button>'
+      : '<span class="caja-tenue" style="font-size:12px">Liquidado</span>';
+    var fila = '<tr class="' + (abierta ? 'caja-fila-abierta' : '') + '">' +
+      '<td><strong>' + _escCaja(t.tienda) + '</strong><br><span class="caja-ciclo">' + _escCaja(t.ciclo_pago || '—') + '</span></td>' +
+      '<td>' + t.pedidos + '</td>' +
+      '<td style="font-weight:500">' + _soles(t.delivery) + '</td>' +
+      '<td style="font-weight:500">' + _soles(t.retenido) + '</td>' +
+      '<td>' + _saldoCajaHTML(t.saldo, true) + '</td>' +
+      '<td>' + estado + '</td>' +
+      '<td>' + accion + '</td>' +
+      '<td class="col-ver-tienda-fijo"><button class="btn btn-sm" title="' + (abierta ? 'Ocultar pedidos' : 'Ver pedidos') + '" onclick="toggleDetalleTiendaCaja(' + t.id + ')">' +
+        '<i class="ti ' + (abierta ? 'ti-eye-off' : 'ti-eye') + '"></i></button></td>' +
+    '</tr>';
+    if (abierta) fila += '<tr><td colspan="8" class="caja-detalle-celda">' + _detalleTiendaHTML(t.id) + '</td></tr>';
+    return fila;
+  }).join('');
+
+  if (!html) {
+    var msg = buscar ? 'Ninguna tienda coincide con la búsqueda'
+            : _cajaFiltroPago === 'pagados' ? 'No hay pagos registrados en el período'
+            : _cajaFiltroPago === 'pendientes' ? 'No hay pendientes — todo al día ✓'
+            : 'Sin pedidos cobrables en el período';
+    html = '<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--color-text-tertiary)">' + msg + '</td></tr>';
+  }
+  if (html === _cajaFirmaTiendas) return;
+  _cajaFirmaTiendas = html;
+  tbody.innerHTML = html;
+};
+
+async function _cargarDetalleTiendaCaja(idTienda) {
   try {
-    var resp = await fetch(API+'/caja/tiendas/pagar', {
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ id_tienda: parseInt(idTienda), fecha: fecha }),
+    var r = await fetch(API + '/caja/tiendas/' + idTienda + '/detalle' + _paramsCajaTiendas());
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return await r.json();
+  } catch (err) {
+    console.error('Error detalle caja tienda:', err);
+    return { error: true };
+  }
+}
+
+/* Trae resumen + el detalle de las tiendas abiertas y repinta. Si
+   llega una respuesta vieja (otro filtro ya pidió después), se ignora. */
+window.renderTiendasCaja = async function() {
+  if (!document.getElementById('tbody-tiendas-caja')) return;
+  var sec = ++_cajaSecTiendas;
+  try {
+    var r = await fetch(API + '/caja/tiendas' + _paramsCajaTiendas());
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    var resumen = await r.json();
+
+    var abiertas = Object.keys(_cajaDetallesTienda);
+    var detalles = await Promise.all(abiertas.map(_cargarDetalleTiendaCaja));
+    if (sec !== _cajaSecTiendas) return;
+
+    _cajaResumenTiendas = resumen;
+    abiertas.forEach(function(id, i) {
+      if (_cajaDetallesTienda[id]) _cajaDetallesTienda[id] = detalles[i]; /* si no la cerraron mientras tanto */
     });
-    var json = await resp.json();
-    if (!json.ok) {
-      console.error('Error al marcar pagado:', json.error);
-      if (typeof showNotif==='function') showNotif('Error: '+json.error);
+    pintarTiendasCaja();
+  } catch (err) { console.error('Error caja tiendas:', err); }
+};
+
+window.toggleDetalleTiendaCaja = async function(idTienda) {
+  if (_cajaDetallesTienda[idTienda]) {
+    delete _cajaDetallesTienda[idTienda];
+    pintarTiendasCaja();
+    return;
+  }
+  _cajaDetallesTienda[idTienda] = { cargando: true };
+  pintarTiendasCaja();
+  var d = await _cargarDetalleTiendaCaja(idTienda);
+  if (!_cajaDetallesTienda[idTienda]) return; /* la cerraron mientras cargaba */
+  _cajaDetallesTienda[idTienda] = d;
+  pintarTiendasCaja();
+};
+
+/* Liquida los días pendientes de la tienda dentro del período filtrado */
+window.marcarTiendaPagada = async function(idTienda) {
+  var t = _cajaResumenTiendas && _cajaResumenTiendas.tiendas.find(function(x) { return x.id === idTienda; });
+  if (!t) return;
+  var periodo = _cajaFiltroDesde && _cajaFiltroHasta
+      ? 'del ' + _fechaDisplayCaja(_cajaFiltroDesde) + ' al ' + _fechaDisplayCaja(_cajaFiltroHasta)
+    : _cajaFiltroDesde ? 'del ' + _fechaDisplayCaja(_cajaFiltroDesde)
+    : _cajaFiltroHasta ? 'hasta el ' + _fechaDisplayCaja(_cajaFiltroHasta)
+    : 'de todas las fechas';
+  var saldo = parseFloat(t.saldo_pendiente) || 0;
+  var sentido = saldo > 0 ? 'La tienda nos paga ' + _soles(saldo)
+              : saldo < 0 ? 'Le pagamos a la tienda ' + _soles(saldo)
+              : 'Saldo pendiente S/ 0.00';
+  if (!confirm('Marcar pagado ' + t.tienda + ': ' + t.dias_pendientes + ' día(s) pendiente(s) ' + periodo + '.\n' +
+               sentido + '.\n\nLa Caja no tiene "desmarcar". ¿Continuar?')) return;
+  try {
+    var resp = await fetch(API + '/caja/tiendas/pagar', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id_tienda: idTienda, desde: _cajaFiltroDesde, hasta: _cajaFiltroHasta }),
+    });
+    var json = await resp.json().catch(function() { return {}; });
+    if (!resp.ok || !json.ok) {
+      if (typeof showNotif === 'function') showNotif('Error: ' + (json.error || 'No se pudo marcar pagado'));
       return;
     }
     renderTiendasCaja();
-    if (typeof showNotif==='function') showNotif('Pago registrado · '+_fechaDisplayCaja(fecha));
-  } catch(err) { console.error(err); }
-};
-
-var _cajaDetalleTiendaCurrent = '';
-
-window.verDetalleTiendaCaja = async function(nombreTienda) {
-  _cajaDetalleTiendaCurrent = nombreTienda;
-  var el = document.getElementById('titulo-detalle-tienda');
-  if (el) el.textContent = 'Detalle · ' + nombreTienda;
-  try {
-    var rT = await fetch(API + '/tiendas');
-    var tiendas = await rT.json();
-    var t = tiendas.find(function(x){ return x.nombre===nombreTienda; });
-    if (!t) return;
-
-    var r = await fetch(API + '/tiendas/' + t.id + '/ordenes');
-    var ordenes = await r.json();
-
-    var tbody = document.getElementById('tbody-detalle-tienda-caja');
-    if (!tbody) return;
-
-    var badgeMap = {
-      'entregado':'entregado','no-entregado':'no-entregado','ausente':'ausente',
-      'en-proceso':'pendiente','reprogramado':'reprogramado','cancelado':'no-entregado',
-      'cambio':'ausente','devolucion':'ausente','recojo':'pendiente',
-    };
-
-    tbody.innerHTML = ordenes.map(function(o) {
-      var tieneCobro = _EC.includes(o.estado);
-      var delivery   = tieneCobro ? parseFloat(o.delivery_total||0) : 0;
-      var adicional  = tieneCobro ? parseFloat(o.monto_adicional||0) : 0;
-      var cobrado    = tieneCobro ? parseFloat(o.monto_cobrado||0)  : 0;
-      var saldo      = delivery - cobrado;
-      var saldoClass = saldo>0?'balance-pos':saldo<0?'balance-neg':'balance-zero';
-      var dStr = tieneCobro
-        ? 'S/ '+delivery.toFixed(2) +
-          (adicional > 0
-            ? ' <span style="font-size:10px;color:var(--color-amber-text);background:var(--color-amber-bg);padding:1px 5px;border-radius:8px">+S/'+adicional.toFixed(2)+'</span>'
-            : '')
-        : '<span style="color:var(--color-text-tertiary)">S/ 0.00</span>';
-      var cStr = tieneCobro ? 'S/ '+cobrado.toFixed(2)  : '<span style="color:var(--color-text-tertiary)">S/ 0.00</span>';
-      return '<tr>' +
-        '<td><strong>#'+o.codigo+'</strong></td>' +
-        '<td>'+(o.dest_nombre||'—')+'</td>' +
-        '<td>'+o.distrito+'</td>' +
-        '<td><span class="badge '+(badgeMap[o.estado]||'pendiente')+'">'+o.estado+'</span></td>' +
-        '<td>'+dStr+'</td><td>'+cStr+'</td>' +
-        '<td class="'+saldoClass+'">'+
-          (tieneCobro?(saldo>0?'S/ '+saldo.toFixed(2):saldo<0?'− S/ '+Math.abs(saldo).toFixed(2):'S/ 0.00'):'<span style="color:var(--color-text-tertiary)">S/ 0.00</span>')+
-        '</td>' +
-        '<td style="font-size:12px;color:var(--color-text-secondary)">'+_fechaDisplayCaja(o.fecha_reparto || o.fecha)+'</td>' +
-        '<td><button class="btn btn-sm" onclick="editarOrdenDesdeCaja('+o.id+')" title="Editar orden"><i class="ti ti-pencil"></i></button></td>' +
-      '</tr>';
-    }).join('') || '<tr><td colspan="9" style="text-align:center;padding:20px;color:var(--color-text-tertiary)">Sin órdenes</td></tr>';
-
-    var detalle = document.getElementById('detalle-tienda-caja');
-    if (detalle) { detalle.style.display='block'; setTimeout(function(){ detalle.scrollIntoView({behavior:'smooth',block:'start'}); },50); }
-  } catch(err) { console.error(err); }
-};
-
-window.cerrarDetalleTienda = function() {
-  var el=document.getElementById('detalle-tienda-caja'); if(el) el.style.display='none';
-  _cajaDetalleTiendaCurrent = '';
+    if (typeof showNotif === 'function') showNotif('Pago registrado · ' + t.tienda + ' · ' + json.dias + ' día(s)');
+  } catch (err) { console.error(err); }
 };
 
 /* ════════════════════════════════════════════
@@ -662,8 +695,9 @@ window.cerrarDetalleMoto = function() {
 /* ── Init ── */
 window.initCaja = function() {
   _cajaFiltroDesde = ''; _cajaFiltroHasta = '';
+  _cajaFiltroPago  = 'pendientes';
+  _cajaResumenTiendas = null; _cajaDetallesTienda = {}; _cajaFirmaTiendas = '';
   _motoFiltroDesde = ''; _motoFiltroHasta = '';
-  _mostrarPagadosTiendas = false;
   _mostrarPagadosMotos   = false;
   ['tiendas','liquidez','motorizados'].forEach(function(t){
     var el = document.getElementById('tab-'+t);
@@ -681,11 +715,15 @@ window.initCaja = function() {
 };
 
 /* ── Editar orden desde Caja ── */
-window.editarOrdenDesdeCaja = function(ordenId) {
-  /* Reutiliza el mismo modal que motorizados. El refresco de caja al
-     guardar ya lo hace guardarActualizarEstadoOrden() por su cuenta
-     (ver _refrescarCajaActual más abajo), así que acá no hace falta
-     envolver nada. */
+window.editarOrdenDesdeCaja = function(ordenId, diaPagado, fecha) {
+  /* Reutiliza el mismo modal "Actualizar orden" de Todos los pedidos. El
+     refresco de caja al guardar ya lo hace guardarActualizarEstadoOrden()
+     por su cuenta (ver _refrescarCajaActual más abajo). Si su día ya se
+     liquidó, se avisa antes: cambiar montos o estado descuadra lo pagado. */
+  if (diaPagado && !confirm('El ' + _fechaDisplayCaja(fecha) + ' ya está marcado como pagado para esta tienda.\n' +
+      'Editar la orden puede descuadrar esa liquidación (la Caja no tiene "desmarcar").\n\n¿Editar igual?')) {
+    return;
+  }
   if (typeof abrirActualizarEstadoOrden === 'function') {
     abrirActualizarEstadoOrden(ordenId);
   }
@@ -700,11 +738,7 @@ window._refrescarCajaActual = function() {
   if (typeof renderTiendasCaja === 'function') renderTiendasCaja();
   if (typeof renderMotosCaja   === 'function') renderMotosCaja();
   if (typeof renderLiquidez    === 'function') renderLiquidez();
-
-  var panelTienda = document.getElementById('detalle-tienda-caja');
-  if (panelTienda && panelTienda.style.display === 'block' && _cajaDetalleTiendaCurrent) {
-    verDetalleTiendaCaja(_cajaDetalleTiendaCurrent);
-  }
+  /* renderTiendasCaja ya recarga el detalle de las tiendas abiertas */
 
   var panelMoto = document.getElementById('detalle-moto-caja');
   if (panelMoto && panelMoto.style.display === 'block' && _cajaDetalleMotoCurrent.nombre) {

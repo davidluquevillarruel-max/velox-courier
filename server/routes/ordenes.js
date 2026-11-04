@@ -1178,7 +1178,7 @@ const fechaDMY = f => f.split('-').reverse().join('/');
 /* Si la orden suma plata en la Caja, cambiarla de día o de
    motorizado cambiaría el monto de un día que ya se marcó pagado.
    Mismas condiciones que las consultas de routes/caja.js:
-   · Caja de tiendas: entregado / ausente, o cancelado pre-pagado
+   · Caja de tiendas: entregado / ausente / devolucion
    · Caja de motorizados: entregado / ausente
    antes / despues = { id_tienda, id_motorizado, fecha_reparto }.
    Devuelve el mensaje de error, o null si se puede. */
@@ -1187,7 +1187,7 @@ async function bloqueoPorDiaPagado(pool, orden, antes, despues) {
   const cambiaMoto = (antes.id_motorizado || null) !== (despues.id_motorizado || null);
   if (!cambiaDia && !cambiaMoto) return null;
 
-  if (sumaEnCajaTienda(orden.estado, orden.pago_velox) && cambiaDia) {
+  if (sumaEnCajaTienda(orden.estado) && cambiaDia) {
     for (const dia of [antes.fecha_reparto, despues.fecha_reparto]) {
       const tienda = await tiendaConDiaPagado(pool, orden.id_tienda, dia);
       if (tienda) {
@@ -1211,9 +1211,10 @@ async function bloqueoPorDiaPagado(pool, orden, antes, despues) {
   return null;
 }
 
-/* Qué estados suman en cada Caja (mismas condiciones que routes/caja.js) */
-function sumaEnCajaTienda(estado, pagoVelox) {
-  return ['entregado', 'ausente'].includes(estado) || (estado === 'cancelado' && pagoVelox === 'PAGADO');
+/* Qué estados suman en cada Caja (mismas condiciones que routes/caja.js:
+   ESTADOS_COBRABLES_TIENDA y la consulta de motorizados) */
+function sumaEnCajaTienda(estado) {
+  return ['entregado', 'ausente', 'devolucion'].includes(estado);
 }
 function sumaEnCajaMoto(estado) {
   return ['entregado', 'ausente'].includes(estado);
@@ -1248,7 +1249,7 @@ async function motoConDiaPagado(pool, idMoto, dia) {
    id_tienda, id_motorizado, fecha_reparto, pago_velox }. Devuelve el
    mensaje de error, o null. */
 async function bloqueoPorResolverEnDiaPagado(pool, orden, estadoNuevo) {
-  if (sumaEnCajaTienda(estadoNuevo, orden.pago_velox)) {
+  if (sumaEnCajaTienda(estadoNuevo)) {
     const tienda = await tiendaConDiaPagado(pool, orden.id_tienda, orden.fecha_reparto);
     if (tienda) {
       return `El ${fechaDMY(orden.fecha_reparto)} ya está marcado como pagado en la Caja de la tienda ${tienda}: ` +
@@ -1546,7 +1547,11 @@ router.patch('/:id/devolver', requireRol(...GESTORES), async (req, res) => {
 
 /* ── PATCH /api/ordenes/:id/devolver-tienda — solo gestores ──
    Cierra el ciclo de Cancelado/condición especial: el producto que
-   estaba "en almacén" ya se le devolvió físicamente a la tienda. */
+   estaba "en almacén" ya se le devolvió físicamente a la tienda.
+   Estado final 'devolucion' (la Caja Tienda le cobra el delivery),
+   salvo que ya fuera entregado / ausente: esos ya se cobran como tales
+   (ej. un cambio entregado que trae de vuelta el producto viejo) y
+   pasarlos a 'devolucion' le quitaría lo retenido de la entrega. */
 router.patch('/:id/devolver-tienda', requireRol(...GESTORES), async (req, res) => {
   try {
     const pool = await getPool();
@@ -1554,7 +1559,9 @@ router.patch('/:id/devolver-tienda', requireRol(...GESTORES), async (req, res) =
 
     const r = await pool.request()
       .input('id', sql.BigInt, ordenId)
-      .query(`SELECT estado, condicion_especial, devuelto, devuelto_tienda FROM ordenes WHERE id = @id`);
+      .query(`SELECT estado, condicion_especial, devuelto, devuelto_tienda, id_tienda,
+                     CONVERT(varchar, fecha_reparto, 23) AS fecha_reparto
+              FROM ordenes WHERE id = @id`);
     const orden = r.recordset[0];
     if (!orden) return res.status(404).json({ error: 'Orden no encontrada' });
 
@@ -1566,9 +1573,24 @@ router.patch('/:id/devolver-tienda', requireRol(...GESTORES), async (req, res) =
       return res.status(400).json({ error: 'Esta orden no está pendiente de devolver a la tienda.' });
     }
 
+    /* Pasar a 'devolucion' suma el delivery en la Caja de su día: si
+       ese día ya está pagado para la tienda, cambiaría lo ya liquidado */
+    const pasaADevolucion = !sumaEnCajaTienda(orden.estado);
+    if (pasaADevolucion) {
+      const tienda = await tiendaConDiaPagado(pool, orden.id_tienda, orden.fecha_reparto);
+      if (tienda) {
+        return res.status(400).json({
+          diaPagado: true,
+          error: `El ${fechaDMY(orden.fecha_reparto)} ya está marcado como pagado en la Caja de la tienda ${tienda}: ` +
+                 'devolver esta orden sumaría su delivery a un día ya liquidado.'
+        });
+      }
+    }
+
     await pool.request()
       .input('id', sql.BigInt, ordenId)
-      .query(`UPDATE ordenes SET devuelto_tienda = 1 WHERE id = @id`);
+      .input('estado', sql.NVarChar(20), pasaADevolucion ? 'devolucion' : orden.estado)
+      .query(`UPDATE ordenes SET devuelto_tienda = 1, estado = @estado WHERE id = @id`);
 
     res.json({ ok: true });
   } catch (err) {

@@ -21,7 +21,7 @@
 <div id="tab-tiendas">
 
   <div class="page-title" style="margin-bottom:4px">Saldos con tiendas</div>
-  <div class="page-sub">Cobros y devoluciones filtrados por rango de fechas</div>
+  <div class="page-sub">Por pedido, en su fecha de reparto: entregado, ausente y devolución. Verde = la tienda nos debe · Ámbar = le debemos</div>
 
   <!-- Filtro de fechas -->
   <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap;padding:12px 16px;background:var(--color-bg-primary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--radius-md)">
@@ -47,28 +47,30 @@
       <i class="ti ti-x"></i> Limpiar
     </button>
     <span style="font-size:12px;color:var(--color-text-tertiary);margin-left:4px">
-      Sin filtro = todos los registros
+      Solo "Desde" = ese día · Sin filtro = todos los registros
     </span>
   </div>
 
-  <!-- KPIs dinámicos -->
-  <div class="metrics" style="grid-template-columns:repeat(4,1fr);margin-bottom:16px">
-    <div class="metric"><div class="metric-label">Total por cobrar</div><div class="metric-val red" id="kpi-cobrar">—</div></div>
+  <!-- KPIs: siempre sobre lo pendiente del período -->
+  <div class="metrics caja-kpis-tiendas">
+    <div class="metric"><div class="metric-label">Total por cobrar</div><div class="metric-val green" id="kpi-cobrar">—</div></div>
     <div class="metric"><div class="metric-label">Total por devolver</div><div class="metric-val amber" id="kpi-devolver">—</div></div>
+    <div class="metric"><div class="metric-label">Posición neta</div><div class="metric-val" id="kpi-neta">—</div><div class="caja-kpi-nota" id="kpi-neta-nota"></div></div>
     <div class="metric"><div class="metric-label">Tiendas al día</div><div class="metric-val green" id="kpi-aldia">—</div></div>
-    <div class="metric"><div class="metric-label">Tiendas con saldo</div><div class="metric-val red" id="kpi-consaldo">—</div></div>
+    <div class="metric"><div class="metric-label">Tiendas con saldo</div><div class="metric-val amber" id="kpi-consaldo">—</div></div>
   </div>
+  <div class="caja-kpi-nota" style="margin:-8px 0 16px">Los indicadores miran lo pendiente del período (días sin marcar pagado).</div>
 
   <div class="card">
-    <div class="card-head">
-      <span class="card-title">Registros por tienda</span>
-      <div style="display:flex;align-items:center;gap:8px">
-        <span style="font-size:12px;color:var(--color-text-secondary)">
-          Solo pendientes — "Marcar pagado" liquida ese día
-        </span>
-        <button id="btn-historial-tiendas" class="btn btn-sm" onclick="togglePagadosTiendas()">
-          <i class="ti ti-history"></i> Historial de pagados
-        </button>
+    <div class="card-head caja-toolbar">
+      <div class="caja-segmento" role="group" aria-label="Estado de pago">
+        <button id="btn-pago-pendientes" class="active" onclick="filtroPagoTiendas('pendientes')">Pendientes</button>
+        <button id="btn-pago-pagados" onclick="filtroPagoTiendas('pagados')">Pagados</button>
+        <button id="btn-pago-todos" onclick="filtroPagoTiendas('todos')">Todos</button>
+      </div>
+      <div class="caja-buscar">
+        <i class="ti ti-search"></i>
+        <input type="search" id="caja-buscar-tienda" placeholder="Buscar tienda…" oninput="pintarTiendasCaja()" />
       </div>
     </div>
     <div class="table-wrap">
@@ -76,10 +78,10 @@
         <thead>
           <tr>
             <th>Tienda / Ciclo</th>
-            <th>Fecha</th>
-            <th>Delivery cobrable</th>
-            <th>Cobrado</th>
-            <th>Saldo</th>
+            <th>Pedidos</th>
+            <th>Delivery</th>
+            <th>Retenido</th>
+            <th>Saldo neto</th>
             <th>Estado</th>
             <th>Acción</th>
             <th class="col-ver-tienda-fijo"></th>
@@ -87,27 +89,6 @@
         </thead>
         <tbody id="tbody-tiendas-caja"></tbody>
       </table>
-    </div>
-  </div>
-
-  <!-- Detalle de órdenes -->
-  <div id="detalle-tienda-caja" style="display:none;margin-top:16px">
-    <div class="card">
-      <div class="card-head">
-        <span class="card-title" id="titulo-detalle-tienda">Detalle</span>
-        <button class="btn btn-sm" onclick="cerrarDetalleTienda()"><i class="ti ti-x"></i> Cerrar</button>
-      </div>
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Código</th><th>Destinatario</th><th>Distrito</th><th>Estado</th>
-              <th>Costo delivery</th><th>Pagado</th><th>Saldo</th><th>Fecha</th><th></th>
-            </tr>
-          </thead>
-          <tbody id="tbody-detalle-tienda-caja"></tbody>
-        </table>
-      </div>
     </div>
   </div>
 
@@ -252,4 +233,38 @@
 .badge-pago-no { background:#FCEBEB; color:#A32D2D; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:500; }
 .btn-pagar { padding:4px 12px; font-size:12px; border-radius:6px; border:0.5px solid #B5D4F4; background:#E6F1FB; color:#185FA5; cursor:pointer; transition:background .15s; }
 .btn-pagar:hover { background:#C5DFF7; }
+
+/* ── Caja Tienda ── */
+.caja-kpis-tiendas { grid-template-columns:repeat(5,1fr); margin-bottom:16px; }
+.caja-kpi-nota { font-size:11px; color:var(--color-text-tertiary); margin-top:2px; }
+.caja-toolbar { gap:12px; flex-wrap:wrap; }
+.caja-segmento { display:inline-flex; border:0.5px solid var(--color-border-secondary); border-radius:8px; overflow:hidden; }
+.caja-segmento button { padding:6px 14px; font-size:12px; border:none; background:transparent; color:var(--color-text-secondary); cursor:pointer; }
+.caja-segmento button + button { border-left:0.5px solid var(--color-border-secondary); }
+.caja-segmento button.active { background:var(--color-blue); color:#fff; font-weight:500; }
+.caja-buscar { display:flex; align-items:center; gap:6px; padding:5px 10px; border:0.5px solid var(--color-border-secondary); border-radius:8px; min-width:200px; color:var(--color-text-tertiary); }
+.caja-buscar input { border:none; outline:none; background:transparent; font-size:13px; color:var(--color-text-primary); width:100%; }
+.caja-ciclo { display:inline-block; margin-top:3px; padding:1px 8px; border-radius:10px; font-size:10px; font-weight:500; text-transform:capitalize; background:var(--color-bg-secondary); color:var(--color-text-secondary); }
+.caja-saldo { font-size:17px; font-weight:700; white-space:nowrap; }
+.caja-saldo small { display:block; font-size:11px; font-weight:500; }
+.caja-saldo.pos { color:var(--color-green); }
+.caja-saldo.neg { color:var(--color-amber); }
+.caja-saldo.cero { color:var(--color-text-secondary); }
+.caja-fila-abierta > td { background:var(--color-bg-secondary); }
+.caja-detalle-celda { padding:0 !important; background:var(--color-bg-secondary); }
+.caja-detalle { padding:4px 12px 14px 24px; }
+.caja-detalle table { width:100%; background:var(--color-bg-primary); border-radius:var(--radius-md); }
+.caja-detalle th { font-size:11px; }
+.caja-detalle td { font-size:12px; }
+.caja-detalle tr.caja-totales td { font-weight:700; background:var(--color-bg-secondary); border-top:2px solid var(--color-border-secondary); }
+.caja-estado { padding:2px 9px; border-radius:10px; font-size:11px; font-weight:500; white-space:nowrap; }
+.caja-estado.entregado  { background:var(--color-green-bg);  color:var(--color-green-text); }
+.caja-estado.ausente    { background:var(--color-amber-bg);  color:var(--color-amber-text); }
+.caja-estado.devolucion { background:var(--color-purple-bg); color:var(--color-purple-text); }
+.caja-chip { padding:2px 9px; border-radius:10px; font-size:11px; font-weight:600; white-space:nowrap; }
+.caja-chip.pagado    { background:var(--color-green-bg); color:var(--color-green-text); }
+.caja-chip.pendiente { background:var(--color-amber-bg); color:var(--color-amber-text); }
+.caja-medio-falta { color:var(--color-amber-text); font-weight:500; }
+.caja-tenue { color:var(--color-text-tertiary); }
+@media (max-width: 900px) { .caja-kpis-tiendas { grid-template-columns:repeat(2,1fr); } }
 </style>

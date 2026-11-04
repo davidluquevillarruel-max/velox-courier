@@ -109,7 +109,8 @@ function _badgeCondicionEspecial(condicion) {
    columna aparte en la base: sale de estado + condición + devuelto +
    devuelto_tienda. Compartido con js/devolucion-tienda.js. */
 function _subEstadoOrden(o) {
-  var aplica = (o.estado === 'cancelado' || o.condicionEspecial) && parseInt(o.devuelto) > 0;
+  /* 'devolucion' = estado final que deja "Devolución Tienda" */
+  var aplica = (o.estado === 'cancelado' || o.estado === 'devolucion' || o.condicionEspecial) && parseInt(o.devuelto) > 0;
   if (!aplica) return '';
   return o.devuelto_tienda ? 'devuelto' : 'en-almacen';
 }

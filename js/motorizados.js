@@ -380,7 +380,7 @@ function _botonWhatsApp(telefono, nombreDest, telefono2) {
 }
 
 /* Órdenes en estos estados ya están cerradas: no tiene sentido reasignarlas */
-var _ESTADOS_NO_REASIGNABLES = ['entregado', 'cancelado'];
+var _ESTADOS_NO_REASIGNABLES = ['entregado', 'cancelado', 'devolucion'];
 
 function _renderTablaOrdenesDetalle(ordenes) {
   var esMoto = _esSesionMotorizado(); /* un motorizado no puede reasignar (el backend tampoco lo permite) */

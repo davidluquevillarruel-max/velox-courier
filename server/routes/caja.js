@@ -18,131 +18,273 @@ const { requireAuth, requireRol } = require('../middleware/auth');
 router.use(requireAuth);
 router.use(requireRol('admin', 'operador'));
 
-/* GET /api/caja/tiendas?desde=&hasta= */
+/* ════════════════════════════════════════════════════════════
+   CAJA TIENDA
+   Por pedido, en su fecha_reparto. Solo entran los estados
+   cobrables (entregado / ausente / devolucion); el resto
+   (en-proceso, reprogramado, no-entregado, cancelado) no suma.
+   · delivery = delivery_total (delivery_base + monto_adicional)
+   · retenido = monto_cobrado SOLO si se entregó en contraentrega y
+     la plata la tiene Velox (Pago Velox, Yape o efectivo al moto);
+     con "Pago tienda" o medio por definir, 0.
+   · Postpago: saldo = delivery − retenido.
+     Prepago (pago_velox = 'PAGADO'): el delivery ya se pagó en
+     oficina, saldo = − retenido.
+   saldo > 0 la tienda nos debe · < 0 le debemos · = 0 saldado.
+   "Pagado" sigue siendo por tienda y por día
+   (caja_pagos_tiendas.fecha_ciclo = fecha de reparto).
+   ════════════════════════════════════════════════════════════ */
+const ESTADOS_COBRABLES_TIENDA = ['entregado', 'ausente', 'devolucion'];
+const MEDIOS_QUE_RETIENE_VELOX = ['pago-empresa', 'yape-motorizado', 'efectivo-motorizado'];
+
+/* Única función que calcula la plata de una orden en la Caja Tienda.
+   Trabaja en céntimos (enteros) para que las sumas no arrastren
+   errores de coma flotante; aSoles() los pasa a soles al responder. */
+function calcularCajaTienda(o) {
+  const centimos = v => Math.round((Number(v) || 0) * 100);
+  const prepago  = o.pago_velox === 'PAGADO';
+  const delivery = centimos(o.delivery_total);
+  const retenido = (o.estado === 'entregado' && o.metodo_pago === 'contraentrega' &&
+                    MEDIOS_QUE_RETIENE_VELOX.includes(o.medio_pago))
+    ? centimos(o.monto_cobrado) : 0;
+  return { prepago, delivery, retenido, saldo: (prepago ? 0 : delivery) - retenido };
+}
+const aSoles = c => c / 100;
+
+/* Fecha de hoy en Lima ('YYYY-MM-DD'), como hoyEnLima() de
+   routes/ordenes.js: GETDATE() del servidor (UTC) daba el día
+   siguiente después de las 19:00 de Lima. */
+function hoyEnLima() {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Lima' }).format(new Date());
+}
+
+const FECHA_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/* Filtro de fechas de la Caja Tienda. Solo "desde" = ese único día;
+   solo "hasta" = hasta ese día; nada = todo. */
+function filtroFechaTienda(request, desde, hasta) {
+  if (desde) request.input('desde', sql.Date, desde);
+  if (hasta) request.input('hasta', sql.Date, hasta);
+  if (desde && hasta) return 'AND o.fecha_reparto BETWEEN @desde AND @hasta';
+  if (desde)          return 'AND o.fecha_reparto = @desde';
+  if (hasta)          return 'AND o.fecha_reparto <= @hasta';
+  return '';
+}
+
+/* Órdenes cobrables del período (de una tienda o de todas), cada una
+   con su cálculo y si su día ya está marcado pagado. */
+async function ordenesCajaTienda(pool, { desde, hasta, idTienda }) {
+  const request = pool.request();
+  const filtroFecha = filtroFechaTienda(request, desde, hasta);
+  let filtroTienda = '';
+  if (idTienda) {
+    request.input('id_tienda', sql.Int, idTienda);
+    filtroTienda = 'AND o.id_tienda = @id_tienda';
+  }
+  const r = await request.query(`
+    SELECT o.id, o.codigo, o.id_tienda, t.nombre AS tienda, t.ciclo_pago,
+           CONVERT(varchar, o.fecha_reparto, 23) AS fecha,
+           o.estado, o.metodo_pago, o.medio_pago, o.pago_velox,
+           o.delivery_total, o.monto_cobrado, o.dest_nombre,
+           ISNULL(cp.pagado, 0) AS dia_pagado,
+           CONVERT(varchar, cp.fecha_pago, 23) AS fecha_pago
+    FROM ordenes o
+    JOIN tiendas t ON t.id = o.id_tienda
+    OUTER APPLY (SELECT TOP 1 c.pagado, c.fecha_pago FROM caja_pagos_tiendas c
+                 WHERE c.id_tienda = o.id_tienda AND c.fecha_ciclo = o.fecha_reparto
+                 ORDER BY c.pagado DESC) cp
+    WHERE o.estado IN (${ESTADOS_COBRABLES_TIENDA.map(e => `'${e}'`).join(',')})
+      ${filtroFecha} ${filtroTienda}
+    ORDER BY t.nombre, o.fecha_reparto DESC, o.id DESC
+  `);
+  return r.recordset.map(o => ({ ...o, dia_pagado: !!o.dia_pagado, calc: calcularCajaTienda(o) }));
+}
+
+/* Pendientes (día sin marcar, por defecto) / pagados / todos */
+function filtrarPorPago(ordenes, estado) {
+  if (estado === 'todos')   return ordenes;
+  if (estado === 'pagados') return ordenes.filter(o => o.dia_pagado);
+  return ordenes.filter(o => !o.dia_pagado);
+}
+
+function leerFiltrosTienda(q) {
+  const desde = FECHA_RE.test(q.desde || '') ? q.desde : '';
+  const hasta = FECHA_RE.test(q.hasta || '') ? q.hasta : '';
+  const estado = ['pendientes', 'pagados', 'todos'].includes(q.estado) ? q.estado : 'pendientes';
+  return { desde, hasta, estado };
+}
+
+/* GET /api/caja/tiendas?desde=&hasta=&estado=pendientes|pagados|todos
+   Resumen por tienda del período + KPIs. Los KPIs miran siempre lo
+   PENDIENTE del período (lo que falta liquidar), sea cual sea el
+   filtro de la lista. */
 router.get('/tiendas', async (req, res) => {
   try {
-    const pool  = await getPool();
-    const { desde, hasta } = req.query;
+    const pool = await getPool();
+    const { desde, hasta, estado } = leerFiltrosTienda(req.query);
+    const ordenes = await ordenesCajaTienda(pool, { desde, hasta });
 
-    let where = '';
-    if (desde && hasta) where = `WHERE o.fecha_reparto BETWEEN @desde AND @hasta`;
-    else if (desde)     where = `WHERE o.fecha_reparto >= @desde`;
-    else if (hasta)     where = `WHERE o.fecha_reparto <= @hasta`;
+    const porTienda = new Map();
+    for (const o of ordenes) {
+      if (!porTienda.has(o.id_tienda)) {
+        porTienda.set(o.id_tienda, {
+          id: o.id_tienda, tienda: o.tienda, ciclo_pago: o.ciclo_pago,
+          pedidos: 0, delivery: 0, retenido: 0, saldo: 0,
+          saldo_pendiente: 0, dias_pendientes: new Set(), dias_pagados: new Set(),
+          ultimo_pago: null, visible: false,
+        });
+      }
+      const t = porTienda.get(o.id_tienda);
+      if (o.dia_pagado) {
+        t.dias_pagados.add(o.fecha);
+        if (o.fecha_pago && (!t.ultimo_pago || o.fecha_pago > t.ultimo_pago)) t.ultimo_pago = o.fecha_pago;
+      } else {
+        t.dias_pendientes.add(o.fecha);
+        t.saldo_pendiente += o.calc.saldo;
+      }
+    }
+    for (const o of filtrarPorPago(ordenes, estado)) {
+      const t = porTienda.get(o.id_tienda);
+      t.visible = true;
+      t.pedidos  += 1;
+      t.delivery += o.calc.delivery;
+      t.retenido += o.calc.retenido;
+      t.saldo    += o.calc.saldo;
+    }
 
-    const request = pool.request();
-    if (desde) request.input('desde', sql.Date, desde);
-    if (hasta) request.input('hasta', sql.Date, hasta);
+    let porCobrar = 0, porDevolver = 0, alDia = 0, conSaldo = 0;
+    for (const t of porTienda.values()) {
+      if (t.saldo_pendiente > 0)      { porCobrar   += t.saldo_pendiente; conSaldo++; }
+      else if (t.saldo_pendiente < 0) { porDevolver -= t.saldo_pendiente; conSaldo++; }
+      else alDia++;
+    }
 
-    const result = await request.query(`
-      WITH base AS (
-        SELECT
-          o.id_tienda, o.fecha_reparto AS fecha,
-          /* Delivery cobrable: solo si aún no se pagó por adelantado en
-             oficina (pago_velox). Si ya era PAGADO, ese delivery no
-             vuelve a sumar acá — ya se cobró aparte. */
-          CASE WHEN o.estado IN ('entregado','ausente') AND o.pago_velox <> 'PAGADO'
-               THEN (o.delivery_base + o.monto_adicional) ELSE 0 END AS cobrable,
-          /* Cobrado "efectivo": lo cobrado en la entrega, MÁS el caso
-             especial de un Cancelado que ya estaba pre-pagado — ahí no
-             se cobró nada, hay que devolverle a la tienda lo que
-             adelantó, por eso entra como "cobrado" (da saldo negativo). */
-          CASE
-            WHEN o.estado IN ('entregado','ausente') THEN o.monto_cobrado
-            WHEN o.estado = 'cancelado' AND o.pago_velox = 'PAGADO'
-                 THEN (o.delivery_base + o.monto_adicional + o.monto_cobrado)
-            ELSE 0
-          END AS cobrado_ef
-        FROM ordenes o
-        ${where}
-      )
-      SELECT
-        t.id, t.nombre AS tienda, t.ciclo_pago,
-        CONVERT(varchar, b.fecha, 23) AS fecha,
-        SUM(b.cobrable)                      AS delivery_cobrable,
-        SUM(b.cobrado_ef)                    AS cobrado,
-        SUM(b.cobrable) - SUM(b.cobrado_ef)  AS saldo_neto,
-        ISNULL(cp.pagado, 0) AS pagado,
-        CONVERT(varchar, cp.fecha_pago, 23) AS fecha_pago
-      FROM base b
-      JOIN tiendas t ON t.id = b.id_tienda
-      LEFT JOIN caja_pagos_tiendas cp
-             ON cp.id_tienda = t.id AND cp.fecha_ciclo = b.fecha
-      GROUP BY t.id, t.nombre, t.ciclo_pago, b.fecha, cp.pagado, cp.fecha_pago
-      HAVING SUM(b.cobrable) <> 0 OR SUM(b.cobrado_ef) <> 0
-      ORDER BY t.nombre, b.fecha DESC
-    `);
+    const tiendas = [...porTienda.values()].filter(t => t.visible).map(t => ({
+      id: t.id, tienda: t.tienda, ciclo_pago: t.ciclo_pago,
+      pedidos: t.pedidos,
+      delivery: aSoles(t.delivery), retenido: aSoles(t.retenido), saldo: aSoles(t.saldo),
+      saldo_pendiente: aSoles(t.saldo_pendiente),
+      dias_pendientes: t.dias_pendientes.size, dias_pagados: t.dias_pagados.size,
+      estado: t.dias_pendientes.size ? 'pendiente' : 'pagado',
+      ultimo_pago: t.ultimo_pago,
+    }));
 
-    res.json(result.recordset);
+    res.json({
+      kpis: {
+        por_cobrar: aSoles(porCobrar), por_devolver: aSoles(porDevolver),
+        posicion_neta: aSoles(porCobrar - porDevolver),
+        al_dia: alDia, con_saldo: conSaldo,
+      },
+      tiendas,
+    });
   } catch (err) {
     console.error('GET /caja/tiendas:', err.message);
     res.status(500).json({ error: 'Error al obtener la caja de tiendas' });
   }
 });
 
-/* POST /api/caja/tiendas/pagar */
+/* GET /api/caja/tiendas/:id/detalle?desde=&hasta=&estado=
+   Detalle por pedido de una tienda (mismo filtro que el resumen) +
+   totales al pie. pago = PAGADO si el delivery ya se pagó: por
+   adelantado en oficina (prepago) o porque su día ya se liquidó. */
+router.get('/tiendas/:id/detalle', async (req, res) => {
+  try {
+    const idTienda = parseInt(req.params.id, 10);
+    if (!idTienda) return res.status(400).json({ error: 'Tienda no válida' });
+    const pool = await getPool();
+    const { desde, hasta, estado } = leerFiltrosTienda(req.query);
+    const ordenes = filtrarPorPago(await ordenesCajaTienda(pool, { desde, hasta, idTienda }), estado);
+
+    const tot = { delivery: 0, retenido: 0, saldo: 0 };
+    const pedidos = ordenes.map(o => {
+      tot.delivery += o.calc.delivery;
+      tot.retenido += o.calc.retenido;
+      tot.saldo    += o.calc.saldo;
+      return {
+        id: o.id, codigo: o.codigo, fecha: o.fecha, estado: o.estado,
+        dest_nombre: o.dest_nombre, metodo_pago: o.metodo_pago, medio_pago: o.medio_pago,
+        delivery: aSoles(o.calc.delivery), retenido: aSoles(o.calc.retenido), saldo: aSoles(o.calc.saldo),
+        pago_oficina: o.calc.prepago ? 'pre' : 'post',
+        pago: (o.calc.prepago || o.dia_pagado) ? 'PAGADO' : 'pendiente',
+        dia_pagado: o.dia_pagado, fecha_pago: o.fecha_pago,
+      };
+    });
+
+    res.json({
+      pedidos,
+      totales: {
+        pedidos: pedidos.length,
+        delivery: aSoles(tot.delivery), retenido: aSoles(tot.retenido), saldo: aSoles(tot.saldo),
+      },
+    });
+  } catch (err) {
+    console.error('GET /caja/tiendas/:id/detalle:', err.message);
+    res.status(500).json({ error: 'Error al obtener el detalle de la tienda' });
+  }
+});
+
+/* POST /api/caja/tiendas/pagar  { id_tienda, desde?, hasta? }
+   Liquida los días PENDIENTES de la tienda en el período (mismo
+   filtro de fechas que la lista). Por cada día guarda lo que se
+   cobra y lo que se devuelve, con la misma calcularCajaTienda().
+   fecha_pago = hoy en Lima. */
 router.post('/tiendas/pagar', async (req, res) => {
+  const idTienda = parseInt(req.body.id_tienda, 10);
+  if (!idTienda) return res.status(400).json({ error: 'Falta la tienda' });
+  const { desde, hasta } = leerFiltrosTienda(req.body);
+
+  let tx;
   try {
     const pool = await getPool();
-    const { id_tienda, fecha } = req.body;
-
-    if (!id_tienda || !fecha) {
-      return res.status(400).json({ error: 'Faltan id_tienda o fecha' });
+    const pendientes = filtrarPorPago(await ordenesCajaTienda(pool, { desde, hasta, idTienda }), 'pendientes');
+    if (!pendientes.length) {
+      return res.status(400).json({ error: 'Esta tienda no tiene días pendientes en el período.' });
     }
 
-    const totales = await pool.request()
-      .input('id_tienda',   sql.Int,  id_tienda)
-      .input('fecha_ciclo', sql.Date, fecha)
-      .query(`
-        WITH base AS (
-          SELECT
-            CASE WHEN estado IN ('entregado','ausente') AND pago_velox <> 'PAGADO'
-                 THEN (delivery_base + monto_adicional) ELSE 0 END AS cobrable,
-            CASE
-              WHEN estado IN ('entregado','ausente') THEN monto_cobrado
-              WHEN estado = 'cancelado' AND pago_velox = 'PAGADO'
-                   THEN (delivery_base + monto_adicional + monto_cobrado)
-              ELSE 0
-            END AS cobrado_ef
-          FROM ordenes
-          WHERE id_tienda = @id_tienda AND fecha_reparto = @fecha_ciclo
-        )
-        SELECT
-          SUM(CASE WHEN cobrable > cobrado_ef THEN cobrable - cobrado_ef ELSE 0 END) AS monto_cobrar,
-          SUM(CASE WHEN cobrado_ef > cobrable THEN cobrado_ef - cobrable ELSE 0 END) AS monto_devolver
-        FROM base
-      `);
+    const porDia = new Map();
+    for (const o of pendientes) {
+      const d = porDia.get(o.fecha) || { cobrar: 0, devolver: 0 };
+      if (o.calc.saldo > 0) d.cobrar   += o.calc.saldo;
+      else                  d.devolver -= o.calc.saldo;
+      porDia.set(o.fecha, d);
+    }
 
-    const t = totales.recordset[0];
-    const monto_cobrar   = parseFloat(t.monto_cobrar   || 0);
-    const monto_devolver = parseFloat(t.monto_devolver || 0);
+    const hoy = hoyEnLima();
+    tx = new sql.Transaction(pool);
+    await tx.begin();
+    for (const [fecha, d] of porDia) {
+      await new sql.Request(tx)
+        .input('id_tienda',      sql.Int,           idTienda)
+        .input('fecha_ciclo',    sql.Date,          fecha)
+        .input('monto_cobrar',   sql.Decimal(10,2), aSoles(d.cobrar))
+        .input('monto_devolver', sql.Decimal(10,2), aSoles(d.devolver))
+        .input('hoy',            sql.Date,          hoy)
+        .query(`
+          IF EXISTS (
+            SELECT 1 FROM caja_pagos_tiendas
+            WHERE id_tienda = @id_tienda AND fecha_ciclo = @fecha_ciclo
+          )
+            UPDATE caja_pagos_tiendas
+            SET pagado = 1, fecha_pago = @hoy,
+                monto_cobrar = @monto_cobrar, monto_devolver = @monto_devolver
+            WHERE id_tienda = @id_tienda AND fecha_ciclo = @fecha_ciclo;
+          ELSE
+            INSERT INTO caja_pagos_tiendas
+              (id_tienda, fecha_ciclo, monto_cobrar, monto_devolver, pagado, fecha_pago)
+            VALUES
+              (@id_tienda, @fecha_ciclo, @monto_cobrar, @monto_devolver, 1, @hoy);
+        `);
+    }
+    await tx.commit();
 
-    await pool.request()
-      .input('id_tienda',      sql.Int,           id_tienda)
-      .input('fecha_ciclo',    sql.Date,          fecha)
-      .input('monto_cobrar',   sql.Decimal(10,2), monto_cobrar)
-      .input('monto_devolver', sql.Decimal(10,2), monto_devolver)
-      .query(`
-        IF EXISTS (
-          SELECT 1 FROM caja_pagos_tiendas
-          WHERE id_tienda = @id_tienda AND fecha_ciclo = @fecha_ciclo
-        )
-          UPDATE caja_pagos_tiendas
-          SET pagado = 1, fecha_pago = CAST(GETDATE() AS DATE),
-              monto_cobrar = @monto_cobrar, monto_devolver = @monto_devolver
-          WHERE id_tienda = @id_tienda AND fecha_ciclo = @fecha_ciclo;
-        ELSE
-          INSERT INTO caja_pagos_tiendas
-            (id_tienda, fecha_ciclo, monto_cobrar, monto_devolver, pagado, fecha_pago)
-          VALUES
-            (@id_tienda, @fecha_ciclo, @monto_cobrar, @monto_devolver, 1, CAST(GETDATE() AS DATE));
-      `);
-
-    res.json({ ok: true });
+    res.json({ ok: true, dias: porDia.size, fecha_pago: hoy });
   } catch (err) {
+    if (tx) { try { await tx.rollback(); } catch (_) { /* ya cerrada */ } }
     console.error('POST /caja/tiendas/pagar:', err.message);
     res.status(500).json({ error: 'Error al registrar el pago' });
   }
 });
+
 
 /* GET /api/caja/liquidez?desde=&hasta= */
 router.get('/liquidez', async (req, res) => {

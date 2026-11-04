@@ -10,7 +10,36 @@ Velox Courier — internal management system for a courier/delivery company in L
 
 ## Estado actual
 
-Última actualización: 3 de noviembre de 2026.
+Última actualización: 4 de noviembre de 2026.
+
+- **Caja Tienda rehecha (4 de noviembre de 2026, commit local, SIN push).** Sin migración: usa
+  las columnas que ya existían. `server/routes/caja.js`, `server/routes/ordenes.js`, `js/caja.js`,
+  `pages/caja.html`, `js/pedidos.js`, `js/motorizados.js`. **Toca el servidor:** hay que reiniciarlo.
+  Liquidez y la Caja de motorizados no se tocaron.
+  - **Una sola función** `calcularCajaTienda()` (en céntimos) por pedido, en su `fecha_reparto`.
+    Cobrables: `entregado`, `ausente`, `devolucion` (cancelado, reprogramado, no entregado y en
+    proceso no suman). Delivery = `delivery_total`. Retenido = `monto_cobrado` solo si es
+    entregado + contraentrega + `medio_pago` en Pago Velox (`pago-empresa`), Yape o efectivo al
+    moto; con "Pago tienda" o medio por definir (NULL), 0. Postpago: saldo = delivery − retenido;
+    prepago (`pago_velox = 'PAGADO'`): saldo = − retenido. > 0 nos debe, < 0 le debemos.
+    Cambios contra la Caja anterior: el cancelado prepagado ya no da devolución; el ausente ya
+    no resta lo cobrado; "Pago tienda" ya no cuenta como cobrado por Velox.
+  - **Endpoints:** `GET /caja/tiendas?desde&hasta&estado=pendientes|pagados|todos` (resumen por
+    tienda + KPIs, que miran siempre lo pendiente del período), `GET /caja/tiendas/:id/detalle`
+    (por pedido + totales) y `POST /caja/tiendas/pagar {id_tienda, desde, hasta}` (liquida, en
+    una transacción, todos los días pendientes de la tienda en el período; sigue siendo por día
+    en `caja_pagos_tiendas`). Solo "desde" = ese único día. `fecha_pago` = hoy en Lima (arregla
+    el bug de `GETDATE()` en tiendas; el de motorizados sigue, ver Pendiente).
+  - **Pantalla:** 5 KPIs (por cobrar, por devolver, posición neta, al día, con saldo),
+    Pendientes / Pagados / Todos + buscador, una fila por tienda (ciclo, pedidos, delivery,
+    retenido, saldo grande verde/ámbar, estado, "Marcar pagado") y el ojito abre el detalle por
+    pedido **inline** con totales, badges de estado, chip PAGADO / Pendiente (PAGADO = prepago o
+    día liquidado) y "Editar orden" (el mismo modal "Actualizar orden"; avisa antes si el día ya
+    está pagado). Refresco de 8 s sin repintar si nada cambió; el detalle abierto se mantiene.
+  - **Devolución Tienda** deja la orden en estado `devolucion` (estado final, la Caja cobra su
+    delivery), salvo que ya fuera entregado / ausente (ej. un cambio entregado). Si su día ya
+    está pagado para la tienda, 400 (`diaPagado`). `sumaEnCajaTienda()` en `ordenes.js` ahora
+    es entregado / ausente / devolución.
 
 - **Asignar órdenes pendientes con foto + tienda (3 de noviembre de 2026, HECHO en
   producción).** Confirmado por el usuario el 3 de noviembre de 2026: `git pull` + `pm2 restart
@@ -435,14 +464,11 @@ Velox Courier — internal management system for a courier/delivery company in L
 
 **Pendiente:**
 - **Seguir revisando la Caja** (con la fecha de reparto ya aplicada y los datos reales del 20/10).
-- **Bug de Caja 1 — prepago en el detalle de la tienda.** El prepago (`pago_velox = 'PAGADO'`)
-  no se cuenta en el detalle de la tienda de la Caja. Falta precisar con el usuario qué se ve
-  mal y reproducirlo antes de tocar código.
-- **Bug de Caja 2 — `GETDATE()` en "Marcar pagado".** Los dos "Marcar pagado" (tiendas y
-  motorizados) guardan `fecha_pago = CAST(GETDATE() AS DATE)` (`server/routes/caja.js`, en el
-  UPDATE y el INSERT de cada uno). El servidor está en UTC: después de las 19:00 de Lima queda
-  registrado el día siguiente. Es el mismo bug que ya se arregló en la copia de "ausente":
-  usar la fecha de Lima.
+- **Bug de Caja 2 — `GETDATE()` en "Marcar pagado" de motorizados.** El de tiendas ya usa la
+  fecha de Lima (Caja Tienda rehecha, 4/11). Falta `POST /caja/motorizados/pagar`, que sigue
+  con `fecha_pago = CAST(GETDATE() AS DATE)` (UTC: después de las 19:00 de Lima queda el día
+  siguiente). El bug 1 (prepago en el detalle de la tienda) quedó resuelto con la Caja nueva.
+- Liquidez y Caja real siguen con la regla vieja (entregado / ausente, sin `devolucion`).
 - Borrar las 3 fotos de prueba del bucket (`productos/orden-0/`) y, si quedó, la carpeta
   `server/uploads_local/` del servidor (ya no se usa con R2 activo; las fotos de modo prueba
   **no se migran** a R2).

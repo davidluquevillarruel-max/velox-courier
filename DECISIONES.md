@@ -388,10 +388,10 @@ antes: no son parte de este cambio.
 
 ## D-011 · Foto del pago en "Marcar pagado" de Caja Tienda (liquidaciones)
 
-**Estado:** HECHO: probado y aprobado en local el 4 de noviembre de 2026, pendiente de deploy
-(commit `5d9e9c0`, pusheado a GitHub). **Con migración:**
-`velox_agregar_fotos_pago_tienda.sql` (aplicada en local; en producción va con `sa` antes del
-`git pull`).
+**Estado:** HECHO en producción desde el 4 de noviembre de 2026 (confirmado por el usuario;
+cambio en `5d9e9c0`, último commit `e07d53e`). Migración
+`velox_agregar_fotos_pago_tienda.sql` aplicada con `sa` en local y en producción, antes del
+`git pull`.
 
 **Problema.** "Marcar pagado" liquida en un solo acto varios días de una tienda, y no quedaba
 ninguna prueba de que el pago se hizo (voucher, Yape, efectivo). `caja_pagos_tiendas` guarda una

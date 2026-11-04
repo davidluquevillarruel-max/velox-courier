@@ -12,9 +12,10 @@ Velox Courier — internal management system for a courier/delivery company in L
 
 Última actualización: 4 de noviembre de 2026.
 
-- **Foto del pago en "Marcar pagado" de Caja Tienda (4 de noviembre de 2026, HECHO: probado y
-  aprobado en local el 4/11, pendiente de deploy; commit `5d9e9c0`, pusheado a GitHub).** **CON MIGRACIÓN** `velox_agregar_fotos_pago_tienda.sql` (aplicada en local por el
-  usuario; en producción con `sa` **antes** del pull, ver "Migraciones pendientes"). Ver D-011
+- **Foto del pago en "Marcar pagado" de Caja Tienda (4 de noviembre de 2026, HECHO en
+  producción).** Confirmado por el usuario el 4 de noviembre de 2026: migración
+  `velox_agregar_fotos_pago_tienda.sql` aplicada con `sa`, después `git pull` + `pm2 restart
+  velox`, logs limpios. Último commit en producción: `e07d53e` (cambio en `5d9e9c0`). Ver D-011
   en `DECISIONES.md`. `server/routes/caja.js`, `server/r2.js`, `server/almacenamiento-local.js`,
   `js/cola-fotos.js`, `js/indicador-fotos.js`, `js/caja.js`, `pages/caja.html`. **Toca el
   servidor.**
@@ -35,8 +36,9 @@ Velox Courier — internal management system for a courier/delivery company in L
   - `/pagar` ahora es transaccional con bloqueo por día: si otro usuario liquidó un día en el
     medio, 409 y no se pisa nada.
 
-- **Caja Tienda rehecha (4 de noviembre de 2026, HECHO: probado y aprobado en local el 4/11,
-  pendiente de deploy; commit `18f2c5f`, pusheado a GitHub, va junto con la foto del pago).** Sin migración: usa
+- **Caja Tienda rehecha (4 de noviembre de 2026, HECHO en producción).** Confirmado por el
+  usuario el 4 de noviembre de 2026, en el mismo deploy que la foto del pago (último commit
+  `e07d53e`; cambio en `18f2c5f`). Sin migración propia: usa
   las columnas que ya existían. `server/routes/caja.js`, `server/routes/ordenes.js`, `js/caja.js`,
   `pages/caja.html`, `js/pedidos.js`, `js/motorizados.js`. **Toca el servidor:** hay que reiniciarlo.
   Liquidez y la Caja de motorizados no se tocaron.
@@ -580,11 +582,12 @@ Roles: `admin`, `operador`, `visor`, `tienda`, `motorizado`. `GESTORES = ['admin
 
 ## Migraciones pendientes de aplicar en producción
 
-- **`velox_agregar_fotos_pago_tienda.sql`** (foto del pago de Caja Tienda, D-011): tablas
-  `caja_liquidaciones_tiendas` y `caja_liquidaciones_tiendas_fotos` + columna
-  `caja_pagos_tiendas.id_liquidacion`. Aplicada en local el 4 de noviembre de 2026. Idempotente.
-  En el servidor: copiarla, correrla con `sa` y `sqlcmd -I` **antes** del `git pull` (sin ella,
-  "Marcar pagado" de tiendas da 500).
+Ninguna por ahora.
+
+`velox_agregar_fotos_pago_tienda.sql` (foto del pago de Caja Tienda, D-011: tablas
+`caja_liquidaciones_tiendas` y `caja_liquidaciones_tiendas_fotos` + columna
+`caja_pagos_tiendas.id_liquidacion`) se aplicó en local y en producción el 4 de noviembre de
+2026, con `sa` y antes del `git pull` (confirmado por el usuario).
 
 `velox_agregar_motivo_no_entrega.sql` (columna `ordenes.motivo_no_entrega NVARCHAR(300) NULL`,
 para la vista del motorizado y `PATCH /ordenes/:id/resolver`) se aplicó en local el 28 de

@@ -340,7 +340,8 @@ reasigne, como pidió el usuario: el día del intento fallido no guarda rastro d
 ## D-010 · Asignar rápido por la foto sin descuadrar la Caja (y "Subir imagen" en las cámaras)
 
 **Estado:** Implementado el 3 de noviembre de 2026 (commits `6d1a986` y `0347988`). Sin
-migración. Pusheado a GitHub; falta `git pull` + `pm2 restart velox` en el servidor.
+migración. En producción desde el 3 de noviembre de 2026 (`git pull` + `pm2 restart velox`,
+confirmado por el usuario; último commit `7996d0e`).
 
 **Problema.** Cuando llegan muchos pedidos de golpe se cargan con la ráfaga ⚡: cada foto crea una
 orden con su tienda y el resto de los datos (cliente, distrito, monto) se completa después en

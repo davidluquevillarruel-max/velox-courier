@@ -1,7 +1,7 @@
 /* ============================================================
    caja.js — Módulo de Caja
    Tiendas: entregado, ausente y devolución (cálculo en el servidor,
-   calcularCajaTienda en server/routes/caja.js).
+   server/caja-motor.js).
    Liquidez y motorizados: entregado, ausente.
    ============================================================ */
 var API = '/api';
@@ -136,9 +136,9 @@ window.filtroPagoTiendas = function(estado) {
 
 /* ════════════════════════════════════════════
    TAB TIENDAS
-   El cálculo (delivery, retenido, saldo) lo hace el servidor con una
-   sola función (calcularCajaTienda en server/routes/caja.js); acá
-   solo se pinta. El detalle por pedido se abre inline debajo de la
+   El cálculo (delivery, retenido, saldo) lo hace el servidor con el
+   motor (server/caja-motor.js); acá solo se pinta. El saldo de un día
+   pagado es el guardado al pagar, no se recalcula. El detalle por pedido se abre inline debajo de la
    tienda (ojito) y queda abierto entre refrescos.
 ════════════════════════════════════════════ */
 var _cajaResumenTiendas = null;   /* última respuesta de GET /caja/tiendas */
@@ -182,6 +182,18 @@ function _medioPagoCajaHTML(p) {
 
 var _ESTADO_CAJA_LABEL = { entregado: 'Entregado', ausente: 'Ausente', devolucion: 'Devolución' };
 
+/* Días pagados cuyo saldo guardado no coincide con lo que dan hoy sus pedidos */
+function _diasDifierenHTML(dias) {
+  var lista = (dias || []).filter(function(d) { return d.difiere; });
+  if (!lista.length) return '';
+  var monto = function(v) { return (v < 0 ? '− ' : '') + _soles(v); };
+  return '<div class="caja-difiere-lista"><div class="caja-difiere"><i class="ti ti-alert-triangle"></i> Difiere de lo pagado</div>' +
+    lista.map(function(d) {
+      return '<div>' + _fechaDisplayCaja(d.fecha) + ': se guardó ' + monto(d.saldo_pagado) +
+        ', sus pedidos hoy dan ' + monto(d.saldo_hoy) + '. Los totales usan lo guardado.</div>';
+    }).join('') + '</div>';
+}
+
 function _detalleTiendaHTML(idTienda) {
   var d = _cajaDetallesTienda[idTienda];
   if (!d || d.cargando) {
@@ -209,7 +221,7 @@ function _detalleTiendaHTML(idTienda) {
     filas = '<tr><td colspan="10" style="text-align:center;padding:16px;color:var(--color-text-tertiary)">Sin pedidos en este filtro</td></tr>';
   }
   var t = d.totales;
-  return _liquidacionesHTML(d.liquidaciones) + '<div class="caja-detalle"><table>' +
+  return _liquidacionesHTML(d.liquidaciones) + _diasDifierenHTML(d.dias_pagados) + '<div class="caja-detalle"><table>' +
     '<thead><tr><th>N° pedido</th><th>Fecha</th><th>Estado</th><th>Medio de pago</th><th>Delivery</th>' +
       '<th>Retenido</th><th>Saldo</th><th>Pre/Post</th><th>Pago</th><th></th></tr></thead>' +
     '<tbody>' + filas +
@@ -257,7 +269,8 @@ window.pintarTiendasCaja = function() {
       '<td>' + t.pedidos + '</td>' +
       '<td style="font-weight:500">' + _soles(t.delivery) + '</td>' +
       '<td style="font-weight:500">' + _soles(t.retenido) + '</td>' +
-      '<td>' + _saldoCajaHTML(t.saldo, true) + '</td>' +
+      '<td>' + _saldoCajaHTML(t.saldo, true) +
+        (t.dias_difieren ? '<div class="caja-difiere"><i class="ti ti-alert-triangle"></i> Difiere de lo pagado</div>' : '') + '</td>' +
       '<td>' + estado + '</td>' +
       '<td>' + accion + '</td>' +
       '<td class="col-ver-tienda-fijo"><button class="btn btn-sm" title="' + (abierta ? 'Ocultar pedidos' : 'Ver pedidos') + '" onclick="toggleDetalleTiendaCaja(' + t.id + ')">' +

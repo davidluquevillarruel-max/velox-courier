@@ -15,6 +15,7 @@ const { getPool, sql } = require('../db');
 const { requireAuth, requireRol } = require('../middleware/auth');
 const { r2Habilitado, generarUrlSubidaPagoTienda, esUrlDePagoTienda } = require('../r2');
 const { guardarFoto, rutaArchivo, existeFoto } = require('../almacenamiento-local');
+const { aCentimos, aSoles, filtroFecha, ordenesCaja } = require('../caja-motor');
 
 /* Caja maneja dinero: solo admin y operador, sin excepción */
 router.use(requireAuth);
@@ -22,36 +23,15 @@ router.use(requireRol('admin', 'operador'));
 
 /* ════════════════════════════════════════════════════════════
    CAJA TIENDA
-   Por pedido, en su fecha_reparto. Solo entran los estados
-   cobrables (entregado / ausente / devolucion); el resto
-   (en-proceso, reprogramado, no-entregado, cancelado) no suma.
-   · delivery = delivery_total (delivery_base + monto_adicional)
-   · retenido = monto_cobrado SOLO si se entregó en contraentrega y
-     la plata la tiene Velox (Pago Velox, Yape o efectivo al moto);
-     con "Pago tienda" o medio por definir, 0.
-   · Postpago: saldo = delivery − retenido.
-     Prepago (pago_velox = 'PAGADO'): el delivery ya se pagó en
-     oficina, saldo = − retenido.
-   saldo > 0 la tienda nos debe · < 0 le debemos · = 0 saldado.
+   La plata de cada orden la calcula server/caja-motor.js.
    "Pagado" sigue siendo por tienda y por día
    (caja_pagos_tiendas.fecha_ciclo = fecha de reparto).
+   Pendiente = en vivo, con el motor. Día pagado = el saldo que se
+   guardó al pagar (monto_cobrar − monto_devolver): no se recalcula.
+   Si lo que da hoy no coincide, se avisa "Difiere de lo pagado".
+   Delivery, retenido y el detalle por pedido van siempre en vivo,
+   porque lo guardado es por día y solo tiene el saldo.
    ════════════════════════════════════════════════════════════ */
-const ESTADOS_COBRABLES_TIENDA = ['entregado', 'ausente', 'devolucion'];
-const MEDIOS_QUE_RETIENE_VELOX = ['pago-empresa', 'yape-motorizado', 'efectivo-motorizado'];
-
-/* Única función que calcula la plata de una orden en la Caja Tienda.
-   Trabaja en céntimos (enteros) para que las sumas no arrastren
-   errores de coma flotante; aSoles() los pasa a soles al responder. */
-function calcularCajaTienda(o) {
-  const centimos = v => Math.round((Number(v) || 0) * 100);
-  const prepago  = o.pago_velox === 'PAGADO';
-  const delivery = centimos(o.delivery_total);
-  const retenido = (o.estado === 'entregado' && o.metodo_pago === 'contraentrega' &&
-                    MEDIOS_QUE_RETIENE_VELOX.includes(o.medio_pago))
-    ? centimos(o.monto_cobrado) : 0;
-  return { prepago, delivery, retenido, saldo: (prepago ? 0 : delivery) - retenido };
-}
-const aSoles = c => c / 100;
 
 /* Fecha de hoy en Lima ('YYYY-MM-DD'), como hoyEnLima() de
    routes/ordenes.js: GETDATE() del servidor (UTC) daba el día
@@ -62,44 +42,40 @@ function hoyEnLima() {
 
 const FECHA_RE = /^\d{4}-\d{2}-\d{2}$/;
 
-/* Filtro de fechas de la Caja Tienda. Solo "desde" = ese único día;
-   solo "hasta" = hasta ese día; nada = todo. */
-function filtroFechaTienda(request, desde, hasta, columna = 'o.fecha_reparto') {
-  if (desde) request.input('desde', sql.Date, desde);
-  if (hasta) request.input('hasta', sql.Date, hasta);
-  if (desde && hasta) return `AND ${columna} BETWEEN @desde AND @hasta`;
-  if (desde)          return `AND ${columna} = @desde`;
-  if (hasta)          return `AND ${columna} <= @hasta`;
-  return '';
-}
-
-/* Órdenes cobrables del período (de una tienda o de todas), cada una
-   con su cálculo y si su día ya está marcado pagado. */
-async function ordenesCajaTienda(pool, { desde, hasta, idTienda }) {
+/* Días pagados del período (de una tienda o de todas), con el saldo
+   guardado en céntimos. Trae también los días que hoy ya no tienen
+   órdenes cobrables: lo pagado no desaparece. */
+async function diasPagadosTienda(pool, { desde, hasta, idTienda }) {
   const request = pool.request();
-  const filtroFecha = filtroFechaTienda(request, desde, hasta);
-  let filtroTienda = '';
+  const fFecha = filtroFecha(request, desde, hasta, 'cp.fecha_ciclo');
+  let fTienda = '';
   if (idTienda) {
     request.input('id_tienda', sql.Int, idTienda);
-    filtroTienda = 'AND o.id_tienda = @id_tienda';
+    fTienda = 'AND cp.id_tienda = @id_tienda';
   }
   const r = await request.query(`
-    SELECT o.id, o.codigo, o.id_tienda, t.nombre AS tienda, t.ciclo_pago,
-           CONVERT(varchar, o.fecha_reparto, 23) AS fecha,
-           o.estado, o.metodo_pago, o.medio_pago, o.pago_velox,
-           o.delivery_total, o.monto_cobrado, o.dest_nombre,
-           ISNULL(cp.pagado, 0) AS dia_pagado,
-           CONVERT(varchar, cp.fecha_pago, 23) AS fecha_pago
-    FROM ordenes o
-    JOIN tiendas t ON t.id = o.id_tienda
-    OUTER APPLY (SELECT TOP 1 c.pagado, c.fecha_pago FROM caja_pagos_tiendas c
-                 WHERE c.id_tienda = o.id_tienda AND c.fecha_ciclo = o.fecha_reparto
-                 ORDER BY c.pagado DESC) cp
-    WHERE o.estado IN (${ESTADOS_COBRABLES_TIENDA.map(e => `'${e}'`).join(',')})
-      ${filtroFecha} ${filtroTienda}
-    ORDER BY t.nombre, o.fecha_reparto DESC, o.id DESC
+    SELECT cp.id_tienda, t.nombre AS tienda, t.ciclo_pago,
+           CONVERT(varchar, cp.fecha_ciclo, 23) AS fecha,
+           CONVERT(varchar, cp.fecha_pago, 23) AS fecha_pago,
+           cp.monto_cobrar, cp.monto_devolver
+    FROM caja_pagos_tiendas cp
+    JOIN tiendas t ON t.id = cp.id_tienda
+    WHERE cp.pagado = 1 ${fFecha} ${fTienda}
+    ORDER BY cp.fecha_ciclo DESC
   `);
-  return r.recordset.map(o => ({ ...o, dia_pagado: !!o.dia_pagado, calc: calcularCajaTienda(o) }));
+  return r.recordset.map(d => ({ ...d, saldo: aCentimos(d.monto_cobrar) - aCentimos(d.monto_devolver) }));
+}
+
+/* Lo que da hoy cada día pagado, para compararlo con lo guardado:
+   Map 'idTienda|fecha' → céntimos */
+function saldoVivoPorDia(ordenes) {
+  const m = new Map();
+  for (const o of ordenes) {
+    if (!o.dia_pagado) continue;
+    const k = `${o.id_tienda}|${o.fecha}`;
+    m.set(k, (m.get(k) || 0) + o.calc.saldo_tienda);
+  }
+  return m;
 }
 
 /* Pendientes (día sin marcar, por defecto) / pagados / todos */
@@ -124,25 +100,26 @@ router.get('/tiendas', async (req, res) => {
   try {
     const pool = await getPool();
     const { desde, hasta, estado } = leerFiltrosTienda(req.query);
-    const ordenes = await ordenesCajaTienda(pool, { desde, hasta });
+    const ordenes = await ordenesCaja(pool, { desde, hasta });
+    const diasPagados = await diasPagadosTienda(pool, { desde, hasta });
 
     const porTienda = new Map();
-    for (const o of ordenes) {
-      if (!porTienda.has(o.id_tienda)) {
-        porTienda.set(o.id_tienda, {
-          id: o.id_tienda, tienda: o.tienda, ciclo_pago: o.ciclo_pago,
+    const tiendaDe = (id, tienda, ciclo_pago) => {
+      if (!porTienda.has(id)) {
+        porTienda.set(id, {
+          id, tienda, ciclo_pago,
           pedidos: 0, delivery: 0, retenido: 0, saldo: 0,
           saldo_pendiente: 0, dias_pendientes: new Set(), dias_pagados: new Set(),
-          ultimo_pago: null, visible: false,
+          dias_difieren: 0, ultimo_pago: null, visible: false,
         });
       }
-      const t = porTienda.get(o.id_tienda);
-      if (o.dia_pagado) {
-        t.dias_pagados.add(o.fecha);
-        if (o.fecha_pago && (!t.ultimo_pago || o.fecha_pago > t.ultimo_pago)) t.ultimo_pago = o.fecha_pago;
-      } else {
+      return porTienda.get(id);
+    };
+    for (const o of ordenes) {
+      const t = tiendaDe(o.id_tienda, o.tienda, o.ciclo_pago);
+      if (!o.dia_pagado) {
         t.dias_pendientes.add(o.fecha);
-        t.saldo_pendiente += o.calc.saldo;
+        t.saldo_pendiente += o.calc.saldo_tienda;
       }
     }
     for (const o of filtrarPorPago(ordenes, estado)) {
@@ -151,7 +128,18 @@ router.get('/tiendas', async (req, res) => {
       t.pedidos  += 1;
       t.delivery += o.calc.delivery;
       t.retenido += o.calc.retenido;
-      t.saldo    += o.calc.saldo;
+      if (!o.dia_pagado) t.saldo += o.calc.saldo_tienda;
+    }
+    /* Días pagados: el saldo es el guardado */
+    const vivo = saldoVivoPorDia(ordenes);
+    for (const d of diasPagados) {
+      const t = tiendaDe(d.id_tienda, d.tienda, d.ciclo_pago);
+      t.dias_pagados.add(d.fecha);
+      if (d.fecha_pago && (!t.ultimo_pago || d.fecha_pago > t.ultimo_pago)) t.ultimo_pago = d.fecha_pago;
+      if (estado === 'pendientes') continue;
+      t.visible = true;
+      t.saldo += d.saldo;
+      if ((vivo.get(`${d.id_tienda}|${d.fecha}`) || 0) !== d.saldo) t.dias_difieren++;
     }
 
     let porCobrar = 0, porDevolver = 0, alDia = 0, conSaldo = 0;
@@ -167,6 +155,7 @@ router.get('/tiendas', async (req, res) => {
       delivery: aSoles(t.delivery), retenido: aSoles(t.retenido), saldo: aSoles(t.saldo),
       saldo_pendiente: aSoles(t.saldo_pendiente),
       dias_pendientes: t.dias_pendientes.size, dias_pagados: t.dias_pagados.size,
+      dias_difieren: t.dias_difieren,
       estado: t.dias_pendientes.size ? 'pendiente' : 'pagado',
       ultimo_pago: t.ultimo_pago,
     }));
@@ -195,25 +184,42 @@ router.get('/tiendas/:id/detalle', async (req, res) => {
     if (!idTienda) return res.status(400).json({ error: 'Tienda no válida' });
     const pool = await getPool();
     const { desde, hasta, estado } = leerFiltrosTienda(req.query);
-    const ordenes = filtrarPorPago(await ordenesCajaTienda(pool, { desde, hasta, idTienda }), estado);
+    const todas = await ordenesCaja(pool, { desde, hasta, idTienda });
+    const ordenes = filtrarPorPago(todas, estado);
 
     const tot = { delivery: 0, retenido: 0, saldo: 0 };
     const pedidos = ordenes.map(o => {
       tot.delivery += o.calc.delivery;
       tot.retenido += o.calc.retenido;
-      tot.saldo    += o.calc.saldo;
+      if (!o.dia_pagado) tot.saldo += o.calc.saldo_tienda;
       return {
         id: o.id, codigo: o.codigo, fecha: o.fecha, estado: o.estado,
         dest_nombre: o.dest_nombre, metodo_pago: o.metodo_pago, medio_pago: o.medio_pago,
-        delivery: aSoles(o.calc.delivery), retenido: aSoles(o.calc.retenido), saldo: aSoles(o.calc.saldo),
-        pago_oficina: o.calc.prepago ? 'pre' : 'post',
-        pago: (o.calc.prepago || o.dia_pagado) ? 'PAGADO' : 'pendiente',
+        delivery: aSoles(o.calc.delivery), retenido: aSoles(o.calc.retenido), saldo: aSoles(o.calc.saldo_tienda),
+        pago_oficina: o.calc.es_prepago ? 'pre' : 'post',
+        pago: (o.calc.es_prepago || o.dia_pagado) ? 'PAGADO' : 'pendiente',
         dia_pagado: o.dia_pagado, fecha_pago: o.fecha_pago,
       };
     });
 
+    /* Días pagados: el saldo de los totales es el guardado, y se avisa
+       cuáles ya no coinciden con lo que dan hoy sus pedidos */
+    const vivo = saldoVivoPorDia(todas);
+    let dias_pagados = [];
+    if (estado !== 'pendientes') {
+      dias_pagados = (await diasPagadosTienda(pool, { desde, hasta, idTienda })).map(d => {
+        const hoy = vivo.get(`${idTienda}|${d.fecha}`) || 0;
+        tot.saldo += d.saldo;
+        return {
+          fecha: d.fecha, fecha_pago: d.fecha_pago,
+          saldo_pagado: aSoles(d.saldo), saldo_hoy: aSoles(hoy), difiere: hoy !== d.saldo,
+        };
+      });
+    }
+
     res.json({
       pedidos,
+      dias_pagados,
       totales: {
         pedidos: pedidos.length,
         delivery: aSoles(tot.delivery), retenido: aSoles(tot.retenido), saldo: aSoles(tot.saldo),
@@ -232,7 +238,7 @@ router.get('/tiendas/:id/detalle', async (req, res) => {
    las liquidaciones (id_liquidacion NULL) no aparecen acá. */
 async function liquidacionesDeTienda(pool, idTienda, desde, hasta) {
   const request = pool.request().input('id_tienda', sql.Int, idTienda);
-  const filtro = filtroFechaTienda(request, desde, hasta, 'cp.fecha_ciclo');
+  const filtro = filtroFecha(request, desde, hasta, 'cp.fecha_ciclo');
   const r = await request.query(`
     SELECT l.id, CONVERT(varchar, l.fecha_pago, 23) AS fecha_pago, l.dias,
            l.monto_cobrar, l.monto_devolver, l.fotos_declaradas, u.nombre AS usuario,
@@ -269,7 +275,7 @@ const MAX_FOTOS_PAGO_TIENDA = 5;
 /* POST /api/caja/tiendas/pagar  { id_tienda, desde?, hasta?, fotos }
    Liquida los días PENDIENTES de la tienda en el período (mismo
    filtro de fechas que la lista). Por cada día guarda lo que se
-   cobra y lo que se devuelve, con la misma calcularCajaTienda().
+   cobra y lo que se devuelve, con el motor (caja-motor.js).
    fecha_pago = hoy en Lima.
    Crea la liquidación (caja_liquidaciones_tiendas) y le cuelga los
    días. fotos = cuántas fotos del pago se tomaron (1 a 5): las fotos
@@ -287,7 +293,7 @@ router.post('/tiendas/pagar', async (req, res) => {
   let tx;
   try {
     const pool = await getPool();
-    const pendientes = filtrarPorPago(await ordenesCajaTienda(pool, { desde, hasta, idTienda }), 'pendientes');
+    const pendientes = filtrarPorPago(await ordenesCaja(pool, { desde, hasta, idTienda }), 'pendientes');
     if (!pendientes.length) {
       return res.status(400).json({ error: 'Esta tienda no tiene días pendientes en el período.' });
     }
@@ -295,8 +301,8 @@ router.post('/tiendas/pagar', async (req, res) => {
     const porDia = new Map();
     for (const o of pendientes) {
       const d = porDia.get(o.fecha) || { cobrar: 0, devolver: 0 };
-      if (o.calc.saldo > 0) d.cobrar   += o.calc.saldo;
-      else                  d.devolver -= o.calc.saldo;
+      if (o.calc.saldo_tienda > 0) d.cobrar   += o.calc.saldo_tienda;
+      else                         d.devolver -= o.calc.saldo_tienda;
       porDia.set(o.fecha, d);
     }
 

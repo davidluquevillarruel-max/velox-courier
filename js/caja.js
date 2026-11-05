@@ -148,7 +148,7 @@ var _cajaSecTiendas     = 0;
 function _escCaja(s) {
   return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
-function _soles(v) { return 'S/ ' + Math.abs(parseFloat(v) || 0).toFixed(2); }
+function _solesCaja(v) { return 'S/ ' + Math.abs(parseFloat(v) || 0).toFixed(2); }
 
 function _paramsCajaTiendas() {
   var p = ['estado=' + _cajaFiltroPago];
@@ -163,10 +163,10 @@ function _saldoCajaHTML(saldo, grande) {
   var clase = saldo > 0 ? 'pos' : saldo < 0 ? 'neg' : 'cero';
   var texto = saldo > 0 ? 'nos debe' : saldo < 0 ? 'le debemos' : 'saldado';
   if (!grande) {
-    return '<span class="caja-saldo ' + clase + '" style="font-size:12px">' + (saldo < 0 ? '− ' : '') + _soles(saldo) +
+    return '<span class="caja-saldo ' + clase + '" style="font-size:12px">' + (saldo < 0 ? '− ' : '') + _solesCaja(saldo) +
       ' <span style="font-weight:500">· ' + texto + '</span></span>';
   }
-  return '<div class="caja-saldo ' + clase + '">' + _soles(saldo) + '<small>' + texto + '</small></div>';
+  return '<div class="caja-saldo ' + clase + '">' + _solesCaja(saldo) + '<small>' + texto + '</small></div>';
 }
 
 var _MEDIO_PAGO_CAJA = {
@@ -185,7 +185,7 @@ var _ESTADO_CAJA_LABEL = { entregado: 'Entregado', ausente: 'Ausente', devolucio
 function _diasDifierenHTML(dias) {
   var lista = (dias || []).filter(function(d) { return d.difiere; });
   if (!lista.length) return '';
-  var monto = function(v) { return (v < 0 ? '− ' : '') + _soles(v); };
+  var monto = function(v) { return (v < 0 ? '− ' : '') + _solesCaja(v); };
   return '<div class="caja-difiere-lista"><div class="caja-difiere"><i class="ti ti-alert-triangle"></i> Difiere de lo pagado</div>' +
     lista.map(function(d) {
       return '<div>' + _fechaDisplayCaja(d.fecha) + ': se guardó ' + monto(d.saldo_pagado) +
@@ -207,8 +207,8 @@ function _detalleTiendaHTML(idTienda) {
       '<td style="white-space:nowrap">' + _fechaDisplayCaja(p.fecha) + '</td>' +
       '<td><span class="caja-estado ' + _escCaja(p.estado) + '">' + _escCaja(_ESTADO_CAJA_LABEL[p.estado] || p.estado) + '</span></td>' +
       '<td>' + _medioPagoCajaHTML(p) + '</td>' +
-      '<td>' + _soles(p.delivery) + '</td>' +
-      '<td>' + (p.retenido ? _soles(p.retenido) : '<span class="caja-tenue">S/ 0.00</span>') + '</td>' +
+      '<td>' + _solesCaja(p.delivery) + '</td>' +
+      '<td>' + (p.retenido ? _solesCaja(p.retenido) : '<span class="caja-tenue">S/ 0.00</span>') + '</td>' +
       '<td>' + _saldoCajaHTML(p.saldo, false) + '</td>' +
       '<td>' + (p.pago_oficina === 'pre' ? 'Prepago' : 'Postpago') + '</td>' +
       '<td><span class="caja-chip ' + (p.pago === 'PAGADO' ? 'pagado">PAGADO' : 'pendiente">Pendiente') + '</span></td>' +
@@ -225,7 +225,7 @@ function _detalleTiendaHTML(idTienda) {
       '<th>Retenido</th><th>Saldo</th><th>Pre/Post</th><th>Pago</th><th></th></tr></thead>' +
     '<tbody>' + filas +
       '<tr class="caja-totales"><td colspan="4">TOTALES · ' + t.pedidos + ' pedido' + (t.pedidos === 1 ? '' : 's') + '</td>' +
-        '<td>' + _soles(t.delivery) + '</td><td>' + _soles(t.retenido) + '</td>' +
+        '<td>' + _solesCaja(t.delivery) + '</td><td>' + _solesCaja(t.retenido) + '</td>' +
         '<td colspan="4">' + _saldoCajaHTML(t.saldo, false) + '</td></tr>' +
     '</tbody></table></div>';
 }
@@ -238,9 +238,9 @@ window.pintarTiendasCaja = function() {
   var k = _cajaResumenTiendas.kpis;
 
   var set = function(id, v){ var el = document.getElementById(id); if (el) el.textContent = v; };
-  set('kpi-cobrar',   _soles(k.por_cobrar));
-  set('kpi-devolver', _soles(k.por_devolver));
-  set('kpi-neta',     _soles(k.posicion_neta));
+  set('kpi-cobrar',   _solesCaja(k.por_cobrar));
+  set('kpi-devolver', _solesCaja(k.por_devolver));
+  set('kpi-neta',     _solesCaja(k.posicion_neta));
   set('kpi-neta-nota', k.posicion_neta > 0 ? 'nos deben' : k.posicion_neta < 0 ? 'le debemos' : 'saldado');
   var elNeta = document.getElementById('kpi-neta');
   if (elNeta) elNeta.className = 'metric-val ' + (k.posicion_neta > 0 ? 'green' : k.posicion_neta < 0 ? 'amber' : '');
@@ -266,8 +266,8 @@ window.pintarTiendasCaja = function() {
     var fila = '<tr class="' + (abierta ? 'caja-fila-abierta' : '') + '">' +
       '<td><strong>' + _escCaja(t.tienda) + '</strong><br><span class="caja-ciclo">' + _escCaja(t.ciclo_pago || '—') + '</span></td>' +
       '<td>' + t.pedidos + '</td>' +
-      '<td style="font-weight:500">' + _soles(t.delivery) + '</td>' +
-      '<td style="font-weight:500">' + _soles(t.retenido) + '</td>' +
+      '<td style="font-weight:500">' + _solesCaja(t.delivery) + '</td>' +
+      '<td style="font-weight:500">' + _solesCaja(t.retenido) + '</td>' +
       '<td>' + _saldoCajaHTML(t.saldo, true) +
         (t.dias_difieren ? '<div class="caja-difiere"><i class="ti ti-alert-triangle"></i> Difiere de lo pagado</div>' : '') + '</td>' +
       '<td>' + estado + '</td>' +
@@ -408,7 +408,7 @@ window.marcarTiendaPagada = function(idTienda) {
   var saldo = parseFloat(t.saldo_pendiente) || 0;
   _abrirPasoFotoPago('tienda', idTienda, t.tienda,
     t.dias_pendientes + ' día' + (t.dias_pendientes === 1 ? '' : 's') + ' pendiente' + (t.dias_pendientes === 1 ? '' : 's') + ' · ' +
-    (saldo > 0 ? 'La tienda nos paga ' : saldo < 0 ? 'Le pagamos ' : 'Saldo ') + _soles(saldo));
+    (saldo > 0 ? 'La tienda nos paga ' : saldo < 0 ? 'Le pagamos ' : 'Saldo ') + _solesCaja(saldo));
 };
 
 window.tomarFotoPagoTienda = async function() {
@@ -461,8 +461,8 @@ window.continuarPagoTienda = async function() {
     : _cajaFiltroHasta ? 'hasta el ' + _fechaDisplayCaja(_cajaFiltroHasta)
     : 'de todas las fechas';
   var saldo = parseFloat(t.saldo_pendiente) || 0;
-  var sentido = saldo > 0 ? 'La tienda nos paga ' + _soles(saldo)
-              : saldo < 0 ? 'Le pagamos a la tienda ' + _soles(saldo)
+  var sentido = saldo > 0 ? 'La tienda nos paga ' + _solesCaja(saldo)
+              : saldo < 0 ? 'Le pagamos a la tienda ' + _solesCaja(saldo)
               : 'Saldo pendiente S/ 0.00';
   var nFotos = actual.fotos.length;
   if (!confirm('Marcar pagado ' + t.tienda + ': ' + t.dias_pendientes + ' día(s) pendiente(s) ' + periodo + '.\n' +
@@ -558,8 +558,8 @@ function _liquidacionesHTML(liqs, tipo) {
         '<span class="caja-chip pagado">Pagado ' + _fechaDisplayCaja(l.fecha_pago) + '</span>' +
         '<span>' + l.dias + ' día' + (l.dias === 1 ? '' : 's') + ' · ' + dias + '</span>' +
         '<span class="caja-saldo ' + (l.neto > 0 ? 'pos' : l.neto < 0 ? 'neg' : 'cero') + '" style="font-size:12px">' +
-          (l.neto > 0 ? (tipo === 'moto' ? 'Nos rindió ' : 'Nos pagó ') : l.neto < 0 ? 'Le pagamos ' : 'Saldado ') + _soles(l.neto) + '</span>' +
-        (tipo === 'moto' ? '<span class="caja-tenue">Efectivo ' + _soles(l.monto_efectivo) + ' · Yape ' + _soles(l.monto_yape) + ' · Su pago ' + _soles(l.monto_a_pagar) + '</span>' : '') +
+          (l.neto > 0 ? (tipo === 'moto' ? 'Nos rindió ' : 'Nos pagó ') : l.neto < 0 ? 'Le pagamos ' : 'Saldado ') + _solesCaja(l.neto) + '</span>' +
+        (tipo === 'moto' ? '<span class="caja-tenue">Efectivo ' + _solesCaja(l.monto_efectivo) + ' · Yape ' + _solesCaja(l.monto_yape) + ' · Su pago ' + _solesCaja(l.monto_a_pagar) + '</span>' : '') +
         (l.usuario ? '<span class="caja-tenue">por ' + _escCaja(l.usuario) + '</span>' : '') +
         (faltan ? '<span class="caja-medio-falta">' + faltan + ' foto' + (faltan === 1 ? '' : 's') + ' por subir</span>' : '') +
         '<button class="btn btn-sm" style="margin-left:auto" onclick="toggleFotosLiquidacion(\'' + _escCaja(clave) + '\')">' +
@@ -596,110 +596,121 @@ window.filtroRapidoLiquidez = function(tipo) {
   renderLiquidez();
 };
 
-/* Caja real (ya liquidado) + Caja teórica (si todo se liquidara, sin deudas).
-   Se llama con el mismo desde/hasta que ya está aplicado en Liquidez. */
-window._renderBalancePeriodoLiquidez = async function(params, bruto, motos) {
-  var el = document.getElementById('balance-periodo-liquidez');
-  if (!el) return;
+/* Monto con signo: − S/ 10.00 */
+function _solesSigno(v) { v = parseFloat(v) || 0; return (v < 0 ? '− ' : '') + _solesCaja(v); }
 
-  var teorica = bruto - motos;
-  var real = { neto_tiendas: 0, neto_motorizados: 0, neto_prepago: 0, caja_real: 0 };
-  try {
-    var urlReal = API + '/caja/real' + (params.length ? '?' + params.join('&') : '');
-    var rReal = await fetch(urlReal);
-    real = await rReal.json();
-  } catch (e) { console.error('Error caja real:', e); }
+function _metricaHTML(etiqueta, valor, clase, nota) {
+  return '<div class="metric"><div class="metric-label">' + etiqueta + '</div>' +
+    '<div class="metric-val ' + (clase || '') + '">' + _solesSigno(valor) + '</div>' +
+    (nota ? '<div class="caja-kpi-nota">' + nota + '</div>' : '') + '</div>';
+}
+function _claseSigno(v) { return v > 0 ? 'green' : v < 0 ? 'red' : ''; }
 
-  var claseSigno = function(v){ return v >= 0 ? 'green' : 'red'; };
+/* Control de cuadre del período */
+function _cuadreHTML(c) {
+  var sinMoto = c.sin_motorizado && c.sin_motorizado.length
+    ? ' · ' + c.sin_motorizado.length + ' cobrable(s) sin motorizado: ' +
+      c.sin_motorizado.slice(0, 5).map(function(o) { return '#' + _escCaja(o.codigo); }).join(', ')
+    : '';
+  var detalle = 'Motos ' + _solesSigno(c.saldo_motos) + ' + Tiendas ' + _solesSigno(c.saldo_tiendas) +
+    ' + Pago Velox ' + _solesCaja(c.pago_velox) + ' + Prepagos ' + _solesCaja(c.prepagos) +
+    ' = ' + _solesSigno(c.izquierda) + ' · Delivery ' + _solesCaja(c.delivery) + ' − Pago motos ' + _solesCaja(c.pago_motos) +
+    ' = ' + _solesSigno(c.derecha);
+  return '<div class="caja-cuadre ' + (c.ok ? 'ok' : 'mal') + '">' +
+    '<strong><i class="ti ' + (c.ok ? 'ti-circle-check' : 'ti-alert-triangle') + '"></i> ' +
+      (c.ok ? 'Cuadre OK' : 'No cuadra: diferencia ' + _solesSigno(c.diferencia)) + '</strong>' +
+    '<span>' + detalle + sinMoto + '</span></div>';
+}
 
-  el.innerHTML =
-    '<div class="card" style="margin-top:16px">' +
-      '<div class="card-head"><span class="card-title">Caja real (ya liquidado)</span></div>' +
-      '<div class="metrics" style="grid-template-columns:repeat(4,1fr)">' +
-        '<div class="metric"><div class="metric-label">Prepagos recibidos</div><div class="metric-val ' + claseSigno(real.neto_prepago) + '">S/ ' + real.neto_prepago.toFixed(2) + '</div></div>' +
-        '<div class="metric"><div class="metric-label">Neto con tiendas</div><div class="metric-val ' + claseSigno(real.neto_tiendas) + '">S/ ' + real.neto_tiendas.toFixed(2) + '</div></div>' +
-        '<div class="metric"><div class="metric-label">Neto con motorizados</div><div class="metric-val ' + claseSigno(real.neto_motorizados) + '">S/ ' + real.neto_motorizados.toFixed(2) + '</div></div>' +
-        '<div class="metric"><div class="metric-label">Caja real total</div><div class="metric-val ' + claseSigno(real.caja_real) + '">S/ ' + real.caja_real.toFixed(2) + '</div></div>' +
+/* Caja real: plata que ya cambió de mano */
+function _cajaRealHTML(r) {
+  var v = r.vias;
+  return '<div class="card" style="margin-top:16px">' +
+      '<div class="card-head"><span class="card-title">Caja real (Velox)</span></div>' +
+      '<div class="metrics caja-kpis-real">' +
+        _metricaHTML('Neto con motorizados', r.neto_motorizados, _claseSigno(r.neto_motorizados)) +
+        _metricaHTML('Neto con tiendas', r.neto_tiendas, _claseSigno(r.neto_tiendas)) +
+        _metricaHTML('Pago Velox', r.pago_velox, _claseSigno(r.pago_velox)) +
+        _metricaHTML('Prepagos', r.prepagos, _claseSigno(r.prepagos)) +
+        _metricaHTML('Prepagos no cobrables', r.prepagos_no_cobrables, _claseSigno(r.prepagos_no_cobrables), 'en proceso, canceladas…') +
+        _metricaHTML('Caja real total', r.caja_real, _claseSigno(r.caja_real)) +
       '</div>' +
-      '<div style="font-size:12px;color:var(--color-text-tertiary);padding:0 16px 14px">' +
-        'Prepagos: lo que las tiendas ya pagaron en oficina antes de salir a ruta. Tiendas/Motorizados: solo lo ya marcado "pagado" — cambia en cuanto liquidás algo.' +
+      '<div class="caja-vias-titulo">Ingresos por vía</div>' +
+      '<div class="metrics caja-kpis-vias">' +
+        _metricaHTML('Efectivo', v.efectivo) + _metricaHTML('Yape', v.yape) + _metricaHTML('Depósito', v.deposito) +
+        (v.prepago_sin_metodo ? _metricaHTML('Prepago sin método', v.prepago_sin_metodo) : '') +
+        (v.sin_desglose ? _metricaHTML('Sin desglose', v.sin_desglose, '', 'días del moto pagados antes de guardar la vía') : '') +
       '</div>' +
-    '</div>' +
-    '<div class="card" style="margin-top:16px">' +
-      '<div class="card-head"><span class="card-title">Caja teórica (si todo se liquidara hoy, sin deudas)</span></div>' +
-      '<div class="metrics" style="grid-template-columns:repeat(3,1fr)">' +
-        '<div class="metric"><div class="metric-label">Delivery bruto</div><div class="metric-val blue">S/ ' + bruto.toFixed(2) + '</div></div>' +
-        '<div class="metric"><div class="metric-label">Pago motorizados</div><div class="metric-val amber">S/ ' + motos.toFixed(2) + '</div></div>' +
-        '<div class="metric"><div class="metric-label">Ganancia teórica</div><div class="metric-val ' + claseSigno(teorica) + '">S/ ' + teorica.toFixed(2) + '</div></div>' +
-      '</div>' +
-      '<div style="font-size:12px;color:var(--color-text-tertiary);padding:0 16px 14px">' +
-        'Ganancia si todas las tiendas y motorizados quedaran al día — el techo teórico del período.' +
+      '<div class="caja-nota-card">' +
+        'Motos y tiendas: lo ya marcado pagado, con el monto guardado y por su fecha de pago. Pago Velox y prepagos: por su fecha de reparto. ' +
+        'Las vías son cómo pagó el cliente: efectivo y Yape cuentan cuando el moto los rinde, sin descontar su pago. Lo que pagan las tiendas al liquidar no entra en las vías.' +
       '</div>' +
     '</div>';
-};
+}
+
+var _liquidezFirma = '';
+var _liquidezSec = 0;
 
 window.renderLiquidez = async function() {
   var tbody = document.getElementById('tbody-liquidez');
   if (!tbody) return;
+  var sec = ++_liquidezSec;
   try {
     var desde = document.getElementById('filtro-liquidez-desde');
-    var hasta  = document.getElementById('filtro-liquidez-hasta');
-    var url    = API + '/caja/liquidez';
+    var hasta = document.getElementById('filtro-liquidez-hasta');
     var params = [];
-    if (desde && desde.value) params.push('desde='+desde.value);
-    if (hasta  && hasta.value)  params.push('hasta='+hasta.value);
-    if (params.length) url += '?' + params.join('&');
+    if (desde && desde.value) params.push('desde=' + desde.value);
+    if (hasta && hasta.value) params.push('hasta=' + hasta.value);
+    var q = params.length ? '?' + params.join('&') : '';
 
-    var r = await fetch(url);
-    var data = await r.json();
+    var respuestas = await Promise.all([fetch(API + '/caja/liquidez' + q), fetch(API + '/caja/real' + q)]);
+    if (!respuestas[0].ok || !respuestas[1].ok) throw new Error('HTTP ' + respuestas[0].status + '/' + respuestas[1].status);
+    var data = await respuestas[0].json();
+    var real = await respuestas[1].json();
+    if (sec !== _liquidezSec) return;
 
-    if (!Array.isArray(data) || data.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--color-text-tertiary)">Sin datos para el período seleccionado</td></tr>';
-      var set2 = function(id,v){ var el=document.getElementById(id); if(el) el.textContent=v; };
-      set2('kpi-bruto','S/ 0.00'); set2('kpi-motos','S/ 0.00');
-      set2('kpi-devol','S/ 0.00'); set2('kpi-neto','S/ 0.00');
-      _renderBalancePeriodoLiquidez(params, 0, 0);
-      return;
-    }
+    var firma = JSON.stringify([data, real]);
+    if (firma === _liquidezFirma) return;
+    _liquidezFirma = firma;
 
-    var totBruto=0, totMotos=0, totProd=0, totNeto=0, totPedidos=0;
-
-    var rows = data.map(function(d) {
-      var neto = parseFloat(d.liquido_neto||0);
-      totBruto   += parseFloat(d.bruto||0);
-      totMotos   += parseFloat(d.pago_motorizados||0);
-      totProd    += parseFloat(d.devoluciones||0);
-      totNeto    += neto;
-      totPedidos += parseInt(d.pedidos||0);
-      var ns = neto>=0 ? 'color:var(--color-green);font-weight:700' : 'color:var(--color-red-text);font-weight:700';
-      return '<tr>' +
-        '<td style="font-weight:500">'+_fechaDisplayCaja(d.fecha)+'</td>' +
-        '<td>'+d.pedidos+'</td>' +
-        '<td style="font-weight:600">S/ '+parseFloat(d.bruto||0).toFixed(2)+'</td>' +
-        '<td style="color:var(--color-purple-text);font-weight:600">S/ '+parseFloat(d.pago_motorizados||0).toFixed(2)+'</td>' +
-        '<td style="color:var(--color-amber-text);font-weight:600">'+(parseFloat(d.devoluciones||0)>0?'S/ '+parseFloat(d.devoluciones).toFixed(2):'—')+'</td>' +
-        '<td style="'+ns+'">S/ '+neto.toFixed(2)+'</td>' +
+    var t = data.totales;
+    var claseG = function(v) { return v >= 0 ? 'color:var(--color-green)' : 'color:var(--color-red-text)'; };
+    var fila = function(d, etiqueta, estilo) {
+      return '<tr' + (estilo || '') + '>' +
+        '<td style="font-weight:' + (estilo ? 700 : 500) + '">' + etiqueta + '</td>' +
+        '<td>' + d.pedidos + '</td>' +
+        '<td style="font-weight:600">' + _solesCaja(d.delivery) + '</td>' +
+        '<td style="color:var(--color-purple-text);font-weight:600">' + _solesCaja(d.pago_motos) + '</td>' +
+        '<td style="' + claseG(d.ganancia) + ';font-weight:700">' + _solesSigno(d.ganancia) + '</td>' +
+        '<td>' + _solesCaja(d.retenido) + '</td>' +
+        '<td>' + _solesCaja(d.efectivo) + '</td>' +
+        '<td>' + _solesCaja(d.yape) + '</td>' +
+        '<td>' + _solesCaja(d.deposito) + '</td>' +
       '</tr>';
-    }).join('');
+    };
+    tbody.innerHTML = data.dias.length
+      ? data.dias.map(function(d) { return fila(d, _fechaDisplayCaja(d.fecha)); }).join('') +
+        fila(t, 'TOTAL', ' style="background:var(--color-bg-secondary);border-top:2px solid var(--color-border-secondary)"')
+      : '<tr><td colspan="9" style="text-align:center;padding:24px;color:var(--color-text-tertiary)">Sin datos para el período seleccionado</td></tr>';
 
-    rows += '<tr style="background:var(--color-bg-secondary);border-top:2px solid var(--color-border-secondary)">' +
-      '<td style="font-weight:700">TOTAL</td><td style="font-weight:700">'+totPedidos+'</td>' +
-      '<td style="font-weight:700">S/ '+totBruto.toFixed(2)+'</td>' +
-      '<td style="color:var(--color-purple-text);font-weight:700">S/ '+totMotos.toFixed(2)+'</td>' +
-      '<td style="color:var(--color-amber-text);font-weight:700">'+(totProd>0?'S/ '+totProd.toFixed(2):'—')+'</td>' +
-      '<td style="color:var(--color-green);font-weight:700">S/ '+totNeto.toFixed(2)+'</td>' +
-    '</tr>';
+    var set = function(id, v) { var el = document.getElementById(id); if (el) el.textContent = v; };
+    set('kpi-liq-delivery', _solesCaja(t.delivery));
+    set('kpi-liq-motos',    _solesCaja(t.pago_motos));
+    set('kpi-liq-ganancia', _solesSigno(t.ganancia));
+    set('kpi-liq-retenido', _solesCaja(t.retenido));
+    var elG = document.getElementById('kpi-liq-ganancia');
+    if (elG) elG.className = 'metric-val ' + (t.ganancia >= 0 ? 'green' : 'red');
 
-    tbody.innerHTML = rows;
-
-    var set = function(id,v){ var el=document.getElementById(id); if(el) el.textContent=v; };
-    set('kpi-bruto', 'S/ '+totBruto.toFixed(2));
-    set('kpi-motos', 'S/ '+totMotos.toFixed(2));
-    set('kpi-devol', 'S/ '+totProd.toFixed(2));
-    set('kpi-neto',  'S/ '+totNeto.toFixed(2));
-
-    _renderBalancePeriodoLiquidez(params, totBruto, totMotos);
-  } catch(err) { console.error('Error liquidez:', err); }
+    var elCuadre = document.getElementById('cuadre-liquidez');
+    if (elCuadre) {
+      elCuadre.innerHTML = _cuadreHTML(data.cuadre) +
+        (t.prepago_sin_metodo
+          ? '<div class="caja-kpi-nota" style="margin-top:6px">Además, ' + _solesCaja(t.prepago_sin_metodo) + ' de prepagos sin método, que no están en ninguna columna de vía.</div>'
+          : '');
+    }
+    var elReal = document.getElementById('balance-periodo-liquidez');
+    if (elReal) elReal.innerHTML = _cajaRealHTML(real);
+  } catch (err) { console.error('Error liquidez:', err); }
 };
 
 /* ════════════════════════════════════════════
@@ -712,7 +723,7 @@ var _motoDetalles = {};    /* idMoto → respuesta de /detalle (las abiertas) */
 var _motoFirma    = '';
 var _motoSec      = 0;
 
-window.filtroRapidoMotos = function(tipo) {
+window.filtroRapidoMotosCaja = function(tipo) {
   var rango = _rangoPorTipoCaja(tipo);
   if (!rango) return;
   _motoFiltroDesde = rango.desde;
@@ -725,7 +736,7 @@ window.filtroRapidoMotos = function(tipo) {
   renderMotosCaja();
 };
 
-window.aplicarFiltroMotos = function() {
+window.aplicarFiltroMotosCaja = function() {
   var inpD = document.getElementById('filtro-motos-desde');
   var inpH = document.getElementById('filtro-motos-hasta');
   _motoFiltroDesde = inpD ? inpD.value : '';
@@ -734,7 +745,7 @@ window.aplicarFiltroMotos = function() {
   renderMotosCaja();
 };
 
-window.limpiarFiltroMotos = function() {
+window.limpiarFiltroMotosCaja = function() {
   _motoFiltroDesde = '';
   _motoFiltroHasta = '';
   var inpD = document.getElementById('filtro-motos-desde');
@@ -780,9 +791,9 @@ function _detalleMotoHTML(idMoto) {
       '<td>' + _escCaja(p.tienda) + '</td>' +
       '<td><span class="caja-estado ' + _escCaja(p.estado) + '">' + _escCaja(_ESTADO_CAJA_LABEL[p.estado] || p.estado) + '</span></td>' +
       '<td>' + _medioPagoCajaHTML(p) +
-        (p.cobrado && !p.en_mano ? '<div class="caja-tenue" style="font-size:11px">cobró ' + _soles(p.cobrado) + ', no pasó por el moto</div>' : '') + '</td>' +
-      '<td>' + (p.en_mano ? _soles(p.en_mano) : '<span class="caja-tenue">S/ 0.00</span>') + '</td>' +
-      '<td>' + _soles(p.pago_moto) + '</td>' +
+        (p.cobrado && !p.en_mano ? '<div class="caja-tenue" style="font-size:11px">cobró ' + _solesCaja(p.cobrado) + ', no pasó por el moto</div>' : '') + '</td>' +
+      '<td>' + (p.en_mano ? _solesCaja(p.en_mano) : '<span class="caja-tenue">S/ 0.00</span>') + '</td>' +
+      '<td>' + _solesCaja(p.pago_moto) + '</td>' +
       '<td>' + _saldoCajaHTML(p.saldo, false) + '</td>' +
       '<td><span class="caja-chip ' + (p.dia_pagado ? 'pagado">PAGADO' : 'pendiente">Pendiente') + '</span></td>' +
       '<td><button class="btn btn-sm" title="Editar orden" onclick="editarOrdenDesdeCaja(' + p.id + ',' + (p.dia_pagado ? 1 : 0) + ',\'' + p.fecha + '\',\'moto\')">' +
@@ -802,8 +813,8 @@ function _detalleMotoHTML(idMoto) {
       '<th>En mano</th><th>Su pago</th><th>Saldo</th><th>Pago</th><th></th></tr></thead>' +
     '<tbody>' + filas +
       '<tr class="caja-totales"><td colspan="5">TOTALES · ' + t.pedidos + ' pedido' + (t.pedidos === 1 ? '' : 's') +
-          ' · Efectivo ' + _soles(t.efectivo) + ' · Yape ' + _soles(t.yape) + '</td>' +
-        '<td>' + _soles(t.efectivo + t.yape) + '</td><td>' + _soles(t.pago) + '</td>' +
+          ' · Efectivo ' + _solesCaja(t.efectivo) + ' · Yape ' + _solesCaja(t.yape) + '</td>' +
+        '<td>' + _solesCaja(t.efectivo + t.yape) + '</td><td>' + _solesCaja(t.pago) + '</td>' +
         '<td colspan="3">' + _saldoCajaHTML(t.saldo, false) + '</td></tr>' +
     '</tbody></table></div>';
 }
@@ -815,9 +826,9 @@ window.pintarMotosCaja = function() {
   var k = _motoResumen.kpis;
 
   var set = function(id, v){ var el = document.getElementById(id); if (el) el.textContent = v; };
-  set('kpi-moto-cobrar',  _soles(k.por_cobrar));
-  set('kpi-moto-pagar',   _soles(k.por_pagar));
-  set('kpi-moto-neta',    _soles(k.posicion_neta));
+  set('kpi-moto-cobrar',  _solesCaja(k.por_cobrar));
+  set('kpi-moto-pagar',   _solesCaja(k.por_pagar));
+  set('kpi-moto-neta',    _solesCaja(k.posicion_neta));
   set('kpi-moto-neta-nota', k.posicion_neta > 0 ? 'nos deben' : k.posicion_neta < 0 ? 'les debemos' : 'saldado');
   var elNeta = document.getElementById('kpi-moto-neta');
   if (elNeta) elNeta.className = 'metric-val ' + (k.posicion_neta > 0 ? 'green' : k.posicion_neta < 0 ? 'amber' : '');
@@ -848,9 +859,9 @@ window.pintarMotosCaja = function() {
       '<td><strong>' + _escCaja(m.motorizado) + '</strong>' +
         (m.medios_por_definir ? '<div class="caja-medio-falta" style="font-size:11px;margin-top:3px">' + m.medios_por_definir + ' medio' + (m.medios_por_definir === 1 ? '' : 's') + ' por definir</div>' : '') + '</td>' +
       '<td>' + m.pedidos + '</td>' +
-      '<td style="font-weight:500">' + _soles(m.efectivo) + '</td>' +
-      '<td style="font-weight:500">' + _soles(m.yape) + '</td>' +
-      '<td style="font-weight:500">' + _soles(m.pago) + '</td>' +
+      '<td style="font-weight:500">' + _solesCaja(m.efectivo) + '</td>' +
+      '<td style="font-weight:500">' + _solesCaja(m.yape) + '</td>' +
+      '<td style="font-weight:500">' + _solesCaja(m.pago) + '</td>' +
       '<td>' + _saldoCajaHTML(m.saldo, true) +
         (m.dias_difieren ? '<div class="caja-difiere"><i class="ti ti-alert-triangle"></i> Difiere de lo pagado</div>' : '') + '</td>' +
       '<td>' + estado + '</td>' +
@@ -928,7 +939,7 @@ window.marcarMotoPagado = function(idMoto) {
   var saldo = parseFloat(m.saldo_liquidable) || 0;
   _abrirPasoFotoPago('moto', idMoto, m.motorizado,
     m.dias_liquidables + ' día' + (m.dias_liquidables === 1 ? '' : 's') + ' por liquidar · ' +
-    (saldo > 0 ? 'El moto nos rinde ' : saldo < 0 ? 'Le pagamos ' : 'Saldo ') + _soles(saldo));
+    (saldo > 0 ? 'El moto nos rinde ' : saldo < 0 ? 'Le pagamos ' : 'Saldo ') + _solesCaja(saldo));
 };
 
 async function _continuarPagoMoto() {
@@ -941,8 +952,8 @@ async function _continuarPagoMoto() {
     : _motoFiltroHasta ? 'hasta el ' + _fechaDisplayCaja(_motoFiltroHasta)
     : 'de todas las fechas';
   var saldo = parseFloat(m.saldo_liquidable) || 0;
-  var sentido = saldo > 0 ? 'El moto nos rinde ' + _soles(saldo)
-              : saldo < 0 ? 'Le pagamos al moto ' + _soles(saldo)
+  var sentido = saldo > 0 ? 'El moto nos rinde ' + _solesCaja(saldo)
+              : saldo < 0 ? 'Le pagamos al moto ' + _solesCaja(saldo)
               : 'Saldo S/ 0.00';
   var aviso = m.dias_abiertos
     ? '\n' + m.dias_abiertos + ' día(s) con órdenes en proceso no se liquidan.'
@@ -1001,6 +1012,7 @@ window.initCaja = function() {
   _motoFiltroDesde = ''; _motoFiltroHasta = '';
   _motoFiltroPago  = 'pendientes';
   _motoResumen = null; _motoDetalles = {}; _motoFirma = '';
+  _liquidezFirma = '';
   ['tiendas','liquidez','motorizados'].forEach(function(t){
     var el = document.getElementById('tab-'+t);
     if (el) el.style.display = t==='tiendas' ? 'block' : 'none';

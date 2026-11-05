@@ -18,7 +18,7 @@ const {
   generarUrlSubidaPagoMoto, esUrlDePagoMoto,
 } = require('../r2');
 const { guardarFoto, rutaArchivo, existeFoto } = require('../almacenamiento-local');
-const { aCentimos, aSoles, filtroFecha, ordenesCaja } = require('../caja-motor');
+const { aCentimos, aSoles, filtroFecha, ordenesCaja, ordenesPrepagadas, cuadreCaja } = require('../caja-motor');
 
 /* Caja maneja dinero: solo admin y operador, sin excepción */
 router.use(requireAuth);
@@ -614,112 +614,133 @@ function rutasFotosLiquidacion(cfg) {
 rutasFotosLiquidacion(LIQ_TIENDA);
 rutasFotosLiquidacion(LIQ_MOTO);
 
-/* GET /api/caja/liquidez?desde=&hasta= */
+/* ════════════════════════════════════════════════════════════
+   LIQUIDEZ DIARIA
+   Teórica y en vivo, con el motor, por fecha de reparto: qué dejó cada
+   día si todo se liquidara. No representa pagos: lo ya pagado no se
+   congela acá, eso es la Caja real.
+   Las vías son cómo pagó el cliente (y el prepago, según su método):
+   cuentan aunque el moto todavía no haya rendido. Lo que las tiendas le
+   pagan a Velox al liquidar no se cuenta, sería doble conteo.
+   GET /api/caja/liquidez?desde=&hasta= (solo "desde" = ese día)
+   ════════════════════════════════════════════════════════════ */
 router.get('/liquidez', async (req, res) => {
   try {
     const pool = await getPool();
-    const { desde, hasta } = req.query;
+    const { desde, hasta } = leerFiltros(req.query);
+    const ordenes = await ordenesCaja(pool, { desde, hasta });
 
-    let where = '';
-    if (desde && hasta) where = `WHERE o.fecha_reparto BETWEEN @desde AND @hasta`;
-    else if (desde)     where = `WHERE o.fecha_reparto >= @desde`;
-    else if (hasta)     where = `WHERE o.fecha_reparto <= @hasta`;
+    const nuevo = () => ({
+      pedidos: 0, delivery: 0, pago_motos: 0, retenido: 0,
+      efectivo: 0, yape: 0, deposito: 0, prepago_sin_metodo: 0,
+    });
+    const sumar = (a, c) => {
+      a.pedidos    += 1;
+      a.delivery   += c.delivery;
+      a.pago_motos += c.pago_moto;
+      a.retenido   += c.retenido;
+      for (const k of Object.keys(c.vias)) a[k] += c.vias[k];
+    };
+    const enSoles = a => ({
+      pedidos: a.pedidos,
+      delivery: aSoles(a.delivery), pago_motos: aSoles(a.pago_motos),
+      ganancia: aSoles(a.delivery - a.pago_motos), retenido: aSoles(a.retenido),
+      efectivo: aSoles(a.efectivo), yape: aSoles(a.yape), deposito: aSoles(a.deposito),
+      prepago_sin_metodo: aSoles(a.prepago_sin_metodo),
+    });
 
-    const request = pool.request();
-    if (desde) request.input('desde', sql.Date, desde);
-    if (hasta) request.input('hasta', sql.Date, hasta);
+    const porDia = new Map();
+    const total = nuevo();
+    for (const o of ordenes) {
+      if (!porDia.has(o.fecha)) porDia.set(o.fecha, nuevo());
+      sumar(porDia.get(o.fecha), o.calc);
+      sumar(total, o.calc);
+    }
 
-    const result = await request.query(`
-      SELECT
-        CONVERT(varchar, o.fecha_reparto, 23) AS fecha,
-        COUNT(*) AS pedidos,
-        SUM(CASE WHEN o.estado IN ('entregado','ausente')
-                 THEN (o.delivery_base + o.monto_adicional) ELSE 0 END)       AS bruto,
-        SUM(CASE WHEN o.estado IN ('entregado','ausente')
-                 THEN (o.pago_moto_base + o.pago_moto_adicional) ELSE 0 END)  AS pago_motorizados,
-        SUM(CASE WHEN o.estado IN ('entregado','ausente')
-                      AND o.monto_cobrado > (o.delivery_base + o.monto_adicional)
-                 THEN o.monto_cobrado - (o.delivery_base + o.monto_adicional)
-                 ELSE 0 END)                                                   AS devoluciones,
-        SUM(CASE WHEN o.estado IN ('entregado','ausente')
-                 THEN (o.delivery_base + o.monto_adicional) ELSE 0 END)
-        - SUM(CASE WHEN o.estado IN ('entregado','ausente')
-                   THEN (o.pago_moto_base + o.pago_moto_adicional) ELSE 0 END)
-        - SUM(CASE WHEN o.estado IN ('entregado','ausente')
-                        AND o.monto_cobrado > (o.delivery_base + o.monto_adicional)
-                   THEN o.monto_cobrado - (o.delivery_base + o.monto_adicional)
-                   ELSE 0 END)                                                 AS liquido_neto
-      FROM ordenes o
-      ${where}
-      GROUP BY o.fecha_reparto
-      ORDER BY o.fecha_reparto DESC
-    `);
-    res.json(result.recordset);
+    res.json({
+      dias: [...porDia.keys()].sort().reverse().map(fecha => ({ fecha, ...enSoles(porDia.get(fecha)) })),
+      totales: enSoles(total),
+      cuadre: cuadreCaja(ordenes),
+    });
   } catch (err) {
     console.error('GET /caja/liquidez:', err.message);
     res.status(500).json({ error: 'Error al obtener la liquidez' });
   }
 });
 
-/* GET /api/caja/real?desde=&hasta=
-   Caja real: plata que YA cambió de mano (solo cuenta lo marcado "pagado"
-   en caja_pagos_tiendas / caja_pagos_motorizados). A diferencia de
-   /liquidez (que es teórico y no mira el estado de pago), este número
-   cambia exactamente cuando se marca algo como pagado. */
+/* ════════════════════════════════════════════════════════════
+   CAJA REAL (Velox)
+   Plata que YA cambió de mano. Lo liquidado va por su FECHA DE PAGO y
+   con los montos guardados; Pago Velox y prepagos no tienen otra fecha
+   que la de reparto.
+   · Días del moto pagados antes de las liquidaciones: su monto_cobrado
+     salió de la regla vieja, que sumaba toda la plata cobrada, Pago
+     Velox incluido. Por eso ese Pago Velox no se vuelve a sumar por
+     pedido, y sus vías quedan "sin desglose".
+   · Prepagos de órdenes no cobrables: línea aparte, fuera del cuadre.
+   · Lo que las tiendas pagan al liquidar entra al neto de tiendas pero
+     no a las vías.
+   GET /api/caja/real?desde=&hasta= (solo "desde" = ese día)
+   ════════════════════════════════════════════════════════════ */
 router.get('/real', async (req, res) => {
   try {
     const pool = await getPool();
-    const { desde, hasta } = req.query;
+    const { desde, hasta } = leerFiltros(req.query);
 
-    let filtroTiendas = '';
-    let filtroMotos   = '';
-    let filtroPrepago = '';
-    const request = pool.request();
-    if (desde && hasta) {
-      filtroTiendas = 'AND cp.fecha_ciclo BETWEEN @desde AND @hasta';
-      filtroMotos   = 'AND cm.fecha_dia BETWEEN @desde AND @hasta';
-      filtroPrepago = 'AND o.fecha_reparto BETWEEN @desde AND @hasta';
-      request.input('desde', sql.Date, desde);
-      request.input('hasta', sql.Date, hasta);
-    } else if (desde) {
-      filtroTiendas = 'AND cp.fecha_ciclo >= @desde';
-      filtroMotos   = 'AND cm.fecha_dia >= @desde';
-      filtroPrepago = 'AND o.fecha_reparto >= @desde';
-      request.input('desde', sql.Date, desde);
-    } else if (hasta) {
-      filtroTiendas = 'AND cp.fecha_ciclo <= @hasta';
-      filtroMotos   = 'AND cm.fecha_dia <= @hasta';
-      filtroPrepago = 'AND o.fecha_reparto <= @hasta';
-      request.input('hasta', sql.Date, hasta);
+    const reqT = pool.request();
+    const fT = filtroFecha(reqT, desde, hasta, 'CAST(ISNULL(cp.fecha_pago, cp.fecha_ciclo) AS DATE)');
+    const t = (await reqT.query(`
+      SELECT ISNULL(SUM(cp.monto_cobrar), 0) AS cobrar, ISNULL(SUM(cp.monto_devolver), 0) AS devolver
+      FROM caja_pagos_tiendas cp WHERE cp.pagado = 1 ${fT}
+    `)).recordset[0];
+
+    const reqM = pool.request();
+    const fM = filtroFecha(reqM, desde, hasta, 'CAST(ISNULL(cm.fecha_pago, cm.fecha_dia) AS DATE)');
+    const m = (await reqM.query(`
+      SELECT ISNULL(SUM(cm.monto_cobrado), 0) AS cobrado, ISNULL(SUM(cm.monto_a_pagar), 0) AS a_pagar,
+             ISNULL(SUM(CASE WHEN cm.id_liquidacion IS NULL THEN cm.monto_cobrado ELSE 0 END), 0) AS sin_desglose
+      FROM caja_pagos_motorizados cm WHERE cm.pagado = 1 ${fM}
+    `)).recordset[0];
+
+    const reqL = pool.request();
+    const fL = filtroFecha(reqL, desde, hasta, 'l.fecha_pago');
+    const l = (await reqL.query(`
+      SELECT ISNULL(SUM(l.monto_efectivo), 0) AS efectivo, ISNULL(SUM(l.monto_yape), 0) AS yape
+      FROM caja_liquidaciones_motorizados l WHERE 1 = 1 ${fL}
+    `)).recordset[0];
+
+    let pagoVelox = 0;
+    for (const o of await ordenesCaja(pool, { desde, hasta })) {
+      if (!o.dia_moto_sin_liquidacion) pagoVelox += o.calc.directo_velox;
     }
 
-    const result = await request.query(`
-      SELECT
-        ISNULL((SELECT SUM(monto_cobrar - monto_devolver)
-                FROM caja_pagos_tiendas cp
-                WHERE cp.pagado = 1 ${filtroTiendas}), 0) AS neto_tiendas,
-        ISNULL((SELECT SUM(monto_cobrado - monto_a_pagar)
-                FROM caja_pagos_motorizados cm
-                WHERE cm.pagado = 1 ${filtroMotos}), 0) AS neto_motorizados,
-        /* Prepagos: plata que la tienda ya pagó en oficina al momento de
-           despachar. No pasa por caja_pagos_tiendas (no es una deuda que
-           se "marca pagada" después, ya entró en el momento), así que se
-           suma directo desde ordenes — sin esto, Caja real quedaba corta
-           en cada pedido pre-pagado. */
-        ISNULL((SELECT SUM(o.delivery_base + o.monto_adicional)
-                FROM ordenes o
-                WHERE o.pago_velox = 'PAGADO' ${filtroPrepago}), 0) AS neto_prepago
-    `);
+    let prepagos = 0, prepagosAparte = 0;
+    const vias = {
+      efectivo: aCentimos(l.efectivo), yape: aCentimos(l.yape),
+      deposito: pagoVelox, prepago_sin_metodo: 0,
+    };
+    for (const p of await ordenesPrepagadas(pool, { desde, hasta })) {
+      if (p.cobrable) prepagos += p.monto;
+      else prepagosAparte += p.monto;
+      vias[p.via] += p.monto;
+    }
 
-    const r = result.recordset[0];
-    const neto_tiendas      = parseFloat(r.neto_tiendas || 0);
-    const neto_motorizados  = parseFloat(r.neto_motorizados || 0);
-    const neto_prepago      = parseFloat(r.neto_prepago || 0);
+    const netoTiendas = aCentimos(t.cobrar) - aCentimos(t.devolver);
+    const netoMotos   = aCentimos(m.cobrado) - aCentimos(m.a_pagar);
+    const sinDesglose = aCentimos(m.sin_desglose);
     res.json({
-      neto_tiendas,
-      neto_motorizados,
-      neto_prepago,
-      caja_real: neto_tiendas + neto_motorizados + neto_prepago,
+      neto_motorizados: aSoles(netoMotos),
+      neto_tiendas: aSoles(netoTiendas),
+      pago_velox: aSoles(pagoVelox),
+      prepagos: aSoles(prepagos),
+      prepagos_no_cobrables: aSoles(prepagosAparte),
+      caja_real: aSoles(netoMotos + netoTiendas + pagoVelox + prepagos + prepagosAparte),
+      vias: {
+        efectivo: aSoles(vias.efectivo), yape: aSoles(vias.yape), deposito: aSoles(vias.deposito),
+        prepago_sin_metodo: aSoles(vias.prepago_sin_metodo),
+        sin_desglose: aSoles(sinDesglose),
+        total: aSoles(vias.efectivo + vias.yape + vias.deposito + vias.prepago_sin_metodo + sinDesglose),
+      },
     });
   } catch (err) {
     console.error('GET /caja/real:', err.message);

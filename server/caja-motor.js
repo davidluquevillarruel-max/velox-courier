@@ -132,6 +132,28 @@ async function ordenesCaja(pool, { desde, hasta, idTienda, idMotorizado } = {}) 
   }));
 }
 
+/* Órdenes prepagadas del período, de CUALQUIER estado, por su fecha de
+   reparto. Es para la Caja real: esa plata ya entró en la oficina
+   aunque la orden siga en proceso o se haya cancelado (la Caja Tienda
+   no le devuelve el prepago de una cancelada). Cada una con su monto
+   en céntimos, su vía y si es cobrable: las no cobrables van en línea
+   aparte, fuera del cuadre. */
+async function ordenesPrepagadas(pool, { desde, hasta } = {}) {
+  const request = pool.request();
+  const fFecha = filtroFecha(request, desde, hasta);
+  const r = await request.query(`
+    SELECT o.id, o.estado, o.delivery_total, o.pago_velox_metodo
+    FROM ordenes o
+    WHERE o.pago_velox = 'PAGADO' ${fFecha}
+  `);
+  return r.recordset.map(o => ({
+    id: o.id,
+    monto: aCentimos(o.delivery_total),
+    via: VIA_DE_PREPAGO[o.pago_velox_metodo] || 'prepago_sin_metodo',
+    cobrable: ESTADOS_COBRABLES.includes(o.estado),
+  }));
+}
+
 /* Control de cuadre, sobre órdenes de ordenesCaja():
      saldo motos + saldo tiendas + Pago Velox + prepagos
        = delivery − pago a motos
@@ -170,5 +192,5 @@ function cuadreCaja(ordenes) {
 module.exports = {
   ESTADOS_COBRABLES, sumaEnCajaTienda, sumaEnCajaMoto,
   aCentimos, aSoles,
-  calcularOrdenCaja, filtroFecha, ordenesCaja, cuadreCaja,
+  calcularOrdenCaja, filtroFecha, ordenesCaja, ordenesPrepagadas, cuadreCaja,
 };

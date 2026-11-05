@@ -100,7 +100,7 @@
 <div id="tab-liquidez" style="display:none">
 
   <div class="page-title" style="margin-bottom:4px">Liquidez diaria</div>
-  <div class="page-sub">Bruto recaudado, pagos a motorizados, devoluciones y líquido neto</div>
+  <div class="page-sub">En vivo, por fecha de reparto: entregado, ausente y devolución. Delivery, pago a motorizados, ganancia y cómo pagaron los clientes</div>
 
   <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;flex-wrap:wrap">
     <span style="font-size:13px;color:var(--color-text-secondary)">Filtrar por período:</span>
@@ -120,15 +120,17 @@
     <button class="btn btn-sm" onclick="limpiarFiltroLiquidez()">
       <i class="ti ti-adjustments-horizontal"></i> Ver todos
     </button>
-    <span style="font-size:12px;color:var(--color-text-tertiary)">Sin filtro = todos los registros</span>
+    <span style="font-size:12px;color:var(--color-text-tertiary)">Solo "Desde" = ese día · Sin filtro = todos los registros</span>
   </div>
 
   <div class="metrics" style="grid-template-columns:repeat(4,1fr);margin-bottom:16px">
-    <div class="metric"><div class="metric-label">Bruto total</div><div class="metric-val blue" id="kpi-bruto">—</div></div>
-    <div class="metric"><div class="metric-label">Pagado motorizados</div><div class="metric-val amber" id="kpi-motos">—</div></div>
-    <div class="metric"><div class="metric-label">Devoluciones</div><div class="metric-val red" id="kpi-devol">—</div></div>
-    <div class="metric"><div class="metric-label">Líquido neto</div><div class="metric-val green" id="kpi-neto">—</div></div>
+    <div class="metric"><div class="metric-label">Delivery</div><div class="metric-val blue" id="kpi-liq-delivery">—</div></div>
+    <div class="metric"><div class="metric-label">Pago a motorizados</div><div class="metric-val amber" id="kpi-liq-motos">—</div></div>
+    <div class="metric"><div class="metric-label">Ganancia</div><div class="metric-val green" id="kpi-liq-ganancia">—</div><div class="caja-kpi-nota">delivery − pago a motorizados</div></div>
+    <div class="metric"><div class="metric-label">Retenido</div><div class="metric-val" id="kpi-liq-retenido">—</div><div class="caja-kpi-nota">plata de clientes que tiene Velox o sus motos</div></div>
   </div>
+
+  <div id="cuadre-liquidez" style="margin-bottom:16px"></div>
 
   <div class="card">
     <div class="card-head"><span class="card-title">Detalle por día</span></div>
@@ -136,13 +138,14 @@
       <table>
         <thead>
           <tr>
-            <th>Fecha</th><th>Pedidos</th><th>Bruto recaudado</th>
-            <th>Pago motorizados</th><th>Devoluciones</th><th>Líquido neto</th>
+            <th>Fecha</th><th>Pedidos</th><th>Delivery</th><th>Pago motos</th><th>Ganancia</th>
+            <th>Retenido</th><th>Efectivo</th><th>Yape</th><th>Depósito</th>
           </tr>
         </thead>
         <tbody id="tbody-liquidez"></tbody>
       </table>
     </div>
+    <div class="caja-nota-card">Efectivo, Yape y Depósito: cómo pagaron los clientes (y los prepagos, según su método), aunque el moto todavía no haya rendido. Lo que pagan las tiendas al liquidar no se cuenta.</div>
   </div>
 
   <div id="balance-periodo-liquidez"></div>
@@ -159,20 +162,20 @@
 
   <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;flex-wrap:wrap">
     <span style="font-size:13px;color:var(--color-text-secondary)">Filtrar por período:</span>
-    <button class="btn btn-sm" id="btn-semana-motos" onclick="filtroRapidoMotos('semana')">Por semana</button>
-    <button class="btn btn-sm" id="btn-semana-pasada-motos" onclick="filtroRapidoMotos('semana-pasada')">Semana pasada</button>
-    <button class="btn btn-sm" id="btn-mes-motos" onclick="filtroRapidoMotos('mes')">Por mes</button>
-    <button class="btn btn-sm" id="btn-mes-pasado-motos" onclick="filtroRapidoMotos('mes-pasado')">Mes pasado</button>
+    <button class="btn btn-sm" id="btn-semana-motos" onclick="filtroRapidoMotosCaja('semana')">Por semana</button>
+    <button class="btn btn-sm" id="btn-semana-pasada-motos" onclick="filtroRapidoMotosCaja('semana-pasada')">Semana pasada</button>
+    <button class="btn btn-sm" id="btn-mes-motos" onclick="filtroRapidoMotosCaja('mes')">Por mes</button>
+    <button class="btn btn-sm" id="btn-mes-pasado-motos" onclick="filtroRapidoMotosCaja('mes-pasado')">Mes pasado</button>
     <div class="date-filter-wrap">
       <i class="ti ti-calendar"></i>
-      <input type="date" id="filtro-motos-desde" onchange="aplicarFiltroMotos()" />
+      <input type="date" id="filtro-motos-desde" onchange="aplicarFiltroMotosCaja()" />
     </div>
     <span style="font-size:13px;color:var(--color-text-secondary)">hasta</span>
     <div class="date-filter-wrap">
       <i class="ti ti-calendar"></i>
-      <input type="date" id="filtro-motos-hasta" onchange="aplicarFiltroMotos()" />
+      <input type="date" id="filtro-motos-hasta" onchange="aplicarFiltroMotosCaja()" />
     </div>
-    <button class="btn btn-sm" onclick="limpiarFiltroMotos()">
+    <button class="btn btn-sm" onclick="limpiarFiltroMotosCaja()">
       <i class="ti ti-adjustments-horizontal"></i> Ver todos
     </button>
     <span style="font-size:12px;color:var(--color-text-tertiary)">Solo "Desde" = ese día · Sin filtro = todos los registros</span>
@@ -297,10 +300,17 @@
 .caja-chip.pendiente { background:var(--color-amber-bg); color:var(--color-amber-text); }
 .caja-medio-falta { color:var(--color-amber-text); font-weight:500; }
 .caja-tenue { color:var(--color-text-tertiary); }
+.caja-kpis-real { grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); }
+.caja-kpis-vias { grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); }
+.caja-vias-titulo { font-size:12px; font-weight:600; color:var(--color-text-secondary); padding:4px 16px 8px; }
+.caja-nota-card { font-size:12px; color:var(--color-text-tertiary); padding:10px 16px 14px; }
+.caja-cuadre { display:flex; flex-wrap:wrap; align-items:center; gap:4px 12px; padding:8px 14px; font-size:12px; border-radius:var(--radius-md); }
+.caja-cuadre.ok { background:var(--color-green-bg); color:var(--color-green-text); }
+.caja-cuadre.mal { background:var(--color-red-bg); color:var(--color-red-text); }
 .caja-difiere { font-size:11px; font-weight:600; color:var(--color-amber-text); margin-top:3px; white-space:nowrap; }
 .caja-difiere-lista { margin:10px 12px 4px 24px; padding:8px 12px; font-size:12px; color:var(--color-text-secondary); background:var(--color-amber-bg); border-radius:var(--radius-md); }
 .caja-difiere-lista .caja-difiere { margin:0 0 3px; }
-@media (max-width: 900px) { .caja-kpis-tiendas { grid-template-columns:repeat(2,1fr); } }
+@media (max-width: 900px) { .caja-kpis-tiendas, .caja-kpis-real { grid-template-columns:repeat(2,1fr); } }
 
 /* ── Foto del pago (Marcar pagado) ── */
 .pago-foto-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.45); z-index:1200; display:flex; align-items:center; justify-content:center; padding:16px; }

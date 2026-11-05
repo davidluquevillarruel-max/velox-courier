@@ -57,7 +57,9 @@ var _sondeoAsignacionId = null;
 async function _cargarDatosAsignacion() {
   try {
     var [rO, rM, rT] = await Promise.all([
-      fetch(API + '/ordenes'),
+      /* Única pantalla donde el motorizado ve las sin asignar, para
+         autoasignarse (ver filtroAsignacion en routes/ordenes.js) */
+      fetch(API + '/ordenes/para-asignacion'),
       fetch(API + '/motorizados'),
       fetch(API + '/tiendas'),
     ]);

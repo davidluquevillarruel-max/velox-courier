@@ -12,6 +12,13 @@ Velox Courier — internal management system for a courier/delivery company in L
 
 Última actualización: 5 de noviembre de 2026.
 
+- **El motorizado solo ve sus órdenes (5 de noviembre de 2026, EN LOCAL, sin push ni deploy; va
+  junto con las cajas).** Sin migración. `server/routes/ordenes.js`, `js/asignacion.js`.
+  `filtroPorRol()` exige `id_motorizado = él`: "Mis entregas de hoy", Evidencias, `GET /ordenes` y
+  `GET /ordenes/:id` ya no traen las sin asignar. La pantalla Asignación lee de un endpoint propio,
+  `GET /ordenes/para-asignacion` (`filtroAsignacion()`): las suyas + las sin asignar asignables,
+  nunca las de otro. **Un listado nuevo del motorizado usa `filtroPorRol`, no `filtroAsignacion`.**
+
 - **Las 3 cajas con un solo motor + Caja de motorizados rehecha (5 de noviembre de 2026, EN LOCAL,
   sin push ni deploy).** Ver D-012 en `DECISIONES.md`. Commits `b50d396`, `933e6e4`, `9178ac6`.
   **Necesita migración** (ver "Migraciones pendientes") y **toca el servidor**. Falta que el
@@ -114,7 +121,7 @@ Velox Courier — internal management system for a courier/delivery company in L
   `js/ordenes-pendientes.js`, `css/components.css`. **Toca el servidor:** hay que reiniciarlo.
   - **Asignable** = no pendiente (como siempre, con o sin foto) **o** pendiente con tienda real
     y foto del producto (`SQL_ASIGNABLE`; `SELECT_ORDEN` devuelve `asignable`). Lo usan
-    Asignación, `filtroPorRol()` (el motorizado ve y se autoasigna las asignables) y
+    Asignación, `filtroAsignacion()` (el motorizado ve y se autoasigna las asignables) y
     `/asignar` (400 explicando si falta la tienda o la foto).
   - **Sigue pendiente después de asignarla:** la marca `datos_pendientes` no depende del
     motorizado; queda en "Pendiente" (con la marca "Asignada a X") y con "Por completar" hasta
@@ -456,7 +463,7 @@ Velox Courier — internal management system for a courier/delivery company in L
     `GET /pendientes-datos/total`. Solo admin/operador.
   - En "Todos los pedidos" se ven con la marca "Por completar". Desde el 3/11 se pueden
     **asignar** apenas tienen tienda real + foto (ver la nota de esa fecha arriba); sin eso no
-    aparecen en Asignación, el motorizado no las ve (`filtroPorRol`) y `/asignar` las rechaza.
+    aparecen en Asignación, el motorizado no las ve (`filtroAsignacion`) y `/asignar` las rechaza.
     Con datos pendientes **no se pueden cerrar**. La tienda comodín no se lista en
     `GET /tiendas` ni se puede editar.
   - `POST /` y `/rafaga` reintentan si dos órdenes calculan el mismo código `C-xxxx` a la vez

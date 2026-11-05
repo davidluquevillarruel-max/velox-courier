@@ -83,8 +83,8 @@ async function _cargarPendientesHoy() {
   if (!r.ok) throw new Error('No se pudieron cargar tus órdenes');
   var ordenes = await r.json();
   return ordenes
-    /* Incluye las que tienen datos por completar (el servidor solo
-       manda las asignables): se ven, pero sin EMPEZAR hasta que la
+    /* El servidor solo manda las suyas (filtroPorRol). Incluye las que
+       tienen datos por completar: se ven, pero sin EMPEZAR hasta que la
        oficina las complete (el refresco de 8 s habilita el botón) */
     .filter(function(o) { return o.estado === 'en-proceso'; })
     .sort(function(a, b) {

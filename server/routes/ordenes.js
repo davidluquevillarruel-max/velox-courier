@@ -213,11 +213,8 @@ function leerIdSubida(valor) {
 /* ────────────────────────────────────────────────────────────
    Devuelve el filtro SQL según quién pregunta.
    · admin / operador / visor → ven todo
-   · motorizado               → las suyas + las que no tienen a
-     nadie asignado todavía (para poder autoasignarse en
-     "Asignación"; nunca las de otro motorizado). De las de ráfaga
-     con datos pendientes ve solo las asignables (tienda real + foto,
-     ver SQL_ASIGNABLE): las demás no tienen nada que repartir todavía.
+   · motorizado               → SOLO las suyas. Las sin asignar las ve
+     únicamente en Asignación (ver filtroAsignacion).
    · tienda                   → solo las de su tienda
    Se aplica en el servidor: el cliente no puede saltárselo.
    Espera los alias o (ordenes) y t (tiendas), como SELECT_ORDEN.
@@ -226,7 +223,7 @@ function filtroPorRol(usuario, request) {
   if (usuario.rol === 'motorizado') {
     if (!usuario.id_motorizado) return { sql: 'AND 1 = 0' }; // sin vínculo: no ve nada
     request.input('scopeMoto', sql.Int, usuario.id_motorizado);
-    return { sql: `AND (o.id_motorizado = @scopeMoto OR o.id_motorizado IS NULL) AND ${SQL_ASIGNABLE}` };
+    return { sql: 'AND o.id_motorizado = @scopeMoto' };
   }
   if (usuario.rol === 'tienda') {
     if (!usuario.id_tienda) return { sql: 'AND 1 = 0' };
@@ -234,6 +231,18 @@ function filtroPorRol(usuario, request) {
     return { sql: 'AND o.id_tienda = @scopeTienda' };
   }
   return { sql: '' };
+}
+
+/* Lo que ve cada rol en la pantalla Asignación: el motorizado, las suyas
+   y las que no tienen a nadie asignado, para poder autoasignarse (nunca
+   las de otro). De las de ráfaga con datos pendientes, solo las
+   asignables (tienda real + foto, ver SQL_ASIGNABLE): las demás no
+   tienen nada que repartir todavía. Los gestores, como siempre. */
+function filtroAsignacion(usuario, request) {
+  if (usuario.rol !== 'motorizado') return filtroPorRol(usuario, request);
+  if (!usuario.id_motorizado) return { sql: 'AND 1 = 0' };
+  request.input('scopeMoto', sql.Int, usuario.id_motorizado);
+  return { sql: `AND (o.id_motorizado = @scopeMoto OR o.id_motorizado IS NULL) AND ${SQL_ASIGNABLE}` };
 }
 
 /* Verifica que un motorizado solo toque órdenes suyas */
@@ -362,6 +371,24 @@ router.get('/', async (req, res) => {
   } catch (err) {
     console.error('GET /ordenes:', err.message);
     res.status(500).json({ error: 'Error al listar órdenes' });
+  }
+});
+
+/* ── GET /api/ordenes/para-asignacion ────────────────────────
+   Lo que alimenta la pantalla Asignación (ver filtroAsignacion). La
+   tienda no entra: no tiene esa pantalla. */
+router.get('/para-asignacion', requireRol('admin', 'operador', 'visor', 'motorizado'), async (req, res) => {
+  try {
+    const pool    = await getPool();
+    const request = pool.request();
+    const where   = 'WHERE 1 = 1 ' + filtroAsignacion(req.usuario, request).sql;
+    const result  = await request.query(
+      `${SELECT_ORDEN} ${where} ORDER BY o.fecha_reparto DESC, o.id DESC`
+    );
+    res.json(result.recordset);
+  } catch (err) {
+    console.error('GET /ordenes/para-asignacion:', err.message);
+    res.status(500).json({ error: 'Error al listar las órdenes de asignación' });
   }
 });
 

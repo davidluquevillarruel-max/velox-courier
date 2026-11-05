@@ -353,7 +353,7 @@ teléfono falla, no había forma de cargar una foto que ya está en la galería.
 - "Asignable" = no pendiente (como siempre, con o sin foto) **o** pendiente con tienda real
   (no el comodín `SIN DEFINIR`) y foto del producto. La regla vive en un solo lugar
   (`SQL_ASIGNABLE` en `server/routes/ordenes.js`) y la usan la lista de Asignación, el filtro del
-  motorizado (`filtroPorRol`, para que vea y se autoasigne las mismas) y `PATCH /asignar`.
+  motorizado (`filtroAsignacion`, para que vea y se autoasigne las mismas) y `PATCH /asignar`.
 - **Asignar no la completa:** la marca `datos_pendientes` depende solo de los datos, no del
   motorizado. Sigue en "Pendiente" (con "Asignada a X", para completar primero las que ya están
   en ruta) y con "Por completar" hasta que la oficina carga los datos.

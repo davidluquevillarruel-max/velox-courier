@@ -425,6 +425,63 @@ solo las ven los gestores (todo `/caja` es admin/operador).
 
 ---
 
+## D-012 · Las cajas leen de un solo motor; la Caja de motorizados cuenta solo lo que pasó por sus manos
+
+**Estado:** Implementado y probado en local el 5 de noviembre de 2026 (commits `b50d396`,
+`933e6e4`, `9178ac6`). Migración `velox_agregar_fotos_pago_moto.sql` aplicada en local. **Falta
+el deploy a producción.**
+
+**Problema.** Caja Tienda ya tenía su regla (D-011 y la reescritura del 4/11), pero Liquidez, Caja
+real y Motorizados seguían con la vieja y no coincidían. Con los datos locales, Liquidez daba un
+"líquido neto" de −3178.40: restaba la plata del producto sin haberla sumado nunca. La ganancia real
+es 741.50. A los motos se les contaba toda la plata cobrada, incluso los pedidos con Pago tienda
+(S/ 1097) que nunca pasaron por sus manos.
+
+**Decisión.**
+- **Un solo motor** (`server/caja-motor.js`), una función por pedido de la que leen las cajas. Sin
+  sesión ni roles, para que lo usen después las vistas de la tienda y del moto.
+- **Saldo del moto = solo la plata que pasó por sus manos.** Efectivo y Yape al moto (el Yape llega a
+  su celular y lo rinde completo). Pago Velox fue directo a Velox; Pago tienda, a la tienda.
+- **El moto cobra en los tres estados cobrables** (entregado, ausente, devolución): en los tres hizo
+  el viaje, igual que a la tienda se le cobra el delivery.
+- **Vías = cómo pagó el cliente.** Efectivo moto, Yape moto, Pago Velox (depósito) y prepago según su
+  método. Pago tienda no cuenta. Lo que las tiendas le pagan a Velox al liquidar no entra, porque
+  sería doble conteo.
+- **Lo ya pagado se respeta.** Los días pagados muestran el saldo guardado; si los pedidos de hoy
+  dan otra cosa, "Difiere de lo pagado". La regla nueva solo aplica a lo pendiente. Esto también
+  cambió Caja Tienda, que guardaba el monto pero lo recalculaba al mostrarlo.
+- **Caja real va por fecha de pago**, porque es cuándo cambió de mano la plata; Pago Velox y prepagos
+  no tienen otra fecha que la de reparto. Liquidez queda teórica, en vivo y por fecha de reparto.
+- **Foto obligatoria al liquidar al moto** (1 a 5), con la misma estructura y pipeline que D-011.
+  Segunda excepción acordada a "un tipo nuevo en `ordenes_fotos`", por el mismo motivo: un pago no
+  es de una orden. `monto_efectivo` y `monto_yape` se guardan en la liquidación, para que las vías de
+  Caja real no dependan de órdenes que se editen después.
+- **Control de cuadre:** saldo motos + saldo tiendas + Pago Velox + prepagos = delivery − pago a
+  motos. Orden por orden siempre cierra, así que no prueba el cálculo: detecta lo que se pierde al
+  armar las cajas (filtros, JOIN, cobrables sin moto). Es en vivo; los montos guardados no entran.
+
+**Decisiones del camino.**
+- **Días con órdenes en proceso no se liquidan al moto.** Si se liquidaran, `/resolver` le rechazaría
+  cerrarlas y la Caja no tiene "desmarcar". La confirmación avisa cuáles quedan afuera.
+- **Devolución tardía no se bloquea por el día pagado del moto.** Un cancelado suele volver a la
+  tienda días después de liquidarlo; bloquearlo lo dejaría trabado para siempre. Lo pagado no cambia,
+  el día queda "Difiere" y ese viaje se resuelve a mano. El bloqueo por el día de la tienda sigue.
+- **Prepagos de órdenes no cobrables** (en proceso, canceladas): esa plata entró, cuentan en Caja
+  real en línea aparte, fuera del cuadre.
+- **Días viejos del moto en Caja real:** su `monto_cobrado` ya incluía Pago Velox (regla vieja), así
+  que ese Pago Velox no se vuelve a sumar por pedido; y como no guardaron la vía, van "sin desglose".
+
+**Descartado: guardar el detalle por pedido de cada liquidación.** Mostraría los días pagados tal
+cual se pagaron, pero es mucha más estructura. Lo guardado es por día; el detalle es en vivo y avisa
+si difiere.
+
+**Límites aceptados.** `/estado`, `/completo` y `/medio-pago` no bloquean por día pagado (lo pagado no
+cambia y queda "Difiere"). Las fechas de pago viejas de motos, en UTC, no se corrigieron. "Marcar
+pagado" de tiendas sigue liquidando días con órdenes en proceso. Clientes / Tiendas sigue con la regla
+vieja.
+
+---
+
 ## Costos de operación
 
 | Concepto | Mensual |
@@ -453,10 +510,8 @@ downtime). El dominio se traspasa aparte en Namecheap.
 - [ ] **2FA en Namecheap:** activar (la cuenta controla el dominio).
 - [ ] **Cambiar contraseña del admin** desde el propio sistema (ahora que el flujo es seguro).
 - [ ] **Monitoreo:** alertas de DigitalOcean por RAM > 85 % y disco > 80 %.
-- [ ] **Caja:** seguir revisándola con la fecha de reparto y los datos reales. Dos bugs
-      anotados: el prepago en el detalle de la tienda, y `GETDATE()` (UTC) en los dos "Marcar
-      pagado", que después de las 19:00 de Lima registra `fecha_pago` con el día siguiente.
-      Detalle en `CLAUDE.md` → "Pendiente".
+- [ ] **Caja:** probar y desplegar las 3 cajas (D-012). Clientes / Tiendas sigue con la regla
+      vieja; las vistas de la tienda y del moto, próximo paso. Detalle en `CLAUDE.md` → "Pendiente".
 - [x] **Rediseño de la vista del motorizado** ("Mis entregas de hoy": botón EMPEZAR + flujo
       de entrega con fotos por el pipeline único de D-003). **Desplegado en producción** el
       28–29/10/2026 junto con las fotos de devolución y la foto del pago con Efectivo +

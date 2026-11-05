@@ -10,7 +10,47 @@ Velox Courier — internal management system for a courier/delivery company in L
 
 ## Estado actual
 
-Última actualización: 4 de noviembre de 2026.
+Última actualización: 5 de noviembre de 2026.
+
+- **Las 3 cajas con un solo motor + Caja de motorizados rehecha (5 de noviembre de 2026, EN LOCAL,
+  sin push ni deploy).** Ver D-012 en `DECISIONES.md`. Commits `b50d396`, `933e6e4`, `9178ac6`.
+  **Necesita migración** (ver "Migraciones pendientes") y **toca el servidor**. Falta que el
+  usuario lo pruebe en el navegador y lo despliegue.
+  - **Motor** `server/caja-motor.js`: `calcularOrdenCaja()` es la ÚNICA definición de la plata de
+    una orden, en céntimos (delivery, retenido, plata en mano del moto, plata directa a Velox,
+    pago al moto, prepago, saldos, vías). Sin sesión ni roles, para que después lo usen las vistas
+    de la tienda y del moto (no construidas). `ordenesCaja()` trae las órdenes cobrables;
+    `cuadreCaja()` es el control de cuadre; `sumaEnCajaTienda` / `sumaEnCajaMoto` (hoy iguales:
+    entregado, ausente, devolución) los usa `ordenes.js`.
+  - **Motorizados:** saldo = efectivo + Yape que pasaron por sus manos − su pago. Pago Velox y
+    Pago tienda no suman. Cobra en entregado, ausente y devolución. Pantalla igual a Caja Tienda;
+    "Marcar pagado" liquida el rango con foto obligatoria (1 a 5, `encolarFotoPagoMoto`, tablas
+    `caja_liquidaciones_motorizados` y `_fotos`, carpeta R2 `pagos-moto/`), en transacción y con
+    `fecha_pago` de Lima. **Los días con órdenes en proceso no se liquidan** (el moto ya no podría
+    cerrarlas). Rutas de fotos: una sola fábrica, `rutasFotosLiquidacion()`, para tiendas y motos.
+  - **Días pagados (tiendas y motos):** el saldo sale de lo guardado; si no coincide con lo que dan
+    hoy los pedidos, "Difiere de lo pagado". Delivery, retenido y el detalle van en vivo, porque lo
+    guardado es por día y solo tiene el saldo. Los días pagados con la regla vieja van a decir
+    "Difiere" y es esperable.
+  - **Liquidez:** teórica, en vivo, por fecha de reparto. Ganancia = delivery − pago a motos. Se
+    fueron "Devoluciones", "Líquido neto" y "Caja teórica". Vías (efectivo, Yape, depósito) y línea
+    de cuadre.
+  - **Caja real:** lo liquidado por `fecha_pago` y con montos guardados; Pago Velox y prepagos por
+    `fecha_reparto`. Prepagos no cobrables en línea aparte, fuera del cuadre. Días viejos del moto:
+    vías "sin desglose" y su Pago Velox no se vuelve a sumar (ya estaba en su `monto_cobrado`).
+  - **Vías:** efectivo moto → efectivo, Yape moto → Yape, Pago Velox → depósito, prepago según su
+    método, Pago tienda no cuenta. Lo que pagan las tiendas al liquidar no se cuenta.
+  - **Cuadre:** saldo motos + saldo tiendas + Pago Velox + prepagos = delivery − pago a motos.
+    `node scripts/verificar-cuadre-cajas.js [--desde= --hasta=]` (solo lectura, desde `server/`).
+  - **Devolución tardía:** `/devolver-tienda` no se bloquea por el día pagado del moto: lo pagado no
+    cambia, el día queda "Difiere" y ese viaje se resuelve a mano.
+  - **Dos bugs de producción corregidos:** `_soles` de `entregas-moto.js` pisaba la de Caja
+    ("− S/ -50.00"; ahora `_solesCaja`), y `aplicarFiltroMotos` / `filtroRapidoMotos` /
+    `limpiarFiltroMotos` de `motorizados.js` pisaban los de Caja (ahora `...MotosCaja`): el filtro
+    de fechas de la Caja de motos no hacía nada. **Ojo: todo el JS va en globales y un nombre
+    repetido pisa al otro sin avisar.**
+  - **Probar en local:** `server/scripts/datos_prueba_cajas.sql` (tienda y moto "PRUEBA CAJA",
+    órdenes PRB-*, se niega a correr fuera de esta PC) y `borrar_datos_prueba_cajas.sql`.
 
 - **Foto del pago en "Marcar pagado" de Caja Tienda (4 de noviembre de 2026, HECHO en
   producción).** Confirmado por el usuario el 4 de noviembre de 2026: migración
@@ -489,12 +529,17 @@ Velox Courier — internal management system for a courier/delivery company in L
   quien llama es motorizado), no solo visual.
 
 **Pendiente:**
-- **Seguir revisando la Caja** (con la fecha de reparto ya aplicada y los datos reales del 20/10).
-- **Bug de Caja 2 — `GETDATE()` en "Marcar pagado" de motorizados.** El de tiendas ya usa la
-  fecha de Lima (Caja Tienda rehecha, 4/11). Falta `POST /caja/motorizados/pagar`, que sigue
-  con `fecha_pago = CAST(GETDATE() AS DATE)` (UTC: después de las 19:00 de Lima queda el día
-  siguiente). El bug 1 (prepago en el detalle de la tienda) quedó resuelto con la Caja nueva.
-- Liquidez y Caja real siguen con la regla vieja (entregado / ausente, sin `devolucion`).
+- **Probar en el navegador y desplegar las 3 cajas** (ver la nota del 5/11 arriba y D-012).
+- **Clientes / Tiendas sigue con la regla vieja** (`server/routes/tiendas.js:119`: entregado /
+  ausente). Quedó fuera de las 3 cajas.
+- **Vistas de la tienda y del moto para ver su propia caja:** próximo paso; el motor ya sirve,
+  falta construirlas con el alcance por sesión (`filtroPorRol`).
+- **"Marcar pagado" de tiendas sigue liquidando días con órdenes en proceso** (después no se pueden
+  cerrar, `/resolver` lo rechaza). En motos ya se excluyen; decidir si se hace igual.
+- `/estado`, `/completo` y `/medio-pago` siguen sin bloquear por día pagado: lo pagado no cambia y
+  queda "Difiere de lo pagado".
+- Las fechas de pago viejas de motos (`GETDATE()` en UTC) no se corrigieron: en Caja real pueden
+  estar un día corridas.
 - Borrar las 3 fotos de prueba del bucket (`productos/orden-0/`) y, si quedó, la carpeta
   `server/uploads_local/` del servidor (ya no se usa con R2 activo; las fotos de modo prueba
   **no se migran** a R2).
@@ -582,7 +627,10 @@ Roles: `admin`, `operador`, `visor`, `tienda`, `motorizado`. `GESTORES = ['admin
 
 ## Migraciones pendientes de aplicar en producción
 
-Ninguna por ahora.
+**`velox_agregar_fotos_pago_moto.sql`** (foto del pago de la Caja de motorizados, D-012: tablas
+`caja_liquidaciones_motorizados` y `caja_liquidaciones_motorizados_fotos` + columna
+`caja_pagos_motorizados.id_liquidacion`). Aplicada en local el 5 de noviembre de 2026. **Falta en
+producción**, con `sa` y `sqlcmd -I`, **antes** del `git pull`.
 
 `velox_agregar_fotos_pago_tienda.sql` (foto del pago de Caja Tienda, D-011: tablas
 `caja_liquidaciones_tiendas` y `caja_liquidaciones_tiendas_fotos` + columna
@@ -672,9 +720,10 @@ del producto (`js/pedidos.js`) y la evidencia de pago (`js/motorizados.js`):
   (endpoints que ya usa la cola en `server/routes/ordenes.js`).
 - **Una clase de foto nueva = un `tipo` nuevo** en `ordenes_fotos`: sumarlo a `TIPOS_FOTO` en
   `server/routes/ordenes.js` (y revisar quién puede verla en `puedeVerFotoOrden()`). No crear
-  columnas, tablas ni rutas de subida aparte. **Única excepción acordada:** la foto del pago de
-  Caja Tienda no es de una orden, va en `caja_liquidaciones_tiendas_fotos` por la misma cola
-  (destino opcional) y las mismas tres rutas bajo `/caja/tiendas/liquidaciones/:id/` (D-011).
+  columnas, tablas ni rutas de subida aparte. **Única excepción acordada:** las fotos del pago de
+  la Caja no son de una orden: van en `caja_liquidaciones_tiendas_fotos` (D-011) y
+  `caja_liquidaciones_motorizados_fotos` (D-012), por la misma cola (destino opcional) y las mismas
+  tres rutas bajo `/caja/tiendas/liquidaciones/:id/` y `/caja/motorizados/liquidaciones/:id/`.
 - **Prohibido:** un mecanismo de almacenamiento nuevo, guardar fotos en otra tabla o columna,
   como base64 en la BD, en disco o en otro servicio. `server/almacenamiento-local.js` es solo el
   respaldo automático del mismo pipeline cuando faltan las variables `R2_*`; no se usa directo.

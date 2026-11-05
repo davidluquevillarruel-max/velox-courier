@@ -21,6 +21,7 @@ var _TIPOS_FOTO_LABEL = {
   foto_producto:        'Foto del producto',
   evidencia_medio_pago: 'Evidencia de pago',
   foto_pago_tienda:     'Pago a tienda',
+  foto_pago_moto:       'Pago a motorizado',
 };
 
 function _escIndicador(txt) {
@@ -107,7 +108,7 @@ function _pintarPanelFotos() {
     /* Foto en ráfaga: hasta que la cola crea la orden no hay código */
     var titulo = it.esRafaga ? 'Foto en ráfaga' : (_TIPOS_FOTO_LABEL[it.tipo] || 'Foto');
     var codigo = it.codigoOrden
-      ? (it.esPagoTienda ? ' · ' : ' · #') + _escIndicador(it.codigoOrden)
+      ? (it.esPagoCaja ? ' · ' : ' · #') + _escIndicador(it.codigoOrden)
       : (it.ordenPorCrear ? ' · orden por crear' : '');
 
     return '<div class="indicador-fotos-item">' +

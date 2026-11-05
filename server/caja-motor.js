@@ -30,10 +30,14 @@
 const { sql } = require('./db');
 
 const ESTADOS_COBRABLES   = ['entregado', 'ausente', 'devolucion'];
-const MEDIOS_EN_MANO_MOTO = ['efectivo-motorizado', 'yape-motorizado'];
 const MEDIO_DIRECTO_VELOX = 'pago-empresa';
 const VIA_DE_MEDIO = { 'efectivo-motorizado': 'efectivo', 'yape-motorizado': 'yape', 'pago-empresa': 'deposito' };
 const VIA_DE_PREPAGO = { efectivo: 'efectivo', yape: 'yape' };
+
+/* Qué estados suman en cada Caja. Hoy son los mismos: en los tres
+   hubo viaje, se le cobra a la tienda y se le paga al moto. */
+const sumaEnCajaTienda = estado => ESTADOS_COBRABLES.includes(estado);
+const sumaEnCajaMoto   = estado => ESTADOS_COBRABLES.includes(estado);
 
 const aCentimos = v => Math.round((Number(v) || 0) * 100);
 const aSoles = c => c / 100;
@@ -47,7 +51,9 @@ function calcularOrdenCaja(o) {
 
   const cobrado = (o.estado === 'entregado' && o.metodo_pago === 'contraentrega')
     ? aCentimos(o.monto_cobrado) : 0;
-  const en_mano_moto  = MEDIOS_EN_MANO_MOTO.includes(o.medio_pago) ? cobrado : 0;
+  const en_mano_efectivo = o.medio_pago === 'efectivo-motorizado' ? cobrado : 0;
+  const en_mano_yape     = o.medio_pago === 'yape-motorizado' ? cobrado : 0;
+  const en_mano_moto  = en_mano_efectivo + en_mano_yape;
   const directo_velox = o.medio_pago === MEDIO_DIRECTO_VELOX ? cobrado : 0;
   const retenido = en_mano_moto + directo_velox;
   const prepago  = es_prepago ? delivery : 0;
@@ -57,7 +63,9 @@ function calcularOrdenCaja(o) {
   if (prepago)  vias[VIA_DE_PREPAGO[o.pago_velox_metodo] || 'prepago_sin_metodo'] += prepago;
 
   return {
-    cobrable, es_prepago, delivery, retenido, en_mano_moto, directo_velox, pago_moto, prepago,
+    cobrable, es_prepago, delivery, retenido,
+    en_mano_moto, en_mano_efectivo, en_mano_yape, directo_velox, pago_moto, prepago,
+    medio_por_definir: o.estado === 'entregado' && o.metodo_pago === 'contraentrega' && !o.medio_pago,
     saldo_tienda: (es_prepago ? 0 : delivery) - retenido,
     saldo_moto: en_mano_moto - pago_moto,
     vias,
@@ -76,7 +84,10 @@ function filtroFecha(request, desde, hasta, columna = 'o.fecha_reparto') {
 }
 
 /* Órdenes cobrables del período, cada una con su cálculo (calc) y si
-   su día ya está marcado pagado para la tienda (dia_pagado). */
+   su día ya está marcado pagado para la tienda (dia_pagado) y para el
+   motorizado (dia_pagado_moto). dia_moto_sin_liquidacion = día del
+   moto pagado antes de las liquidaciones: su monto guardado salió de
+   la regla vieja, que sumaba toda la plata cobrada. */
 async function ordenesCaja(pool, { desde, hasta, idTienda, idMotorizado } = {}) {
   const request = pool.request();
   const fFecha = filtroFecha(request, desde, hasta);
@@ -90,14 +101,21 @@ async function ordenesCaja(pool, { desde, hasta, idTienda, idMotorizado } = {}) 
     filtros += ' AND o.id_motorizado = @id_motorizado';
   }
   const r = await request.query(`
-    SELECT o.id, o.codigo, o.id_tienda, t.nombre AS tienda, t.ciclo_pago, o.id_motorizado,
+    SELECT o.id, o.codigo, o.id_tienda, t.nombre AS tienda, t.ciclo_pago,
+           o.id_motorizado, m.nombre AS motorizado,
            CONVERT(varchar, o.fecha_reparto, 23) AS fecha,
            o.estado, o.metodo_pago, o.medio_pago, o.pago_velox, o.pago_velox_metodo,
            o.delivery_total, o.pago_moto_total, o.monto_cobrado, o.dest_nombre,
            ISNULL(cp.pagado, 0) AS dia_pagado,
-           CONVERT(varchar, cp.fecha_pago, 23) AS fecha_pago
+           CONVERT(varchar, cp.fecha_pago, 23) AS fecha_pago,
+           ISNULL(cm.pagado, 0) AS dia_pagado_moto,
+           CONVERT(varchar, cm.fecha_pago, 23) AS fecha_pago_moto,
+           CASE WHEN cm.pagado = 1 AND cm.id_liquidacion IS NULL THEN 1 ELSE 0 END AS dia_moto_sin_liquidacion
     FROM ordenes o
     JOIN tiendas t ON t.id = o.id_tienda
+    LEFT JOIN motorizados m ON m.id = o.id_motorizado
+    LEFT JOIN caja_pagos_motorizados cm
+           ON cm.id_motorizado = o.id_motorizado AND cm.fecha_dia = o.fecha_reparto
     OUTER APPLY (SELECT TOP 1 c.pagado, c.fecha_pago FROM caja_pagos_tiendas c
                  WHERE c.id_tienda = o.id_tienda AND c.fecha_ciclo = o.fecha_reparto
                  ORDER BY c.pagado DESC) cp
@@ -105,7 +123,13 @@ async function ordenesCaja(pool, { desde, hasta, idTienda, idMotorizado } = {}) 
       ${fFecha} ${filtros}
     ORDER BY t.nombre, o.fecha_reparto DESC, o.id DESC
   `);
-  return r.recordset.map(o => ({ ...o, dia_pagado: !!o.dia_pagado, calc: calcularOrdenCaja(o) }));
+  return r.recordset.map(o => ({
+    ...o,
+    dia_pagado: !!o.dia_pagado,
+    dia_pagado_moto: !!o.dia_pagado_moto,
+    dia_moto_sin_liquidacion: !!o.dia_moto_sin_liquidacion,
+    calc: calcularOrdenCaja(o),
+  }));
 }
 
 /* Control de cuadre, sobre órdenes de ordenesCaja():
@@ -144,7 +168,7 @@ function cuadreCaja(ordenes) {
 }
 
 module.exports = {
-  ESTADOS_COBRABLES,
+  ESTADOS_COBRABLES, sumaEnCajaTienda, sumaEnCajaMoto,
   aCentimos, aSoles,
   calcularOrdenCaja, filtroFecha, ordenesCaja, cuadreCaja,
 };

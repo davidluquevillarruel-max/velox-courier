@@ -186,8 +186,9 @@ async function _colaErrorHttp(res, mensaje) {
    generalizado a los dos tipos de foto y con idSubida. */
 async function _colaSubir(item) {
   var blob = new Blob([item.datos], { type: 'image/jpeg' });
-  /* destino: fotos que no son de una orden (la del pago de Caja Tienda,
-     encolarFotoPagoTienda) usan las mismas tres rutas bajo otra base */
+  /* destino: fotos que no son de una orden (las del pago de la Caja,
+     encolarFotoPagoTienda / encolarFotoPagoMoto) usan las mismas tres
+     rutas bajo otra base */
   var base = API + (item.destino ? item.destino.base : '/ordenes/' + item.ordenId);
 
   var rPre = await _colaFetch(base + '/evidencia/presigned', {
@@ -435,6 +436,19 @@ async function encolarFotoPagoTienda(idLiquidacion, blob, etiqueta) {
   return _colaAgregar(item);
 }
 
+/**
+ * Foto del pago de "Marcar pagado" (Caja de motorizados). Igual que la
+ * de Caja Tienda, colgada de la liquidación del moto.
+ * @param {number|string} idLiquidacion - id que devolvió /motorizados/pagar.
+ * @param {Blob}   blob     - JPEG ya comprimido.
+ * @param {string} etiqueta - Texto para el indicador (nombre del moto).
+ */
+async function encolarFotoPagoMoto(idLiquidacion, blob, etiqueta) {
+  var item = await _colaNuevoItem(null, 'foto_pago_moto', blob, etiqueta);
+  item.destino = { base: '/caja/motorizados/liquidaciones/' + encodeURIComponent(idLiquidacion) };
+  return _colaAgregar(item);
+}
+
 /* Arma un ítem de la cola (compartido por encolarFoto y encolarFotoRafaga) */
 async function _colaNuevoItem(ordenId, tipo, blob, codigoOrden) {
   /* Pedir que el navegador no borre la cola si el teléfono se
@@ -481,8 +495,8 @@ async function obtenerColaFotos() {
       /* Foto en ráfaga: true mientras la orden todavía no se creó */
       ordenPorCrear: !!it.rafaga && !it.ordenId,
       esRafaga: !!it.rafaga,
-      /* Foto de un pago de Caja Tienda: codigoOrden es la tienda */
-      esPagoTienda: !!it.destino,
+      /* Foto de un pago de la Caja: codigoOrden es la tienda o el moto */
+      esPagoCaja: !!it.destino,
     };
   });
 }

@@ -81,17 +81,23 @@ async function generarUrlSubidaEvidencia(ordenId, contentType, carpeta, idSubida
   return firmarSubida(`${prefijo}/orden-${parseInt(ordenId, 10)}`, contentType, ext, idSubida);
 }
 
-/* Foto del pago de "Marcar pagado" en Caja Tienda: no es de una orden
-   sino de una liquidación (caja_liquidaciones_tiendas), en su propia
-   carpeta pagos-tienda/liquidacion-<id>/. Mismo PUT firmado. */
+/* Foto del pago de "Marcar pagado" en la Caja: no es de una orden sino
+   de una liquidación, en su propia carpeta: pagos-tienda/ (Caja Tienda)
+   o pagos-moto/ (Caja de motorizados), liquidacion-<id>/. Mismo PUT
+   firmado. */
 const CARPETA_PAGOS_TIENDA = 'pagos-tienda';
-async function generarUrlSubidaPagoTienda(idLiquidacion, contentType, idSubida) {
+const CARPETA_PAGOS_MOTO = 'pagos-moto';
+async function generarUrlSubidaLiquidacion(carpeta, idLiquidacion, contentType, idSubida) {
   const ext = TIPOS_PERMITIDOS[contentType];
   if (!ext) {
     throw new Error('Tipo de imagen no permitido (usa JPEG, PNG o WEBP)');
   }
-  return firmarSubida(`${CARPETA_PAGOS_TIENDA}/liquidacion-${parseInt(idLiquidacion, 10)}`, contentType, ext, idSubida);
+  return firmarSubida(`${carpeta}/liquidacion-${parseInt(idLiquidacion, 10)}`, contentType, ext, idSubida);
 }
+const generarUrlSubidaPagoTienda = (id, contentType, idSubida) =>
+  generarUrlSubidaLiquidacion(CARPETA_PAGOS_TIENDA, id, contentType, idSubida);
+const generarUrlSubidaPagoMoto = (id, contentType, idSubida) =>
+  generarUrlSubidaLiquidacion(CARPETA_PAGOS_MOTO, id, contentType, idSubida);
 
 /* PUT firmado (5 min) para carpeta/<idSubida o aleatorio>.<ext> */
 async function firmarSubida(carpeta, contentType, ext, idSubida) {
@@ -119,14 +125,17 @@ function esUrlDeOrden(url, ordenId) {
   return CARPETAS.some((c) => url.startsWith(`${base}/${c}/orden-${id}/`));
 }
 
-/* Lo mismo para la foto de una liquidación de Caja Tienda */
-function esUrlDePagoTienda(url, idLiquidacion) {
+/* Lo mismo para la foto de una liquidación */
+function esUrlDeLiquidacion(carpeta, url, idLiquidacion) {
   if (!r2Habilitado() || typeof url !== 'string') return false;
   const base = process.env.R2_PUBLIC_URL.replace(/\/$/, '');
-  return url.startsWith(`${base}/${CARPETA_PAGOS_TIENDA}/liquidacion-${parseInt(idLiquidacion, 10)}/`);
+  return url.startsWith(`${base}/${carpeta}/liquidacion-${parseInt(idLiquidacion, 10)}/`);
 }
+const esUrlDePagoTienda = (url, id) => esUrlDeLiquidacion(CARPETA_PAGOS_TIENDA, url, id);
+const esUrlDePagoMoto = (url, id) => esUrlDeLiquidacion(CARPETA_PAGOS_MOTO, url, id);
 
 module.exports = {
   r2Habilitado, generarUrlSubidaEvidencia, esUrlDeOrden, TIPOS_PERMITIDOS,
   generarUrlSubidaPagoTienda, esUrlDePagoTienda,
+  generarUrlSubidaPagoMoto, esUrlDePagoMoto,
 };

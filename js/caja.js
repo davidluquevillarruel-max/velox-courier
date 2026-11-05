@@ -1,8 +1,7 @@
 /* ============================================================
    caja.js — Módulo de Caja
-   Tiendas: entregado, ausente y devolución (cálculo en el servidor,
-   server/caja-motor.js).
-   Liquidez y motorizados: entregado, ausente.
+   El cálculo de la plata está en el servidor (server/caja-motor.js);
+   acá solo se pinta.
    ============================================================ */
 var API = '/api';
 var _cajaFiltroDesde = '';
@@ -10,7 +9,7 @@ var _cajaFiltroHasta = '';
 var _cajaFiltroPago  = 'pendientes';
 var _motoFiltroDesde = '';
 var _motoFiltroHasta = '';
-var _mostrarPagadosMotos   = false;
+var _motoFiltroPago  = 'pendientes';
 
 function _fechaDisplayCaja(f) {
   if (!f) return '—';
@@ -340,17 +339,18 @@ window.toggleDetalleTiendaCaja = async function(idTienda) {
 };
 
 /* ════════════════════════════════════════════
-   MARCAR PAGADO con foto del pago
+   MARCAR PAGADO con foto del pago (tiendas y motorizados)
    1) Paso de foto: cámara (pedirFoto) o "Subir imagen", mín. 1 y
       hasta 5; las fotos quedan en memoria, ya comprimidas.
    2) Confirmación de días + monto (la de siempre).
-   3) POST /caja/tiendas/pagar → crea la liquidación (necesita señal).
-   4) Recién ahí cada foto entra a la cola (encolarFotoPagoTienda): el
-      await solo espera IndexedDB, la subida sigue en segundo plano.
+   3) POST /caja/.../pagar → crea la liquidación (necesita señal).
+   4) Recién ahí cada foto entra a la cola (encolarFotoPagoTienda /
+      encolarFotoPagoMoto): el await solo espera IndexedDB, la subida
+      sigue en segundo plano.
    Si el POST falla, la ventana sigue abierta con las fotos.
 ════════════════════════════════════════════ */
 var _MAX_FOTOS_PAGO = 5;
-var _pagoFotos = null;  /* { idTienda, tienda, fotos: [{ blob, url }] } */
+var _pagoFotos = null;  /* { tipo: 'tienda'|'moto', id, nombre, fotos: [{ blob, url }] } */
 
 function _tiendaCaja(idTienda) {
   return _cajaResumenTiendas && _cajaResumenTiendas.tiendas.find(function(x) { return x.id === idTienda; });
@@ -389,29 +389,32 @@ function _cerrarFotosPago() {
   if (ov) ov.style.display = 'none';
 }
 
+function _abrirPasoFotoPago(tipo, id, nombre, subtitulo) {
+  _cerrarFotosPago();
+  _pagoFotos = { tipo: tipo, id: id, nombre: nombre, fotos: [] };
+  var titulo = document.getElementById('pago-foto-titulo');
+  if (titulo) titulo.textContent = 'Foto del pago · ' + nombre;
+  var sub = document.getElementById('pago-foto-sub');
+  if (sub) sub.textContent = subtitulo;
+  _pintarFotosPago();
+  var ov = document.getElementById('pago-foto-overlay');
+  if (ov) ov.style.display = 'flex';
+}
+
 /* "Marcar pagado": primero el paso de foto */
 window.marcarTiendaPagada = function(idTienda) {
   var t = _tiendaCaja(idTienda);
   if (!t) return;
-  _cerrarFotosPago();
-  _pagoFotos = { idTienda: idTienda, tienda: t.tienda, fotos: [] };
-  var titulo = document.getElementById('pago-foto-titulo');
-  if (titulo) titulo.textContent = 'Foto del pago · ' + t.tienda;
   var saldo = parseFloat(t.saldo_pendiente) || 0;
-  var sub = document.getElementById('pago-foto-sub');
-  if (sub) {
-    sub.textContent = t.dias_pendientes + ' día' + (t.dias_pendientes === 1 ? '' : 's') + ' pendiente' + (t.dias_pendientes === 1 ? '' : 's') + ' · ' +
-      (saldo > 0 ? 'La tienda nos paga ' : saldo < 0 ? 'Le pagamos ' : 'Saldo ') + _soles(saldo);
-  }
-  _pintarFotosPago();
-  var ov = document.getElementById('pago-foto-overlay');
-  if (ov) ov.style.display = 'flex';
+  _abrirPasoFotoPago('tienda', idTienda, t.tienda,
+    t.dias_pendientes + ' día' + (t.dias_pendientes === 1 ? '' : 's') + ' pendiente' + (t.dias_pendientes === 1 ? '' : 's') + ' · ' +
+    (saldo > 0 ? 'La tienda nos paga ' : saldo < 0 ? 'Le pagamos ' : 'Saldo ') + _soles(saldo));
 };
 
 window.tomarFotoPagoTienda = async function() {
   if (!_pagoFotos || typeof pedirFoto !== 'function') return;
   var actual = _pagoFotos;
-  var blob = await pedirFoto({ titulo: 'Foto del pago · ' + actual.tienda, textoOk: 'Agregar foto' });
+  var blob = await pedirFoto({ titulo: 'Foto del pago · ' + actual.nombre, textoOk: 'Agregar foto' });
   if (blob && _pagoFotos === actual) _agregarFotoPago(blob);
 };
 
@@ -448,8 +451,9 @@ window.cancelarFotoPagoTienda = function() { _cerrarFotosPago(); };
 /* Con al menos 1 foto: confirmación de días + monto, y liquida */
 window.continuarPagoTienda = async function() {
   if (!_pagoFotos || !_pagoFotos.fotos.length) return;
+  if (_pagoFotos.tipo === 'moto') return _continuarPagoMoto();
   var actual = _pagoFotos;
-  var t = _tiendaCaja(actual.idTienda);
+  var t = _tiendaCaja(actual.id);
   if (!t) { _cerrarFotosPago(); return; }
   var periodo = _cajaFiltroDesde && _cajaFiltroHasta
       ? 'del ' + _fechaDisplayCaja(_cajaFiltroDesde) + ' al ' + _fechaDisplayCaja(_cajaFiltroHasta)
@@ -471,7 +475,7 @@ window.continuarPagoTienda = async function() {
     var resp = await fetch(API + '/caja/tiendas/pagar', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id_tienda: actual.idTienda, desde: _cajaFiltroDesde, hasta: _cajaFiltroHasta, fotos: nFotos }),
+      body: JSON.stringify({ id_tienda: actual.id, desde: _cajaFiltroDesde, hasta: _cajaFiltroHasta, fotos: nFotos }),
     });
     json = await resp.json().catch(function() { return {}; });
     if (!resp.ok || !json.ok) {
@@ -511,10 +515,11 @@ window.continuarPagoTienda = async function() {
 /* ── Historial: pagos registrados con sus fotos ── */
 var _cajaLiqAbiertas = {};
 
-window.toggleFotosLiquidacion = function(idLiq) {
-  if (_cajaLiqAbiertas[idLiq]) delete _cajaLiqAbiertas[idLiq];
-  else _cajaLiqAbiertas[idLiq] = true;
+window.toggleFotosLiquidacion = function(clave) {
+  if (_cajaLiqAbiertas[clave]) delete _cajaLiqAbiertas[clave];
+  else _cajaLiqAbiertas[clave] = true;
   pintarTiendasCaja();
+  pintarMotosCaja();
 };
 
 window.verFotoPagoGrande = function(url) {
@@ -529,11 +534,12 @@ window.cerrarFotoPagoGrande = function() {
   if (ov) ov.style.display = 'none';
 };
 
-function _liquidacionesHTML(liqs) {
+function _liquidacionesHTML(liqs, tipo) {
   if (!liqs || !liqs.length) return '';
   return '<div class="caja-liqs"><div class="caja-liqs-titulo"><i class="ti ti-receipt"></i> Pagos registrados</div>' +
     liqs.map(function(l) {
-      var abierta = !!_cajaLiqAbiertas[l.id];
+      var clave = (tipo || 'tienda') + '-' + l.id;
+      var abierta = !!_cajaLiqAbiertas[clave];
       var dias = l.primer_dia === l.ultimo_dia
         ? _fechaDisplayCaja(l.primer_dia)
         : _fechaDisplayCaja(l.primer_dia) + ' – ' + _fechaDisplayCaja(l.ultimo_dia);
@@ -552,10 +558,11 @@ function _liquidacionesHTML(liqs) {
         '<span class="caja-chip pagado">Pagado ' + _fechaDisplayCaja(l.fecha_pago) + '</span>' +
         '<span>' + l.dias + ' día' + (l.dias === 1 ? '' : 's') + ' · ' + dias + '</span>' +
         '<span class="caja-saldo ' + (l.neto > 0 ? 'pos' : l.neto < 0 ? 'neg' : 'cero') + '" style="font-size:12px">' +
-          (l.neto > 0 ? 'Nos pagó ' : l.neto < 0 ? 'Le pagamos ' : 'Saldado ') + _soles(l.neto) + '</span>' +
+          (l.neto > 0 ? (tipo === 'moto' ? 'Nos rindió ' : 'Nos pagó ') : l.neto < 0 ? 'Le pagamos ' : 'Saldado ') + _soles(l.neto) + '</span>' +
+        (tipo === 'moto' ? '<span class="caja-tenue">Efectivo ' + _soles(l.monto_efectivo) + ' · Yape ' + _soles(l.monto_yape) + ' · Su pago ' + _soles(l.monto_a_pagar) + '</span>' : '') +
         (l.usuario ? '<span class="caja-tenue">por ' + _escCaja(l.usuario) + '</span>' : '') +
         (faltan ? '<span class="caja-medio-falta">' + faltan + ' foto' + (faltan === 1 ? '' : 's') + ' por subir</span>' : '') +
-        '<button class="btn btn-sm" style="margin-left:auto" onclick="toggleFotosLiquidacion(\'' + _escCaja(l.id) + '\')">' +
+        '<button class="btn btn-sm" style="margin-left:auto" onclick="toggleFotosLiquidacion(\'' + _escCaja(clave) + '\')">' +
           '<i class="ti ' + (abierta ? 'ti-eye-off' : 'ti-photo') + '"></i> ' + (abierta ? 'Ocultar' : 'Ver') + ' fotos (' + l.fotos.length + ')</button>' +
       '</div>' + fotos + '</div>';
     }).join('') + '</div>';
@@ -697,7 +704,14 @@ window.renderLiquidez = async function() {
 
 /* ════════════════════════════════════════════
    TAB MOTORIZADOS
+   Mismo patrón que Caja Tienda. Saldo del moto = plata que pasó por sus
+   manos (efectivo + Yape) − su pago. El cálculo es del servidor.
 ════════════════════════════════════════════ */
+var _motoResumen  = null;  /* última respuesta de GET /caja/motorizados */
+var _motoDetalles = {};    /* idMoto → respuesta de /detalle (las abiertas) */
+var _motoFirma    = '';
+var _motoSec      = 0;
+
 window.filtroRapidoMotos = function(tipo) {
   var rango = _rangoPorTipoCaja(tipo);
   if (!rango) return;
@@ -731,170 +745,252 @@ window.limpiarFiltroMotos = function() {
   renderMotosCaja();
 };
 
-window.renderMotosCaja = async function() {
-  var tbody = document.getElementById('tbody-motos-caja');
-  if (!tbody) return;
-  try {
-    var url = API+'/caja/motorizados';
-    var params = [];
-    if (_motoFiltroDesde) params.push('desde='+_motoFiltroDesde);
-    if (_motoFiltroHasta) params.push('hasta='+_motoFiltroHasta);
-    if (params.length) url += '?' + params.join('&');
-
-    var r    = await fetch(url);
-    var data = await r.json();
-
-    var totalAPagar   = 0;
-    var totalACobrar  = 0;
-    var diasPendientes = 0;
-
-    var porMotoKpi = {};
-    data.forEach(function(d) {
-      if (!porMotoKpi[d.motorizado]) porMotoKpi[d.motorizado] = 0;
-      var saldo = parseFloat(d.cobrado||0) - parseFloat(d.pago_moto||0);
-      if (!d.pagado) porMotoKpi[d.motorizado] += saldo;
-      if (!d.pagado && (parseFloat(d.pago_moto||0)>0 || Math.abs(saldo)>0)) diasPendientes++;
-    });
-    Object.values(porMotoKpi).forEach(function(s) {
-      if (s < 0) totalAPagar  += Math.abs(s);
-      if (s > 0) totalACobrar += s;
-    });
-
-    var set = function(id,v){ var el=document.getElementById(id); if(el) el.textContent=v; };
-    set('kpi-moto-pagar',     'S/ '+totalAPagar.toFixed(2));
-    set('kpi-moto-cobrar',    'S/ '+totalACobrar.toFixed(2));
-    set('kpi-moto-pendientes', diasPendientes + ' día(s)');
-
-    var porMoto = {};
-    data.forEach(function(d) {
-      if (!porMoto[d.motorizado]) porMoto[d.motorizado] = { id:d.id_motorizado, dias:[] };
-      porMoto[d.motorizado].dias.push(d);
-    });
-
-    tbody.innerHTML = Object.keys(porMoto).sort().map(function(nombre) {
-      var g         = porMoto[nombre];
-      var pendientes= g.dias.filter(function(d){ return !d.pagado; }).length;
-      var saldoPend = 0;
-      g.dias.filter(function(d){ return !d.pagado; }).forEach(function(d){
-        saldoPend += parseFloat(d.cobrado||0) - parseFloat(d.pago_moto||0);
-      });
-
-      var saldoLabel = saldoPend > 0
-        ? '<span style="color:var(--color-green);font-weight:600">S/ '+saldoPend.toFixed(2)+' — debe a Velox</span>'
-        : saldoPend < 0
-        ? '<span style="color:var(--color-red-text);font-weight:600">S/ '+Math.abs(saldoPend).toFixed(2)+' — Velox le debe</span>'
-        : '<span style="color:var(--color-text-secondary)">S/ 0.00</span>';
-
-      var estadoDeuda = pendientes > 0
-        ? '<span class="badge-pago-no">✗ '+pendientes+' día(s) pendiente(s)</span>'
-        : '<span class="badge-pago-si">✓ Al día</span>';
-
-      var pagoTotal = g.dias.reduce(function(s,d){ return s+parseFloat(d.pago_moto||0); }, 0);
-      var cobTotal  = g.dias.reduce(function(s,d){ return s+parseFloat(d.cobrado||0); }, 0);
-
-      return '<tr>' +
-        '<td><strong>'+nombre+'</strong></td>' +
-        '<td>'+saldoLabel+'</td>' +
-        '<td>'+estadoDeuda+'</td>' +
-        '<td><span style="font-size:12px;color:var(--color-text-secondary)">Pago moto: S/'+pagoTotal.toFixed(2)+' · Cobrado: S/'+cobTotal.toFixed(2)+'</span></td>' +
-        '<td><button class="btn btn-sm btn-primary" onclick="verDetalleMotoCaja(\''+nombre+'\',\''+g.id+'\')"><i class="ti ti-eye"></i> Ver detalle</button></td>' +
-      '</tr>';
-    }).join('') || '<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--color-text-tertiary)">Sin datos</td></tr>';
-
-  } catch(err) { console.error('Error motos caja:', err); }
+window.filtroPagoMotos = function(estado) {
+  _motoFiltroPago = estado;
+  ['pendientes','pagados','todos'].forEach(function(e) {
+    var b = document.getElementById('btn-moto-' + e);
+    if (b) b.classList.toggle('active', e === estado);
+  });
+  renderMotosCaja();
 };
 
-var _cajaDetalleMotoCurrent = { nombre: '', id: '' };
+function _paramsCajaMotos() {
+  var p = ['estado=' + _motoFiltroPago];
+  if (_motoFiltroDesde) p.push('desde=' + _motoFiltroDesde);
+  if (_motoFiltroHasta) p.push('hasta=' + _motoFiltroHasta);
+  return '?' + p.join('&');
+}
 
-window.verDetalleMotoCaja = async function(nombreMoto, idMoto) {
-  if (_cajaDetalleMotoCurrent.nombre !== nombreMoto) _mostrarPagadosMotos = false;
-  _cajaDetalleMotoCurrent = { nombre: nombreMoto, id: idMoto };
-  var el = document.getElementById('titulo-detalle-moto');
-  if (el) el.textContent = 'Detalle · '+nombreMoto;
+function _motoCaja(idMoto) {
+  return _motoResumen && _motoResumen.motorizados.find(function(x) { return x.id === idMoto; });
+}
 
-  var btnH = document.getElementById('btn-historial-motos');
-  if (btnH) {
-    btnH.innerHTML = _mostrarPagadosMotos
-      ? '<i class="ti ti-eye-off"></i> Ocultar pagados'
-      : '<i class="ti ti-history"></i> Historial de pagados';
+function _detalleMotoHTML(idMoto) {
+  var d = _motoDetalles[idMoto];
+  if (!d || d.cargando) {
+    return '<div class="caja-detalle" style="padding:14px 24px;color:var(--color-text-tertiary);font-size:12px">Cargando pedidos…</div>';
   }
+  if (d.error) {
+    return '<div class="caja-detalle" style="padding:14px 24px;color:var(--color-red-text);font-size:12px">No se pudo cargar el detalle.</div>';
+  }
+  var filas = d.pedidos.map(function(p) {
+    return '<tr>' +
+      '<td><strong>#' + _escCaja(p.codigo) + '</strong><div class="caja-tenue" style="font-size:11px">' + _escCaja(p.dest_nombre || '—') + '</div></td>' +
+      '<td style="white-space:nowrap">' + _fechaDisplayCaja(p.fecha) + '</td>' +
+      '<td>' + _escCaja(p.tienda) + '</td>' +
+      '<td><span class="caja-estado ' + _escCaja(p.estado) + '">' + _escCaja(_ESTADO_CAJA_LABEL[p.estado] || p.estado) + '</span></td>' +
+      '<td>' + _medioPagoCajaHTML(p) +
+        (p.cobrado && !p.en_mano ? '<div class="caja-tenue" style="font-size:11px">cobró ' + _soles(p.cobrado) + ', no pasó por el moto</div>' : '') + '</td>' +
+      '<td>' + (p.en_mano ? _soles(p.en_mano) : '<span class="caja-tenue">S/ 0.00</span>') + '</td>' +
+      '<td>' + _soles(p.pago_moto) + '</td>' +
+      '<td>' + _saldoCajaHTML(p.saldo, false) + '</td>' +
+      '<td><span class="caja-chip ' + (p.dia_pagado ? 'pagado">PAGADO' : 'pendiente">Pendiente') + '</span></td>' +
+      '<td><button class="btn btn-sm" title="Editar orden" onclick="editarOrdenDesdeCaja(' + p.id + ',' + (p.dia_pagado ? 1 : 0) + ',\'' + p.fecha + '\',\'moto\')">' +
+        '<i class="ti ti-pencil"></i> Editar orden</button></td>' +
+    '</tr>';
+  }).join('');
+  if (!filas) {
+    filas = '<tr><td colspan="10" style="text-align:center;padding:16px;color:var(--color-text-tertiary)">Sin pedidos en este filtro</td></tr>';
+  }
+  var abiertos = (d.dias_abiertos || []).length
+    ? '<div class="caja-difiere-lista"><div class="caja-difiere"><i class="ti ti-clock"></i> Con órdenes en proceso</div>' +
+        d.dias_abiertos.map(_fechaDisplayCaja).join(', ') + ': no se liquidan hasta cerrarlas.</div>'
+    : '';
+  var t = d.totales;
+  return _liquidacionesHTML(d.liquidaciones, 'moto') + _diasDifierenHTML(d.dias_pagados) + abiertos + '<div class="caja-detalle"><table>' +
+    '<thead><tr><th>N° pedido</th><th>Fecha</th><th>Tienda</th><th>Estado</th><th>Medio de pago</th>' +
+      '<th>En mano</th><th>Su pago</th><th>Saldo</th><th>Pago</th><th></th></tr></thead>' +
+    '<tbody>' + filas +
+      '<tr class="caja-totales"><td colspan="5">TOTALES · ' + t.pedidos + ' pedido' + (t.pedidos === 1 ? '' : 's') +
+          ' · Efectivo ' + _soles(t.efectivo) + ' · Yape ' + _soles(t.yape) + '</td>' +
+        '<td>' + _soles(t.efectivo + t.yape) + '</td><td>' + _soles(t.pago) + '</td>' +
+        '<td colspan="3">' + _saldoCajaHTML(t.saldo, false) + '</td></tr>' +
+    '</tbody></table></div>';
+}
 
-  try {
-    var r    = await fetch(API+'/caja/motorizados');
-    var data = await r.json();
-    var todosMotoDias = data.filter(function(d){ return d.motorizado===nombreMoto; });
+/* Pinta KPIs + lista con lo que ya está en memoria. No repinta si nada cambió. */
+window.pintarMotosCaja = function() {
+  var tbody = document.getElementById('tbody-motos-caja');
+  if (!tbody || !_motoResumen) return;
+  var k = _motoResumen.kpis;
 
-    var diasMoto = _mostrarPagadosMotos
-      ? todosMotoDias.filter(function(d){ return d.pagado; })
-      : todosMotoDias.filter(function(d){ return !d.pagado; });
+  var set = function(id, v){ var el = document.getElementById(id); if (el) el.textContent = v; };
+  set('kpi-moto-cobrar',  _soles(k.por_cobrar));
+  set('kpi-moto-pagar',   _soles(k.por_pagar));
+  set('kpi-moto-neta',    _soles(k.posicion_neta));
+  set('kpi-moto-neta-nota', k.posicion_neta > 0 ? 'nos deben' : k.posicion_neta < 0 ? 'les debemos' : 'saldado');
+  var elNeta = document.getElementById('kpi-moto-neta');
+  if (elNeta) elNeta.className = 'metric-val ' + (k.posicion_neta > 0 ? 'green' : k.posicion_neta < 0 ? 'amber' : '');
+  set('kpi-moto-aldia',   k.al_dia);
+  set('kpi-moto-consaldo', k.con_saldo);
 
-    var tbody = document.getElementById('tbody-detalle-moto-caja');
-    if (!tbody) return;
+  var inpBuscar = document.getElementById('caja-buscar-moto');
+  var buscar = (inpBuscar && inpBuscar.value || '').trim().toLowerCase();
+  var motos = _motoResumen.motorizados.filter(function(m) {
+    return !buscar || String(m.motorizado).toLowerCase().indexOf(buscar) !== -1;
+  });
+  motos.sort(function(a, b) { return String(a.motorizado).localeCompare(String(b.motorizado)); });
 
-    tbody.innerHTML = diasMoto.map(function(d) {
-      var pago  = parseFloat(d.pago_moto||0);
-      var cobr  = parseFloat(d.cobrado||0);
-      var saldo = cobr - pago;
-      var sColor = saldo>0?'var(--color-green)':saldo<0?'var(--color-red-text)':'var(--color-text-secondary)';
-      var sMsg   = saldo>0 ? 'Debe a Velox: S/ '+saldo.toFixed(2)
-                 : saldo<0 ? 'Velox le debe: S/ '+Math.abs(saldo).toFixed(2)
-                 : 'S/ 0.00';
+  var html = motos.map(function(m) {
+    var abierta = !!_motoDetalles[m.id];
+    var estado = m.estado === 'pagado'
+      ? '<span class="caja-chip pagado">Pagado</span>' +
+        (m.ultimo_pago ? '<div class="caja-tenue" style="font-size:11px;margin-top:3px">' + _fechaDisplayCaja(m.ultimo_pago) + '</div>' : '')
+      : '<span class="caja-chip pendiente">Pendiente</span>' +
+        '<div class="caja-tenue" style="font-size:11px;margin-top:3px">' + m.dias_pendientes + ' día' + (m.dias_pendientes === 1 ? '' : 's') + '</div>' +
+        (m.dias_abiertos ? '<div class="caja-difiere">' + m.dias_abiertos + ' en proceso</div>' : '');
+    var accion = m.dias_liquidables > 0
+      ? '<button class="btn-pagar" onclick="marcarMotoPagado(' + m.id + ')">Marcar pagado</button>'
+      : m.dias_pendientes > 0
+        ? '<span class="caja-tenue" style="font-size:12px">Hay que cerrar sus órdenes</span>'
+        : '<span class="caja-tenue" style="font-size:12px">Liquidado</span>';
+    var fila = '<tr class="' + (abierta ? 'caja-fila-abierta' : '') + '">' +
+      '<td><strong>' + _escCaja(m.motorizado) + '</strong>' +
+        (m.medios_por_definir ? '<div class="caja-medio-falta" style="font-size:11px;margin-top:3px">' + m.medios_por_definir + ' medio' + (m.medios_por_definir === 1 ? '' : 's') + ' por definir</div>' : '') + '</td>' +
+      '<td>' + m.pedidos + '</td>' +
+      '<td style="font-weight:500">' + _soles(m.efectivo) + '</td>' +
+      '<td style="font-weight:500">' + _soles(m.yape) + '</td>' +
+      '<td style="font-weight:500">' + _soles(m.pago) + '</td>' +
+      '<td>' + _saldoCajaHTML(m.saldo, true) +
+        (m.dias_difieren ? '<div class="caja-difiere"><i class="ti ti-alert-triangle"></i> Difiere de lo pagado</div>' : '') + '</td>' +
+      '<td>' + estado + '</td>' +
+      '<td>' + accion + '</td>' +
+      '<td class="col-ver-tienda-fijo"><button class="btn btn-sm" title="' + (abierta ? 'Ocultar pedidos' : 'Ver pedidos') + '" onclick="toggleDetalleMotoCaja(' + m.id + ')">' +
+        '<i class="ti ' + (abierta ? 'ti-eye-off' : 'ti-eye') + '"></i></button></td>' +
+    '</tr>';
+    if (abierta) fila += '<tr><td colspan="9" class="caja-detalle-celda">' + _detalleMotoHTML(m.id) + '</td></tr>';
+    return fila;
+  }).join('');
 
-      var estadoDeuda, accion;
-      if (saldo === 0) {
-        estadoDeuda = '<span class="badge-pago-si">✓ Sin deuda</span>';
-        accion = '—';
-      } else if (d.pagado) {
-        estadoDeuda = '<span class="badge-pago-si">✓ Pagado '+(d.fecha_pago?_fechaDisplayCaja(d.fecha_pago):'')+'</span>';
-        accion = '<span style="font-size:12px;color:var(--color-text-tertiary)">Liquidado</span>';
-      } else {
-        estadoDeuda = '<span class="badge-pago-no">✗ Pendiente</span>';
-        accion = '<button class="btn-pagar" onclick="marcarMotoDia(\''+d.id_motorizado+'\',\''+d.fecha+'\')">Marcar pagado</button>';
-      }
-
-      return '<tr>' +
-        '<td style="font-weight:500">'+_fechaDisplayCaja(d.fecha)+'</td>' +
-        '<td>'+d.entregas+'</td>' +
-        '<td style="color:var(--color-purple-text);font-weight:600">S/ '+pago.toFixed(2)+'</td>' +
-        '<td style="color:var(--color-blue-text);font-weight:600">S/ '+cobr.toFixed(2)+'</td>' +
-        '<td style="color:'+sColor+';font-weight:700">'+sMsg+'</td>' +
-        '<td>'+estadoDeuda+'</td>' +
-        '<td>'+accion+'</td>' +
-      '</tr>';
-    }).join('') || '<tr><td colspan="7" style="text-align:center;padding:20px;color:var(--color-text-tertiary)">'+(_mostrarPagadosMotos?'Sin pagos registrados aún':'Sin pendientes — todo al día ✓')+'</td></tr>';
-
-    var detalle = document.getElementById('detalle-moto-caja');
-    if (detalle) { detalle.style.display='block'; setTimeout(function(){ detalle.scrollIntoView({behavior:'smooth',block:'start'}); },50); }
-  } catch(err) { console.error(err); }
+  if (!html) {
+    var msg = buscar ? 'Ningún motorizado coincide con la búsqueda'
+            : _motoFiltroPago === 'pagados' ? 'No hay pagos registrados en el período'
+            : _motoFiltroPago === 'pendientes' ? 'No hay pendientes — todo al día ✓'
+            : 'Sin pedidos cobrables en el período';
+    html = '<tr><td colspan="9" style="text-align:center;padding:24px;color:var(--color-text-tertiary)">' + msg + '</td></tr>';
+  }
+  if (html === _motoFirma) return;
+  _motoFirma = html;
+  tbody.innerHTML = html;
 };
 
-window.togglePagadosMotosActual = function() {
-  _mostrarPagadosMotos = !_mostrarPagadosMotos;
-  verDetalleMotoCaja(_cajaDetalleMotoCurrent.nombre, _cajaDetalleMotoCurrent.id);
-};
-
-window.marcarMotoDia = async function(idMoto, fecha) {
+async function _cargarDetalleMotoCaja(idMoto) {
   try {
-    var resp = await fetch(API+'/caja/motorizados/pagar', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ id_motorizado: parseInt(idMoto), fecha: fecha }),
+    var r = await fetch(API + '/caja/motorizados/' + idMoto + '/detalle' + _paramsCajaMotos());
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return await r.json();
+  } catch (err) {
+    console.error('Error detalle caja moto:', err);
+    return { error: true };
+  }
+}
+
+/* Trae resumen + el detalle de los motos abiertos y repinta. Si llega
+   una respuesta vieja (otro filtro ya pidió después), se ignora. */
+window.renderMotosCaja = async function() {
+  if (!document.getElementById('tbody-motos-caja')) return;
+  var sec = ++_motoSec;
+  try {
+    var r = await fetch(API + '/caja/motorizados' + _paramsCajaMotos());
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    var resumen = await r.json();
+
+    var abiertas = Object.keys(_motoDetalles);
+    var detalles = await Promise.all(abiertas.map(_cargarDetalleMotoCaja));
+    if (sec !== _motoSec) return;
+
+    _motoResumen = resumen;
+    abiertas.forEach(function(id, i) {
+      if (_motoDetalles[id]) _motoDetalles[id] = detalles[i];
     });
-    var json = await resp.json();
-    if (!json.ok) {
-      if (typeof showNotif==='function') showNotif('Error: '+(json.error||'No se pudo marcar'));
+    pintarMotosCaja();
+  } catch (err) { console.error('Error motos caja:', err); }
+};
+
+window.toggleDetalleMotoCaja = async function(idMoto) {
+  if (_motoDetalles[idMoto]) {
+    delete _motoDetalles[idMoto];
+    pintarMotosCaja();
+    return;
+  }
+  _motoDetalles[idMoto] = { cargando: true };
+  pintarMotosCaja();
+  var d = await _cargarDetalleMotoCaja(idMoto);
+  if (!_motoDetalles[idMoto]) return; /* lo cerraron mientras cargaba */
+  _motoDetalles[idMoto] = d;
+  pintarMotosCaja();
+};
+
+/* "Marcar pagado" del moto: mismo paso de foto que el de tiendas */
+window.marcarMotoPagado = function(idMoto) {
+  var m = _motoCaja(idMoto);
+  if (!m) return;
+  var saldo = parseFloat(m.saldo_liquidable) || 0;
+  _abrirPasoFotoPago('moto', idMoto, m.motorizado,
+    m.dias_liquidables + ' día' + (m.dias_liquidables === 1 ? '' : 's') + ' por liquidar · ' +
+    (saldo > 0 ? 'El moto nos rinde ' : saldo < 0 ? 'Le pagamos ' : 'Saldo ') + _soles(saldo));
+};
+
+async function _continuarPagoMoto() {
+  var actual = _pagoFotos;
+  var m = _motoCaja(actual.id);
+  if (!m) { _cerrarFotosPago(); return; }
+  var periodo = _motoFiltroDesde && _motoFiltroHasta
+      ? 'del ' + _fechaDisplayCaja(_motoFiltroDesde) + ' al ' + _fechaDisplayCaja(_motoFiltroHasta)
+    : _motoFiltroDesde ? 'del ' + _fechaDisplayCaja(_motoFiltroDesde)
+    : _motoFiltroHasta ? 'hasta el ' + _fechaDisplayCaja(_motoFiltroHasta)
+    : 'de todas las fechas';
+  var saldo = parseFloat(m.saldo_liquidable) || 0;
+  var sentido = saldo > 0 ? 'El moto nos rinde ' + _soles(saldo)
+              : saldo < 0 ? 'Le pagamos al moto ' + _soles(saldo)
+              : 'Saldo S/ 0.00';
+  var aviso = m.dias_abiertos
+    ? '\n' + m.dias_abiertos + ' día(s) con órdenes en proceso no se liquidan.'
+    : '';
+  var nFotos = actual.fotos.length;
+  if (!confirm('Marcar pagado ' + m.motorizado + ': ' + m.dias_liquidables + ' día(s) ' + periodo + '.\n' +
+               sentido + '.' + aviso + '\n' + nFotos + ' foto(s) del pago.\n\nLa Caja no tiene "desmarcar". ¿Continuar?')) return;
+
+  var btn = document.getElementById('pago-foto-btn-continuar');
+  if (btn) btn.disabled = true;
+  var json;
+  try {
+    var resp = await fetch(API + '/caja/motorizados/pagar', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id_motorizado: actual.id, desde: _motoFiltroDesde, hasta: _motoFiltroHasta, fotos: nFotos }),
+    });
+    json = await resp.json().catch(function() { return {}; });
+    if (!resp.ok || !json.ok) {
+      if (btn) btn.disabled = false;
+      if (typeof showNotif === 'function') showNotif('Error: ' + (json.error || 'No se pudo marcar pagado'));
+      if (resp.status === 409) renderMotosCaja();
       return;
     }
-    /* Refrescar detalle Y resumen de motorizados */
-    verDetalleMotoCaja(_cajaDetalleMotoCurrent.nombre, _cajaDetalleMotoCurrent.id);
-    renderMotosCaja();
-    if (typeof showNotif==='function') showNotif('Día liquidado · '+_fechaDisplayCaja(fecha));
-  } catch(err) { console.error(err); }
-};
+  } catch (err) {
+    console.error(err);
+    if (btn) btn.disabled = false;
+    if (typeof showNotif === 'function') showNotif('Sin conexión: el pago no se registró. Las fotos siguen acá, vuelve a intentar.', 5000);
+    return;
+  }
 
-window.cerrarDetalleMoto = function() {
-  var el = document.getElementById('detalle-moto-caja');
-  if (el) el.style.display = 'none';
-};
+  var fallaronCola = 0;
+  for (var i = 0; i < actual.fotos.length; i++) {
+    try {
+      await encolarFotoPagoMoto(json.id_liquidacion, actual.fotos[i].blob, m.motorizado);
+    } catch (errCola) {
+      console.error('Cola de fotos (pago moto):', errCola);
+      fallaronCola++;
+    }
+  }
+  _cerrarFotosPago();
+  renderMotosCaja();
+  if (typeof showNotif === 'function') {
+    showNotif(fallaronCola
+      ? 'Pago registrado, pero ' + fallaronCola + ' foto(s) no se pudieron guardar en este dispositivo.'
+      : 'Pago registrado · ' + m.motorizado + ' · ' + json.dias + ' día(s)', fallaronCola ? 5000 : 2500);
+  }
+}
 
 /* ── Init ── */
 window.initCaja = function() {
@@ -903,7 +999,8 @@ window.initCaja = function() {
   _cajaResumenTiendas = null; _cajaDetallesTienda = {}; _cajaFirmaTiendas = '';
   _cerrarFotosPago(); _cajaLiqAbiertas = {};
   _motoFiltroDesde = ''; _motoFiltroHasta = '';
-  _mostrarPagadosMotos   = false;
+  _motoFiltroPago  = 'pendientes';
+  _motoResumen = null; _motoDetalles = {}; _motoFirma = '';
   ['tiendas','liquidez','motorizados'].forEach(function(t){
     var el = document.getElementById('tab-'+t);
     if (el) el.style.display = t==='tiendas' ? 'block' : 'none';
@@ -922,18 +1019,18 @@ window.initCaja = function() {
 /* Llegó una foto de un pago: el historial abierto la muestra sin
    esperar el refresco de 8 s (no hace nada fuera de Caja) */
 window.addEventListener('velox:foto-subida', function(e) {
-  if (e.detail && e.detail.tipo === 'foto_pago_tienda' && document.getElementById('tbody-tiendas-caja')) {
-    renderTiendasCaja();
-  }
+  if (!e.detail || !document.getElementById('tbody-tiendas-caja')) return;
+  if (e.detail.tipo === 'foto_pago_tienda') renderTiendasCaja();
+  if (e.detail.tipo === 'foto_pago_moto') renderMotosCaja();
 });
 
 /* ── Editar orden desde Caja ── */
-window.editarOrdenDesdeCaja = function(ordenId, diaPagado, fecha) {
+window.editarOrdenDesdeCaja = function(ordenId, diaPagado, fecha, tipo) {
   /* Reutiliza el mismo modal "Actualizar orden" de Todos los pedidos. El
      refresco de caja al guardar ya lo hace guardarActualizarEstadoOrden()
      por su cuenta (ver _refrescarCajaActual más abajo). Si su día ya se
      liquidó, se avisa antes: cambiar montos o estado descuadra lo pagado. */
-  if (diaPagado && !confirm('El ' + _fechaDisplayCaja(fecha) + ' ya está marcado como pagado para esta tienda.\n' +
+  if (diaPagado && !confirm('El ' + _fechaDisplayCaja(fecha) + ' ya está marcado como pagado para ' + (tipo === 'moto' ? 'este motorizado' : 'esta tienda') + '.\n' +
       'Editar la orden puede descuadrar esa liquidación (la Caja no tiene "desmarcar").\n\n¿Editar igual?')) {
     return;
   }
@@ -951,10 +1048,5 @@ window._refrescarCajaActual = function() {
   if (typeof renderTiendasCaja === 'function') renderTiendasCaja();
   if (typeof renderMotosCaja   === 'function') renderMotosCaja();
   if (typeof renderLiquidez    === 'function') renderLiquidez();
-  /* renderTiendasCaja ya recarga el detalle de las tiendas abiertas */
-
-  var panelMoto = document.getElementById('detalle-moto-caja');
-  if (panelMoto && panelMoto.style.display === 'block' && _cajaDetalleMotoCurrent.nombre) {
-    verDetalleMotoCaja(_cajaDetalleMotoCurrent.nombre, _cajaDetalleMotoCurrent.id);
-  }
+  /* renderTiendasCaja y renderMotosCaja ya recargan los detalles abiertos */
 };

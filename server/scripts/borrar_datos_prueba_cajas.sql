@@ -30,6 +30,9 @@ DELETE f FROM caja_liquidaciones_tiendas_fotos f
   JOIN caja_liquidaciones_tiendas l ON l.id = f.id_liquidacion WHERE l.id_tienda = @tienda;
 DELETE FROM caja_liquidaciones_tiendas WHERE id_tienda = @tienda;
 DELETE FROM caja_pagos_motorizados WHERE id_motorizado = @moto;
+DELETE f FROM caja_liquidaciones_motorizados_fotos f
+  JOIN caja_liquidaciones_motorizados l ON l.id = f.id_liquidacion WHERE l.id_motorizado = @moto;
+DELETE FROM caja_liquidaciones_motorizados WHERE id_motorizado = @moto;
 
 DELETE FROM tiendas WHERE id = @tienda;
 DELETE FROM motorizados WHERE id = @moto;

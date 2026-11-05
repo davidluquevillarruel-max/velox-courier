@@ -6,7 +6,7 @@
    Crea, en una transacción (todo o nada):
    · tienda "PRUEBA CAJA" y motorizado "PRUEBA CAJA", inactivos para
      que no aparezcan en las selecciones;
-   · órdenes PRB-01 a PRB-16 del 1 al 3/10/2026, antes de los datos
+   · órdenes PRB-01 a PRB-18 del 1 al 5/10/2026, antes de los datos
      reales, así no se mezclan;
    · días ya pagados el 2, 3 y 4/10.
    No toca ninguna fila que ya exista. Los códigos PRB-* no afectan la
@@ -21,13 +21,18 @@
    Para sacarlo: borrar_datos_prueba_cajas.sql
 
    Todas las órdenes: delivery 10, pago al moto 6.
-   Resultado esperado en Caja Tienda, filtro del 01/10 al 04/10:
+   Resultado esperado en Caja Tienda, filtro del 01/10 al 04/10 (el 5/10
+   queda afuera a propósito):
      Pendientes: 11 pedidos · delivery 110 · retenido 260 · saldo −180
      Pagados:     2 pedidos · delivery  20 · retenido 100 · saldo  −15
                   "Difiere de lo pagado" el 2/10 y el 4/10
      Todos:      13 pedidos · delivery 130 · retenido 360 · saldo −195
-   Cuadre del período (verificar-cuadre-cajas.js):
+   Cuadre del 01/10 al 04/10 (verificar-cuadre-cajas.js):
      202 − 260 + 80 + 30 = 52 = 130 − 78
+   Caja de motorizados, moto PRUEBA CAJA, filtro del 01/10 al 05/10:
+     Pendientes: 12 pedidos · efectivo 170 · yape 50 · pago 72 · saldo 148
+                 el 5/10 no se liquida (orden en proceso): liquidable 114
+     Pagados:     2 pedidos · saldo guardado 94 · "Difiere" el 3/10
    ============================================================ */
 SET NOCOUNT ON;
 SET XACT_ABORT ON;
@@ -92,8 +97,15 @@ FROM (VALUES
   /* 2/10: día pagado, con otro monto guardado (tiene que decir "Difiere") */
   (N'PRB-15', '2026-10-02', N'Día pagado: difiere',    N'entregado',    N'contraentrega', N'efectivo-motorizado', N'PENDIENTE', NULL,        100.00),
   /* 3/10: día pagado, coincide */
-  (N'PRB-16', '2026-10-03', N'Día pagado: coincide',   N'entregado',    N'sin-cobro',     NULL,                   N'PENDIENTE', NULL,          0.00)
+  (N'PRB-16', '2026-10-03', N'Día pagado: coincide',   N'entregado',    N'sin-cobro',     NULL,                   N'PENDIENTE', NULL,          0.00),
+  /* 5/10: día pendiente con una orden en proceso: no se puede liquidar al moto */
+  (N'PRB-17', '2026-10-05', N'Efectivo moto 40',       N'entregado',    N'contraentrega', N'efectivo-motorizado', N'PENDIENTE', NULL,         40.00),
+  (N'PRB-18', '2026-10-05', N'En proceso',             N'en-proceso',   N'sin-cobro',     NULL,                   N'PENDIENTE', NULL,          0.00)
 ) AS v(codigo, dia, caso, estado, metodo, medio, velox, velox_metodo, cobrado);
+
+/* La prepagada en proceso del 1/10 está sin asignar: así ese día sí se
+   puede liquidar al moto */
+UPDATE ordenes SET id_motorizado = NULL WHERE codigo = N'PRB-13';
 
 /* Días ya pagados de la tienda (como los viejos: sin liquidación).
    El 4/10 no tiene órdenes: lo pagado no tiene que desaparecer. */

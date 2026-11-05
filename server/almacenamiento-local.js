@@ -30,8 +30,9 @@ const CARPETA = path.join(__dirname, 'uploads_local');
    puede reconstruir desde los ids sin guardar la extensión aparte. */
 const EXTENSION = 'jpg';
 
-/* prefijo: 'orden' (fotos de órdenes) o 'liquidacion' (foto del pago
-   de Caja Tienda, ver routes/caja.js) */
+/* prefijo: 'orden' (fotos de órdenes), 'liquidacion' (foto del pago de
+   Caja Tienda) o 'liquidacion-moto' (de la Caja de motorizados), ver
+   routes/caja.js */
 function nombreArchivo(ordenId, fotoId, prefijo = 'orden') {
   return `${prefijo}-${parseInt(ordenId, 10)}-foto-${parseInt(fotoId, 10)}.${EXTENSION}`;
 }

@@ -155,7 +155,7 @@
 <div id="tab-motorizados" style="display:none">
 
   <div class="page-title" style="margin-bottom:4px">Saldos con motorizados</div>
-  <div class="page-sub">Verde = Velox les debe · Rojo = nos deben</div>
+  <div class="page-sub">Por pedido, en su fecha de reparto: la plata que pasó por sus manos (efectivo y Yape) menos su pago. Verde = nos debe · Ámbar = le debemos</div>
 
   <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;flex-wrap:wrap">
     <span style="font-size:13px;color:var(--color-text-secondary)">Filtrar por período:</span>
@@ -175,57 +175,54 @@
     <button class="btn btn-sm" onclick="limpiarFiltroMotos()">
       <i class="ti ti-adjustments-horizontal"></i> Ver todos
     </button>
-    <span style="font-size:12px;color:var(--color-text-tertiary)">Sin filtro = todos los registros</span>
+    <span style="font-size:12px;color:var(--color-text-tertiary)">Solo "Desde" = ese día · Sin filtro = todos los registros</span>
   </div>
 
-  <!-- KPIs dinámicos de motorizados -->
-  <div class="metrics" style="grid-template-columns:repeat(3,1fr);margin-bottom:16px">
-    <div class="metric"><div class="metric-label">Total a pagar (Velox les debe)</div><div class="metric-val green" id="kpi-moto-pagar">—</div></div>
-    <div class="metric"><div class="metric-label">Total a cobrar (nos deben)</div><div class="metric-val red" id="kpi-moto-cobrar">—</div></div>
-    <div class="metric"><div class="metric-label">Días pendientes</div><div class="metric-val amber" id="kpi-moto-pendientes">—</div></div>
+  <!-- KPIs: siempre sobre lo pendiente del período -->
+  <div class="metrics caja-kpis-tiendas">
+    <div class="metric"><div class="metric-label">Nos deben</div><div class="metric-val green" id="kpi-moto-cobrar">—</div></div>
+    <div class="metric"><div class="metric-label">Les debemos</div><div class="metric-val amber" id="kpi-moto-pagar">—</div></div>
+    <div class="metric"><div class="metric-label">Posición neta</div><div class="metric-val" id="kpi-moto-neta">—</div><div class="caja-kpi-nota" id="kpi-moto-neta-nota"></div></div>
+    <div class="metric"><div class="metric-label">Motos al día</div><div class="metric-val green" id="kpi-moto-aldia">—</div></div>
+    <div class="metric"><div class="metric-label">Motos con saldo</div><div class="metric-val amber" id="kpi-moto-consaldo">—</div></div>
   </div>
+  <div class="caja-kpi-nota" style="margin:-8px 0 16px">Los indicadores miran lo pendiente del período (días sin marcar pagado).</div>
 
   <div class="card">
-    <div class="card-head"><span class="card-title">Resumen por motorizado</span></div>
+    <div class="card-head caja-toolbar">
+      <div class="caja-segmento" role="group" aria-label="Estado de pago">
+        <button id="btn-moto-pendientes" class="active" onclick="filtroPagoMotos('pendientes')">Pendientes</button>
+        <button id="btn-moto-pagados" onclick="filtroPagoMotos('pagados')">Pagados</button>
+        <button id="btn-moto-todos" onclick="filtroPagoMotos('todos')">Todos</button>
+      </div>
+      <div class="caja-buscar">
+        <i class="ti ti-search"></i>
+        <input type="search" id="caja-buscar-moto" placeholder="Buscar motorizado…" oninput="pintarMotosCaja()" />
+      </div>
+    </div>
     <div class="table-wrap">
-      <table>
+      <table id="tabla-motos-caja">
         <thead>
-          <tr><th>Motorizado</th><th>Saldo total</th><th>Días pendientes</th><th>Estado</th><th></th></tr>
+          <tr>
+            <th>Motorizado</th>
+            <th>Pedidos</th>
+            <th>Efectivo</th>
+            <th>Yape</th>
+            <th>Su pago</th>
+            <th>Saldo neto</th>
+            <th>Estado</th>
+            <th>Acción</th>
+            <th class="col-ver-tienda-fijo"></th>
+          </tr>
         </thead>
         <tbody id="tbody-motos-caja"></tbody>
       </table>
     </div>
   </div>
 
-  <!-- Detalle por día -->
-  <div id="detalle-moto-caja" style="display:none;margin-top:16px">
-    <div class="card">
-      <div class="card-head">
-        <span class="card-title" id="titulo-detalle-moto">Detalle</span>
-        <div style="display:flex;gap:8px;align-items:center">
-          <button id="btn-historial-motos" class="btn btn-sm" onclick="togglePagadosMotosActual()">
-            <i class="ti ti-history"></i> Historial de pagados
-          </button>
-          <button class="btn btn-sm" onclick="cerrarDetalleMoto()"><i class="ti ti-x"></i> Cerrar</button>
-        </div>
-      </div>
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Fecha</th><th>Entregas</th><th>Pago moto</th>
-              <th>Cobrado</th><th>Saldo del día</th><th>Estado</th><th>Acción</th>
-            </tr>
-          </thead>
-          <tbody id="tbody-detalle-moto-caja"></tbody>
-        </table>
-      </div>
-    </div>
-  </div>
-
 </div>
 
-<!-- Paso de foto de "Marcar pagado" (Caja Tienda) — ver marcarTiendaPagada en js/caja.js -->
+<!-- Paso de foto de "Marcar pagado" (tiendas y motorizados) — ver _abrirPasoFotoPago en js/caja.js -->
 <div id="pago-foto-overlay" class="pago-foto-overlay" style="display:none">
   <div class="pago-foto-caja" role="dialog" aria-modal="true" aria-labelledby="pago-foto-titulo">
     <div class="pago-foto-head">

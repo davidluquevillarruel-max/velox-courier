@@ -7,6 +7,7 @@
 const express = require('express');
 const router  = express.Router();
 const { getPool, sql } = require('../db');
+const { sumaEnCajaTienda, sumaEnCajaMoto } = require('../caja-motor');
 const { requireAuth, requireRol } = require('../middleware/auth');
 const { r2Habilitado, generarUrlSubidaEvidencia, esUrlDeOrden } = require('../r2');
 const { guardarFoto, rutaArchivo, existeFoto } = require('../almacenamiento-local');
@@ -1177,9 +1178,7 @@ const fechaDMY = f => f.split('-').reverse().join('/');
 
 /* Si la orden suma plata en la Caja, cambiarla de día o de
    motorizado cambiaría el monto de un día que ya se marcó pagado.
-   Mismas condiciones que las consultas de routes/caja.js:
-   · Caja de tiendas: entregado / ausente / devolucion
-   · Caja de motorizados: entregado / ausente
+   Los estados que suman los define server/caja-motor.js.
    antes / despues = { id_tienda, id_motorizado, fecha_reparto }.
    Devuelve el mensaje de error, o null si se puede. */
 async function bloqueoPorDiaPagado(pool, orden, antes, despues) {
@@ -1209,15 +1208,6 @@ async function bloqueoPorDiaPagado(pool, orden, antes, despues) {
     }
   }
   return null;
-}
-
-/* Qué estados suman en cada Caja (mismas condiciones que routes/caja.js:
-   ESTADOS_COBRABLES_TIENDA y la consulta de motorizados) */
-function sumaEnCajaTienda(estado) {
-  return ['entregado', 'ausente', 'devolucion'].includes(estado);
-}
-function sumaEnCajaMoto(estado) {
-  return ['entregado', 'ausente'].includes(estado);
 }
 
 /* Nombre de la tienda / del motorizado si ese día ya está marcado
@@ -1574,7 +1564,11 @@ router.patch('/:id/devolver-tienda', requireRol(...GESTORES), async (req, res) =
     }
 
     /* Pasar a 'devolucion' suma el delivery en la Caja de su día: si
-       ese día ya está pagado para la tienda, cambiaría lo ya liquidado */
+       ese día ya está pagado para la tienda, cambiaría lo ya liquidado.
+       El día del motorizado NO se revisa a propósito: la devolución suele
+       llegar días después de liquidarlo y bloquearla la dejaría trabada
+       (la Caja no tiene "desmarcar"). Lo pagado no cambia, el día queda
+       "Difiere de lo pagado" y ese viaje se resuelve a mano (D-012). */
     const pasaADevolucion = !sumaEnCajaTienda(orden.estado);
     if (pasaADevolucion) {
       const tienda = await tiendaConDiaPagado(pool, orden.id_tienda, orden.fecha_reparto);

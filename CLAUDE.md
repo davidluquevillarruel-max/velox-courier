@@ -12,19 +12,19 @@ Velox Courier — internal management system for a courier/delivery company in L
 
 Última actualización: 6 de noviembre de 2026.
 
-- **El motorizado solo ve sus órdenes (HECHO: probado y aprobado en local el 5/11, pendiente de
-  deploy; va junto con las cajas).** Ver D-013 en `DECISIONES.md`. Commit `727186d`. Sin migración.
-  `server/routes/ordenes.js`, `js/asignacion.js`. **Toca el servidor:** hay que reiniciarlo, y los
-  motorizados con la app abierta tienen que recargarla.
+- **El motorizado solo ve sus órdenes (6 de noviembre de 2026, HECHO en producción).** Confirmado por
+  el usuario: `git pull` + `pm2 restart velox`, logs OK. Último commit en producción: `03f23a0`
+  (cambio en `727186d`). Ver D-013 en `DECISIONES.md`. Sin migración. `server/routes/ordenes.js`,
+  `js/asignacion.js`. Los motorizados con la app abierta tienen que recargarla.
   `filtroPorRol()` exige `id_motorizado = él`: "Mis entregas de hoy", Evidencias, `GET /ordenes` y
   `GET /ordenes/:id` ya no traen las sin asignar. La pantalla Asignación lee de un endpoint propio,
   `GET /ordenes/para-asignacion` (`filtroAsignacion()`): las suyas + las sin asignar asignables,
   nunca las de otro. **Un listado nuevo del motorizado usa `filtroPorRol`, no `filtroAsignacion`.**
 
-- **Las 3 cajas con un solo motor + Caja de motorizados rehecha (HECHO: probado y aprobado en local
-  el 5/11, pendiente de deploy).** Ver D-012 en `DECISIONES.md`. Commits `b50d396`, `933e6e4`,
-  `9178ac6`. **Necesita migración antes del `git pull`** (ver "Migraciones pendientes") y **toca el
-  servidor**.
+- **Las 3 cajas con un solo motor + Caja de motorizados rehecha (6 de noviembre de 2026, HECHO en
+  producción).** Confirmado por el usuario: migración `velox_agregar_fotos_pago_moto.sql` aplicada,
+  después `git pull` + `pm2 restart velox`, logs OK. Último commit en producción: `03f23a0` (cambios
+  en `b50d396`, `933e6e4`, `9178ac6`). Ver D-012 en `DECISIONES.md`.
   - **Motor** `server/caja-motor.js`: `calcularOrdenCaja()` es la ÚNICA definición de la plata de
     una orden, en céntimos (delivery, retenido, plata en mano del moto, plata directa a Velox,
     pago al moto, prepago, saldos, vías). Sin sesión ni roles, para que después lo usen las vistas
@@ -538,10 +538,9 @@ Velox Courier — internal management system for a courier/delivery company in L
   quien llama es motorizado), no solo visual.
 
 **Pendiente:**
-- **Desplegar las 3 cajas y el fix del motorizado** (aprobados en local el 5/11; ver D-012 y D-013):
-  migración `velox_agregar_fotos_pago_moto.sql` con `sa`, después `git pull` + `pm2 restart velox`, y
-  verificar con `node scripts/verificar-cuadre-cajas.js` (desde `server/`). Los días pagados con la
-  regla vieja van a decir "Difiere de lo pagado": es esperable.
+- **Las cajas en producción:** los días pagados con la regla vieja van a decir "Difiere de lo
+  pagado": es esperable. El cuadre se revisa con `node scripts/verificar-cuadre-cajas.js` (desde
+  `server/`).
 - **Clientes / Tiendas sigue con la regla vieja** (`server/routes/tiendas.js:119`: entregado /
   ausente). Quedó fuera de las 3 cajas.
 - **Vistas de la tienda y del moto para ver su propia caja:** próximo paso; el motor ya sirve,
@@ -639,10 +638,12 @@ Roles: `admin`, `operador`, `visor`, `tienda`, `motorizado`. `GESTORES = ['admin
 
 ## Migraciones pendientes de aplicar en producción
 
-**`velox_agregar_fotos_pago_moto.sql`** (foto del pago de la Caja de motorizados, D-012: tablas
+Ninguna por ahora.
+
+`velox_agregar_fotos_pago_moto.sql` (foto del pago de la Caja de motorizados, D-012: tablas
 `caja_liquidaciones_motorizados` y `caja_liquidaciones_motorizados_fotos` + columna
-`caja_pagos_motorizados.id_liquidacion`). Aplicada en local el 5 de noviembre de 2026. **Falta en
-producción**, con `sa` y `sqlcmd -I`, **antes** del `git pull`.
+`caja_pagos_motorizados.id_liquidacion`) se aplicó en local el 5 de noviembre de 2026 y en producción
+antes del `git pull` a `03f23a0` (confirmado por el usuario el 6 de noviembre de 2026).
 
 `velox_agregar_fotos_pago_tienda.sql` (foto del pago de Caja Tienda, D-011: tablas
 `caja_liquidaciones_tiendas` y `caja_liquidaciones_tiendas_fotos` + columna

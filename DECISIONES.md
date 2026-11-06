@@ -427,9 +427,9 @@ solo las ven los gestores (todo `/caja` es admin/operador).
 
 ## D-012 · Las cajas leen de un solo motor; la Caja de motorizados cuenta solo lo que pasó por sus manos
 
-**Estado:** HECHO: probado y aprobado en local el 5 de noviembre de 2026, pendiente de deploy (commits
-`b50d396`, `933e6e4`, `9178ac6`). Migración `velox_agregar_fotos_pago_moto.sql` aplicada en local;
-en producción va con `sa` y `sqlcmd -I`, **antes** del `git pull`.
+**Estado:** HECHO en producción desde el 6 de noviembre de 2026 (confirmado por el usuario; cambios en
+`b50d396`, `933e6e4`, `9178ac6`, último commit `03f23a0`). Migración
+`velox_agregar_fotos_pago_moto.sql` aplicada en local y en producción, antes del `git pull`.
 
 **Problema.** Caja Tienda ya tenía su regla (D-011 y la reescritura del 4/11), pero Liquidez, Caja
 real y Motorizados seguían con la vieja y no coincidían. Con los datos locales, Liquidez daba un
@@ -484,8 +484,8 @@ vieja.
 
 ## D-013 · El motorizado solo ve sus órdenes; las sin asignar, solo en Asignación
 
-**Estado:** HECHO: probado y aprobado en local el 5 de noviembre de 2026, pendiente de deploy (commit
-`727186d`). Sin migración.
+**Estado:** HECHO en producción desde el 6 de noviembre de 2026 (confirmado por el usuario; cambio en
+`727186d`, último commit `03f23a0`). Sin migración.
 
 **Problema.** `filtroPorRol()` le sumaba al motorizado las órdenes sin asignar para que pudiera
 autoasignarse, pero ese filtro lo usan todos sus listados: aparecían en "Mis entregas de hoy" con
@@ -535,8 +535,8 @@ downtime). El dominio se traspasa aparte en Namecheap.
 - [ ] **2FA en Namecheap:** activar (la cuenta controla el dominio).
 - [ ] **Cambiar contraseña del admin** desde el propio sistema (ahora que el flujo es seguro).
 - [ ] **Monitoreo:** alertas de DigitalOcean por RAM > 85 % y disco > 80 %.
-- [ ] **Caja:** desplegar las 3 cajas (D-012) y el fix del motorizado (D-013), aprobados en local el
-      5/11. Clientes / Tiendas sigue con la regla
+- [ ] **Caja:** las 3 cajas (D-012) y el fix del motorizado (D-013) ya están en producción.
+      Clientes / Tiendas sigue con la regla
       vieja; las vistas de la tienda y del moto, próximo paso. Detalle en `CLAUDE.md` → "Pendiente".
 - [x] **Rediseño de la vista del motorizado** ("Mis entregas de hoy": botón EMPEZAR + flujo
       de entrega con fotos por el pipeline único de D-003). **Desplegado en producción** el

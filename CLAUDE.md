@@ -12,9 +12,9 @@ Velox Courier — internal management system for a courier/delivery company in L
 
 Última actualización: 6 de noviembre de 2026.
 
-- **Estado `anulado` (6 de noviembre de 2026, EN LOCAL, sin push ni deploy; falta que el usuario lo
-  pruebe).** Ver D-014 en `DECISIONES.md`. **Necesita migración** (ver "Migraciones pendientes") y
-  **toca el servidor**. `server/caja-motor.js`, `server/routes/ordenes.js`, `motorizados.js`,
+- **Estado `anulado` (HECHO: probado y aprobado en local el 6/11, pendiente de deploy).** Ver D-014
+  en `DECISIONES.md`. Commit `43b6e5d`. **Necesita migración antes del `git pull`** (ver "Migraciones
+  pendientes") y **toca el servidor**. `server/caja-motor.js`, `server/routes/ordenes.js`, `motorizados.js`,
   `tiendas.js`, `js/motorizados.js`, `js/pedidos.js`, `js/charts.js`, `js/exportar-pedidos.js`,
   `pages/pedidos.html`, `css/components.css`.
   - **Solo el admin** anula y vuelve atrás, desde "Actualizar orden". `PATCH /estado` rechaza al resto

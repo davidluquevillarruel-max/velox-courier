@@ -125,7 +125,7 @@ router.get('/resumen', async (req, res) => {
                  THEN o.monto_cobrado - (o.delivery_base + o.monto_adicional)
                  ELSE 0 END) AS por_devolver
       FROM tiendas t
-      LEFT JOIN ordenes o ON o.id_tienda = t.id ${filtroFecha}
+      LEFT JOIN ordenes o ON o.id_tienda = t.id AND o.estado <> 'anulado' ${filtroFecha}
       ${filtroTienda}
       GROUP BY t.id
     `);
@@ -288,7 +288,7 @@ router.get('/:id/ordenes', async (req, res) => {
       FROM ordenes o
       JOIN distritos d ON d.id = o.id_distrito
       LEFT JOIN motorizados m ON m.id = o.id_motorizado
-      WHERE o.id_tienda = @id
+      WHERE o.id_tienda = @id AND o.estado <> 'anulado'
     `;
     const request = pool.request().input('id', sql.Int, req.params.id);
     if (desde && hasta) {

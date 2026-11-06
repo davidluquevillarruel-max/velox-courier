@@ -9,6 +9,7 @@
 
    Reglas por orden, en su fecha_reparto:
    · Cobrable = entregado / ausente / devolucion. El resto no suma.
+     Una orden anulada cuenta cero en todas las cajas, prepago incluido.
    · delivery = delivery_total.
    · retenido = monto_cobrado SOLO si se entregó en contraentrega y la
      plata la tiene Velox: efectivo o Yape al moto (en_mano_moto) o
@@ -30,6 +31,7 @@
 const { sql } = require('./db');
 
 const ESTADOS_COBRABLES   = ['entregado', 'ausente', 'devolucion'];
+const ESTADO_ANULADO      = 'anulado';
 const MEDIO_DIRECTO_VELOX = 'pago-empresa';
 const VIA_DE_MEDIO = { 'efectivo-motorizado': 'efectivo', 'yape-motorizado': 'yape', 'pago-empresa': 'deposito' };
 const VIA_DE_PREPAGO = { efectivo: 'efectivo', yape: 'yape' };
@@ -137,14 +139,14 @@ async function ordenesCaja(pool, { desde, hasta, idTienda, idMotorizado } = {}) 
    aunque la orden siga en proceso o se haya cancelado (la Caja Tienda
    no le devuelve el prepago de una cancelada). Cada una con su monto
    en céntimos, su vía y si es cobrable: las no cobrables van en línea
-   aparte, fuera del cuadre. */
+   aparte, fuera del cuadre. Las anuladas no entran: su reembolso es manual. */
 async function ordenesPrepagadas(pool, { desde, hasta } = {}) {
   const request = pool.request();
   const fFecha = filtroFecha(request, desde, hasta);
   const r = await request.query(`
     SELECT o.id, o.estado, o.delivery_total, o.pago_velox_metodo
     FROM ordenes o
-    WHERE o.pago_velox = 'PAGADO' ${fFecha}
+    WHERE o.pago_velox = 'PAGADO' AND o.estado <> '${ESTADO_ANULADO}' ${fFecha}
   `);
   return r.recordset.map(o => ({
     id: o.id,
@@ -190,7 +192,7 @@ function cuadreCaja(ordenes) {
 }
 
 module.exports = {
-  ESTADOS_COBRABLES, sumaEnCajaTienda, sumaEnCajaMoto,
+  ESTADOS_COBRABLES, ESTADO_ANULADO, sumaEnCajaTienda, sumaEnCajaMoto,
   aCentimos, aSoles,
   calcularOrdenCaja, filtroFecha, ordenesCaja, ordenesPrepagadas, cuadreCaja,
 };

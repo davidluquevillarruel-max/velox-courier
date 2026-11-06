@@ -507,6 +507,44 @@ Los motorizados con la pestaña vieja abierta ven Asignación sin pendientes has
 
 ---
 
+## D-014 · Estado `anulado`: override del admin que cuenta cero, sin borrar la orden
+
+**Estado:** Implementado en local el 6 de noviembre de 2026; falta que el usuario lo pruebe y el
+deploy. Migración `velox_agregar_estado_anulado.sql` aplicada solo en local.
+
+**Problema.** No había forma de sacar de circulación una orden cargada por error sin borrarla ni
+dejarla sumando en las cajas.
+
+**Decisión.**
+- **Solo el admin**, validado en el servidor, y **desde cualquier estado**: incluso entregada, con
+  datos pendientes o con el día pagado. Se guarda directo, sin pedir ningún campo. Solo cambia el
+  estado, para que la orden quede como prueba de cómo estaba.
+- **Cuenta cero en todas las cajas.** No está entre los cobrables, y en Caja real su prepago tampoco
+  cuenta, aunque esa plata haya entrado: queda como registro en "Todos los pedidos" y el reembolso es
+  manual (decisión del usuario, 6/11).
+- **Sale de todo lo operativo:** Asignación, vista del motorizado, tienda y Clientes, "Pendiente",
+  devoluciones y Evidencias. Solo se ve en "Todos los pedidos", con la etiqueta "Anulado".
+- **No bloquea por lo ya pagado:** el monto guardado no cambia, el día queda "Difiere de lo pagado" y
+  el recupero es manual.
+- **Se puede volver atrás,** solo el admin, desde "Actualizar orden" (decisión del usuario, 6/11). No
+  recuerda el estado anterior: el admin elige a cuál vuelve. Volver atrás pasa por las validaciones
+  de siempre del formulario y por la regla de que una orden con datos pendientes no se cierra.
+
+**Decisiones del camino.**
+- **La tienda tampoco ve sus anuladas.** "Todos los pedidos" no existe para ese rol, así que para ella
+  la orden desaparece de Clientes.
+- **Los gestores tampoco la ven en el detalle de un motorizado**, para que coincida con su caja.
+- **Una anulada no entra al circuito de devoluciones, ni para el admin:** primero hay que cambiarle el
+  estado.
+- **Una foto que ya estaba en la cola termina de subir:** rechazarla la dejaría "con error" en el
+  teléfono del motorizado, y sirve como registro.
+
+**Límites aceptados.** Si el motorizado tiene la pantalla abierta al anularse la orden, se entera al
+intentar cerrarla o en el próximo refresco. Mientras la orden siga anulada, los cambios del formulario
+que no sean el estado no se guardan.
+
+---
+
 ## Costos de operación
 
 | Concepto | Mensual |

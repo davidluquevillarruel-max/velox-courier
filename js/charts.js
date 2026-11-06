@@ -65,6 +65,7 @@ async function _cargarDatosEvidencias() {
 /* Filtrar órdenes según rango activo */
 function _ordenesFiltradas() {
   return _evOrdenes.filter(function(o) {
+    if (o.estado === 'anulado') return false;  /* cuenta cero */
     /* Por día de reparto (el de asignación o, sin asignar, el de creación) */
     var dia = o.fecha_reparto || o.fecha;
     if (_filtroEvidenciaDesde && dia < _filtroEvidenciaDesde) return false;

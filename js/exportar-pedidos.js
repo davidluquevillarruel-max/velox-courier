@@ -21,7 +21,7 @@ var _EXPORT_COLUMNAS = [
 /* Estado guardado → etiqueta del Excel */
 var _EXPORT_ESTADOS = {
   'entregado': 'ENTREGADO', 'reprogramado': 'REPROGRAMADOS', 'cancelado': 'CANCELADO',
-  'no-entregado': 'NO ENTREGADO', 'ausente': 'AUSENTE', 'devolucion': 'DEVOLUCION',
+  'no-entregado': 'NO ENTREGADO', 'ausente': 'AUSENTE', 'devolucion': 'DEVOLUCION', 'anulado': 'ANULADO',
   'en-proceso': 'EN PROCESO'
 };
 

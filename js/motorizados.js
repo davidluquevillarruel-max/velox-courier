@@ -23,6 +23,13 @@ function _motorizadosVisibles() {
   return MOTORIZADOS;
 }
 
+/* Solo para la pantalla: el permiso real lo revisa el servidor */
+function _esSesionAdmin() {
+  var raw = localStorage.getItem('velox_usuario');
+  if (!raw) return false;
+  try { return JSON.parse(raw).rol === 'admin'; } catch(e) { return false; }
+}
+
 function _esSesionMotorizado() {
   var raw = localStorage.getItem('velox_usuario');
   if (!raw) return false;
@@ -855,6 +862,8 @@ var _medioPagoEvidenciaEnCola = false;
 var _ordenActualizarRecibidoRequerido  = false;
 var _ordenActualizarRecibidoConfirmado = false;
 
+var _ordenActualizarEstadoOriginal = '';
+
 var _ESTADOS_ORDEN = [
   { value: 'entregado',    label: 'Entregado' },
   { value: 'no-entregado', label: 'No entregado' },
@@ -863,6 +872,7 @@ var _ESTADOS_ORDEN = [
   { value: 'cancelado',    label: 'Cancelado' },
   { value: 'devolucion',   label: 'Devolución' },
   { value: 'en-proceso',   label: 'En proceso' },
+  { value: 'anulado',      label: 'Anulado' },   /* solo el admin, ver _renderModalActualizarOrden */
 ];
 
 /* "Cambio"/"Recojo"/"Escoge talla" no son estados de progreso, son
@@ -939,6 +949,7 @@ var _ESTADOS_CON_DEVOLUCION = ['reprogramado', 'cancelado', 'no-entregado', 'aus
 var _ESTADOS_UNA_SOLA_VEZ = ['ausente', 'cancelado'];
 
 function _calificaDevolucion(estado, condicionEspecial, devuelto) {
+  if (estado === 'anulado') return false;
   var yaConfirmado = parseInt(devuelto) > 0;
   if (_ESTADOS_UNA_SOLA_VEZ.includes(estado) || condicionEspecial) {
     return !yaConfirmado;
@@ -1077,7 +1088,9 @@ function _renderModalActualizarOrden(orden, tiendas, distritos, motorizados) {
           '<div>' +
             '<label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px">Estado</label>' +
             '<select id="f-orden-estado-update" class="filter-select" style="width:100%">' +
-              _ESTADOS_ORDEN.map(function(e){
+              _ESTADOS_ORDEN.filter(function(e){
+                return e.value !== 'anulado' || _esSesionAdmin() || orden.estado === 'anulado';
+              }).map(function(e){
                 return '<option value="' + e.value + '"' + (e.value===orden.estado?' selected':'') + '>' + e.label + '</option>';
               }).join('') +
             '</select>' +
@@ -1284,6 +1297,25 @@ function _renderModalActualizarOrden(orden, tiendas, distritos, motorizados) {
     statusEvidencia.innerHTML = '<i class="ti ti-clock" style="color:var(--color-amber)"></i> Evidencia pendiente de subir.';
   }
   _revisarEvidenciaEnCola(orden.id);
+
+  /* Orden anulada: solo el admin la cambia a otro estado */
+  _ordenActualizarEstadoOriginal = orden.estado;
+  if (orden.estado === 'anulado') {
+    var conflicto = document.getElementById('orden-conflicto-update');
+    if (conflicto) {
+      conflicto.insertAdjacentHTML('beforebegin',
+        '<div style="background:var(--color-bg-secondary);border-radius:var(--radius-md);padding:12px 14px;font-size:12px;color:var(--color-text-secondary)">' +
+          '<strong style="color:var(--color-text-primary)"><i class="ti ti-ban"></i> Orden anulada.</strong> Cuenta cero en todas las cajas. ' +
+          (_esSesionAdmin()
+            ? 'Para volver atrás, elige otro estado y guarda.'
+            : 'Solo un administrador puede cambiarla.') +
+        '</div>');
+    }
+    if (!_esSesionAdmin()) {
+      var btnGuardar = document.getElementById('btn-guardar-orden-update');
+      if (btnGuardar) btnGuardar.disabled = true;
+    }
+  }
 
   /* Un motorizado ve estos campos, pero no los puede tocar — quedan
      en gris. La protección REAL está en el servidor (/completo y
@@ -1755,6 +1787,9 @@ window.guardarActualizarEstadoOrden = async function() {
   var obs         = document.getElementById('f-orden-obs-update').value.trim();
   var errEl       = document.getElementById('orden-estado-error');
 
+  /* Anular no pide ningún dato */
+  if (estado === 'anulado') return _guardarAnulacionOrden(errEl);
+
   if (!tienda || !distrito) {
     errEl.textContent = 'Tienda y distrito son obligatorios: elige uno de la lista.';
     errEl.style.display = 'block';
@@ -1840,31 +1875,58 @@ window.guardarActualizarEstadoOrden = async function() {
     cerrarActualizarEstadoOrden();
     if (typeof showNotif === 'function') showNotif('Orden actualizada correctamente' + avisoEvidencia, avisoEvidencia ? 5000 : 2500);
 
-    /* Refrescar la vista actual, sea cual sea la página donde se abrió el modal.
-       Cada función ya se cuida sola si su página no está en pantalla. */
-    if (typeof _renderTablaResumen === 'function') _renderTablaResumen();
-    if (typeof _motoDetalleAbiertoId !== 'undefined' && _motoDetalleAbiertoId) abrirDetalleMotoHistorial(_motoDetalleAbiertoId);
-    if (typeof renderPedidos === 'function') renderPedidos();
-    if (typeof _recargarTablaPendienteDevolucion === 'function') _recargarTablaPendienteDevolucion();
-    if (typeof _recargarTablaDevolucionTienda === 'function') _recargarTablaDevolucionTienda();
-    if (typeof _refrescarCajaActual === 'function') _refrescarCajaActual();
+    _refrescarTrasGuardarOrden();
 
   } catch (err) {
-    /* Conflicto de edición simultánea: NINGUNO de los PATCH de arriba
-       que todavía no corrieron se manda (el que falló cortó la cadena
-       con el throw) — nada se guarda a medias. Se avisa en vez de
-       pisar lo que el otro usuario ya guardó. */
-    if (err.conflicto) {
-      var banner = document.getElementById('orden-conflicto-update');
-      if (banner) banner.style.display = 'block';
-      if (errEl) errEl.style.display = 'none';
-      return;
-    }
-    /* fetch tira TypeError cuando no hay red: el mensaje del navegador
-       ("Failed to fetch") no le dice nada a alguien en la calle */
-    var mensaje = (err instanceof TypeError)
-      ? 'Sin conexión: no se pudo guardar. Lo que cargaste (y la foto) sigue acá; vuelve a guardar cuando haya señal.'
-      : (err.message || 'Error al actualizar la orden.');
-    if (errEl) { errEl.textContent = mensaje; errEl.style.display = 'block'; }
+    _mostrarErrorGuardarOrden(err, errEl);
   }
 };
+
+/* Refrescar la vista actual, sea cual sea la página donde se abrió el modal.
+   Cada función ya se cuida sola si su página no está en pantalla. */
+function _refrescarTrasGuardarOrden() {
+  if (typeof _renderTablaResumen === 'function') _renderTablaResumen();
+  if (typeof _motoDetalleAbiertoId !== 'undefined' && _motoDetalleAbiertoId) abrirDetalleMotoHistorial(_motoDetalleAbiertoId);
+  if (typeof renderPedidos === 'function') renderPedidos();
+  if (typeof _recargarTablaPendienteDevolucion === 'function') _recargarTablaPendienteDevolucion();
+  if (typeof _recargarTablaDevolucionTienda === 'function') _recargarTablaDevolucionTienda();
+  if (typeof _refrescarCajaActual === 'function') _refrescarCajaActual();
+}
+
+function _mostrarErrorGuardarOrden(err, errEl) {
+  /* Conflicto de edición simultánea: NINGUNO de los PATCH que todavía
+     no corrieron se manda (el que falló cortó la cadena con el throw)
+     — nada se guarda a medias. Se avisa en vez de pisar lo que el otro
+     usuario ya guardó. */
+  if (err.conflicto) {
+    var banner = document.getElementById('orden-conflicto-update');
+    if (banner) banner.style.display = 'block';
+    if (errEl) errEl.style.display = 'none';
+    return;
+  }
+  /* fetch tira TypeError cuando no hay red: el mensaje del navegador
+     ("Failed to fetch") no le dice nada a alguien en la calle */
+  var mensaje = (err instanceof TypeError)
+    ? 'Sin conexión: no se pudo guardar. Lo que cargaste (y la foto) sigue acá; vuelve a guardar cuando haya señal.'
+    : (err.message || 'Error al actualizar la orden.');
+  if (errEl) { errEl.textContent = mensaje; errEl.style.display = 'block'; }
+}
+
+/* Solo se manda el estado: el resto del formulario no se guarda, para
+   no obligar a llenar nada y para que la orden quede tal como estaba. */
+async function _guardarAnulacionOrden(errEl) {
+  if (_ordenActualizarEstadoOriginal !== 'anulado' &&
+      !confirm('¿Anular la orden #' + _ordenActualizarCodigo + '?\n\n' +
+               'Cuenta cero en todas las cajas y sale de Asignación y de la vista del motorizado. ' +
+               'Si su día ya estaba pagado, queda "Difiere de lo pagado" y el recupero es manual.\n\n' +
+               'Solo se guarda el estado: los otros cambios de esta ventana no.')) return;
+  try {
+    await _patchOrdenConVersion(API + '/ordenes/' + _ordenActualizarId + '/estado', { estado: 'anulado' });
+    _medioPagoEvidenciaBlob = null;
+    cerrarActualizarEstadoOrden();
+    if (typeof showNotif === 'function') showNotif('Orden anulada');
+    _refrescarTrasGuardarOrden();
+  } catch (err) {
+    _mostrarErrorGuardarOrden(err, errEl);
+  }
+}

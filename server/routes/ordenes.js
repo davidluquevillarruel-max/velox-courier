@@ -7,7 +7,7 @@
 const express = require('express');
 const router  = express.Router();
 const { getPool, sql } = require('../db');
-const { sumaEnCajaTienda, sumaEnCajaMoto } = require('../caja-motor');
+const { sumaEnCajaTienda, sumaEnCajaMoto, ESTADO_ANULADO } = require('../caja-motor');
 const { requireAuth, requireRol } = require('../middleware/auth');
 const { r2Habilitado, generarUrlSubidaEvidencia, esUrlDeOrden } = require('../r2');
 const { guardarFoto, rutaArchivo, existeFoto } = require('../almacenamiento-local');
@@ -74,7 +74,7 @@ const tieneTiendaReal = f => !!f.tienda && f.tienda !== TIENDA_SIN_DEFINIR;
    SQL_ASIGNABLE espera los alias o (ordenes) y t (tiendas). */
 const SQL_TIENE_FOTO_PRODUCTO = `EXISTS (SELECT 1 FROM ordenes_fotos fp
   WHERE fp.id_orden = o.id AND fp.tipo = 'foto_producto' AND fp.url <> '')`;
-const SQL_ASIGNABLE = `(o.datos_pendientes = 0 OR (t.nombre <> '${TIENDA_SIN_DEFINIR}' AND ${SQL_TIENE_FOTO_PRODUCTO}))`;
+const SQL_ASIGNABLE = `(o.estado <> '${ESTADO_ANULADO}' AND (o.datos_pendientes = 0 OR (t.nombre <> '${TIENDA_SIN_DEFINIR}' AND ${SQL_TIENE_FOTO_PRODUCTO})))`;
 
 /* Una orden con datos pendientes no se cierra (entregado, ausente,
    cancelado, reprogramado, no entregado...): delivery, pago al moto y
@@ -216,6 +216,8 @@ function leerIdSubida(valor) {
    · motorizado               → SOLO las suyas. Las sin asignar las ve
      únicamente en Asignación (ver filtroAsignacion).
    · tienda                   → solo las de su tienda
+   El motorizado y la tienda no ven las anuladas: quedan como registro
+   en "Todos los pedidos", para los gestores.
    Se aplica en el servidor: el cliente no puede saltárselo.
    Espera los alias o (ordenes) y t (tiendas), como SELECT_ORDEN.
 ──────────────────────────────────────────────────────────── */
@@ -223,14 +225,37 @@ function filtroPorRol(usuario, request) {
   if (usuario.rol === 'motorizado') {
     if (!usuario.id_motorizado) return { sql: 'AND 1 = 0' }; // sin vínculo: no ve nada
     request.input('scopeMoto', sql.Int, usuario.id_motorizado);
-    return { sql: 'AND o.id_motorizado = @scopeMoto' };
+    return { sql: `AND o.id_motorizado = @scopeMoto AND o.estado <> '${ESTADO_ANULADO}'` };
   }
   if (usuario.rol === 'tienda') {
     if (!usuario.id_tienda) return { sql: 'AND 1 = 0' };
     request.input('scopeTienda', sql.Int, usuario.id_tienda);
-    return { sql: 'AND o.id_tienda = @scopeTienda' };
+    return { sql: `AND o.id_tienda = @scopeTienda AND o.estado <> '${ESTADO_ANULADO}'` };
   }
   return { sql: '' };
+}
+
+/* Una orden anulada solo la puede tocar el admin, también para volverla
+   a otro estado. Va antes de cada ruta que modifica la orden. Las fotos
+   no pasan por acá: una que ya estaba en la cola del teléfono termina
+   de subir y queda como registro. */
+async function soloAdminSiAnulada(req, res, next) {
+  try {
+    if (req.usuario.rol === 'admin') return next();
+    const id = parseInt(req.params.id, 10);
+    if (!id) return next();
+    const pool = await getPool();
+    const r = await pool.request()
+      .input('id', sql.BigInt, id)
+      .query('SELECT estado FROM ordenes WHERE id = @id');
+    if (r.recordset[0] && r.recordset[0].estado === ESTADO_ANULADO) {
+      return res.status(403).json({ error: 'Esta orden está anulada: solo un administrador puede cambiarla.', anulada: true });
+    }
+    next();
+  } catch (err) {
+    console.error('soloAdminSiAnulada:', err.message);
+    res.status(500).json({ error: 'Error al revisar la orden' });
+  }
 }
 
 /* Lo que ve cada rol en la pantalla Asignación: el motorizado, las suyas
@@ -402,7 +427,7 @@ router.get('/pendientes-datos', requireRol(...GESTORES), async (req, res) => {
   try {
     const pool   = await getPool();
     const result = await pool.request().query(
-      `${SELECT_ORDEN} WHERE o.datos_pendientes = 1 ORDER BY o.id`
+      `${SELECT_ORDEN} WHERE o.datos_pendientes = 1 AND o.estado <> '${ESTADO_ANULADO}' ORDER BY o.id`
     );
     /* falta_tienda: orden creada con la tienda comodín (ver arriba,
        chequeo fijo): solo esas filas muestran el buscador de tienda */
@@ -420,7 +445,7 @@ router.get('/pendientes-datos/total', requireRol(...GESTORES), async (req, res) 
   try {
     const pool   = await getPool();
     const result = await pool.request().query(
-      `SELECT COUNT(*) AS total FROM ordenes WHERE datos_pendientes = 1`
+      `SELECT COUNT(*) AS total FROM ordenes WHERE datos_pendientes = 1 AND estado <> '${ESTADO_ANULADO}'`
     );
     res.json({ total: result.recordset[0].total });
   } catch (err) {
@@ -705,7 +730,7 @@ router.post('/rafaga', requireRol(...GESTORES), async (req, res) => {
    responde 409 con la orden fresca. */
 const COBRADO_MAXIMO = 999999.99;  /* monto_cobrado es DECIMAL(8,2) */
 
-router.patch('/:id/completar-datos', requireRol(...GESTORES), async (req, res) => {
+router.patch('/:id/completar-datos', requireRol(...GESTORES), soloAdminSiAnulada, async (req, res) => {
   try {
     const pool = await getPool();
     const b    = req.body;
@@ -849,16 +874,24 @@ router.patch('/:id/completar-datos', requireRol(...GESTORES), async (req, res) =
 
 /* ── PATCH /api/ordenes/:id/estado ───────────────────────────
    Gestores: cualquier orden. Motorizado: solo las suyas. */
-router.patch('/:id/estado', async (req, res) => {
+router.patch('/:id/estado', soloAdminSiAnulada, async (req, res) => {
   try {
     const pool = await getPool();
+
+    /* Anular es un override del admin: desde cualquier estado, sin pedir
+       ningún dato y sin revisar días pagados (lo pagado no cambia y el
+       día queda "Difiere de lo pagado"; el recupero es manual). */
+    const anular = req.body.estado === ESTADO_ANULADO;
+    if (anular && req.usuario.rol !== 'admin') {
+      return res.status(403).json({ error: 'Solo un administrador puede anular una orden.' });
+    }
 
     if (!(await puedeTocarOrden(req.usuario, req.params.id, pool))) {
       return res.status(403).json({ error: 'No puedes modificar esta orden' });
     }
 
     const ESTADOS = ['entregado','no-entregado','ausente','reprogramado','cancelado',
-                     'devolucion','en-proceso'];
+                     'devolucion','en-proceso', ESTADO_ANULADO];
     const { estado } = req.body;
     let { metodoPago, condicionEspecial } = req.body;
     if (!ESTADOS.includes(estado)) {
@@ -876,15 +909,16 @@ router.patch('/:id/estado', async (req, res) => {
       .input('id', sql.BigInt, req.params.id)
       .query(`SELECT estado, datos_pendientes FROM ordenes WHERE id = @id`);
     if (!previa.recordset[0]) return res.status(404).json({ error: 'Orden no encontrada' });
-    if (previa.recordset[0].datos_pendientes && estado !== 'en-proceso' && estado !== previa.recordset[0].estado) {
+    if (!anular && previa.recordset[0].datos_pendientes && estado !== 'en-proceso' && estado !== previa.recordset[0].estado) {
       return res.status(400).json({ error: ERROR_CIERRE_PENDIENTE, datosPendientes: true });
     }
 
     /* Un motorizado no puede cambiar el método de pago ni la condición
        especial (aunque los mande en el body) — se ignoran y se
        conserva lo que ya había. La UI ya los muestra bloqueados; esto
-       es la protección real. */
-    if (req.usuario.rol === 'motorizado') {
+       es la protección real. Anular tampoco los toca: la orden queda
+       como registro, tal como estaba. */
+    if (req.usuario.rol === 'motorizado' || anular) {
       const actual = await pool.request()
         .input('id', sql.BigInt, req.params.id)
         .query(`SELECT metodo_pago, condicion_especial FROM ordenes WHERE id = @id`);
@@ -936,7 +970,7 @@ router.patch('/:id/estado', async (req, res) => {
    en un solo UPDATE: no queda nada guardado a medias. */
 const RESULTADOS_RESOLVER = ['entregado', 'reprogramado', 'ausente', 'cancelado', 'no-entregado'];
 
-router.patch('/:id/resolver', async (req, res) => {
+router.patch('/:id/resolver', soloAdminSiAnulada, async (req, res) => {
   try {
     const pool = await getPool();
     const ordenId = req.params.id;
@@ -1020,7 +1054,7 @@ router.patch('/:id/resolver', async (req, res) => {
 });
 
 /* ── PATCH /api/ordenes/:id/contacto ─────────────────────── */
-router.patch('/:id/contacto', async (req, res) => {
+router.patch('/:id/contacto', soloAdminSiAnulada, async (req, res) => {
   try {
     const pool = await getPool();
 
@@ -1051,7 +1085,7 @@ router.patch('/:id/contacto', async (req, res) => {
    las suyas, y los montos de "gestión" (delivery, adicionales,
    cobrado, pago al motorizado) se ignoran pase lo que pase en el
    body — se conserva lo que ya había en la base (ver más abajo). */
-router.patch('/:id/completo', async (req, res) => {
+router.patch('/:id/completo', soloAdminSiAnulada, async (req, res) => {
   try {
     const pool = await getPool();
 
@@ -1291,7 +1325,7 @@ async function bloqueoPorResolverEnDiaPagado(pool, orden, estadoNuevo) {
    el servidor ignora cualquier nombre que mande el cliente y usa
    el de su propia sesión. No puede desasignar ni tocar una orden
    que ya tenga motorizado (ni la de otro, ni la suya). */
-router.patch('/:id/asignar', async (req, res) => {
+router.patch('/:id/asignar', soloAdminSiAnulada, async (req, res) => {
   try {
     const pool = await getPool();
     const esGestor     = GESTORES.includes(req.usuario.rol);
@@ -1449,7 +1483,7 @@ router.patch('/:id/asignar', async (req, res) => {
 const ESTADOS_VUELVE_A_PROCESO = ['reprogramado', 'no-entregado'];
 const ESTADOS_UNA_SOLA_VEZ     = ['ausente', 'cancelado']; /* no cambian de estado al confirmar */
 
-router.patch('/:id/devolver', requireRol(...GESTORES), async (req, res) => {
+router.patch('/:id/devolver', requireRol(...GESTORES), soloAdminSiAnulada, async (req, res) => {
   try {
     const pool = await getPool();
     const ordenId = req.params.id;
@@ -1459,6 +1493,9 @@ router.patch('/:id/devolver', requireRol(...GESTORES), async (req, res) => {
       .query(`SELECT * FROM ordenes WHERE id = @id`);
     const orden = r.recordset[0];
     if (!orden) return res.status(404).json({ error: 'Orden no encontrada' });
+    if (orden.estado === ESTADO_ANULADO) {
+      return res.status(400).json({ error: 'Esta orden está anulada: primero cámbiala a otro estado.' });
+    }
 
     /* Ausente/Cancelado/condición especial no cambian de estado al
        confirmar, así que no se autolimitan como Reprogramado/No entregado
@@ -1569,7 +1606,7 @@ router.patch('/:id/devolver', requireRol(...GESTORES), async (req, res) => {
    salvo que ya fuera entregado / ausente: esos ya se cobran como tales
    (ej. un cambio entregado que trae de vuelta el producto viejo) y
    pasarlos a 'devolucion' le quitaría lo retenido de la entrega. */
-router.patch('/:id/devolver-tienda', requireRol(...GESTORES), async (req, res) => {
+router.patch('/:id/devolver-tienda', requireRol(...GESTORES), soloAdminSiAnulada, async (req, res) => {
   try {
     const pool = await getPool();
     const ordenId = req.params.id;
@@ -1582,7 +1619,7 @@ router.patch('/:id/devolver-tienda', requireRol(...GESTORES), async (req, res) =
     const orden = r.recordset[0];
     if (!orden) return res.status(404).json({ error: 'Orden no encontrada' });
 
-    const enAlmacen =
+    const enAlmacen = orden.estado !== ESTADO_ANULADO &&
       (orden.estado === 'cancelado' || CONDICIONES_ESPECIALES.includes(orden.condicion_especial)) &&
       orden.devuelto && !orden.devuelto_tienda;
 
@@ -1669,7 +1706,7 @@ router.post('/:id/evidencia/presigned', async (req, res) => {
    la cola del celular (POST /:id/foto/...). Mientras no llegue, la
    orden figura con evidencia_pendiente = 1 (ver SELECT_ORDEN).
    evidenciaUrl se sigue aceptando por compatibilidad. */
-router.patch('/:id/medio-pago', async (req, res) => {
+router.patch('/:id/medio-pago', soloAdminSiAnulada, async (req, res) => {
   try {
     const pool = await getPool();
     if (!(await puedeTocarOrden(req.usuario, req.params.id, pool))) {

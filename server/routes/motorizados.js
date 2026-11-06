@@ -179,7 +179,7 @@ router.get('/:id/ordenes', async (req, res) => {
       FROM ordenes o
       JOIN tiendas   t ON t.id = o.id_tienda
       JOIN distritos d ON d.id = o.id_distrito
-      WHERE o.id_motorizado = @id
+      WHERE o.id_motorizado = @id AND o.estado <> 'anulado'
     `;
     if (fecha) query += ` AND o.fecha_reparto = @fecha`;
     query += ` ORDER BY o.fecha_reparto DESC, o.id`;

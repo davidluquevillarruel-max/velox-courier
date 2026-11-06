@@ -12,6 +12,23 @@ Velox Courier — internal management system for a courier/delivery company in L
 
 Última actualización: 6 de noviembre de 2026.
 
+- **Estado `anulado` (6 de noviembre de 2026, EN LOCAL, sin push ni deploy; falta que el usuario lo
+  pruebe).** Ver D-014 en `DECISIONES.md`. **Necesita migración** (ver "Migraciones pendientes") y
+  **toca el servidor**. `server/caja-motor.js`, `server/routes/ordenes.js`, `motorizados.js`,
+  `tiendas.js`, `js/motorizados.js`, `js/pedidos.js`, `js/charts.js`, `js/exportar-pedidos.js`,
+  `pages/pedidos.html`, `css/components.css`.
+  - **Solo el admin** anula y vuelve atrás, desde "Actualizar orden". `PATCH /estado` rechaza al resto
+    con 403, y `soloAdminSiAnulada` frena a los demás en toda ruta que modifique una orden anulada.
+    Las fotos no pasan por ese control: una que ya estaba en la cola termina de subir.
+  - **Override:** desde cualquier estado, sin pedir datos y sin revisar días pagados. Solo cambia el
+    estado; el resto de la orden (moto, montos, medio de pago) queda tal como estaba.
+  - **Cuenta cero:** no está en `ESTADOS_COBRABLES`, `ordenesPrepagadas` la excluye de Caja real y un
+    día pagado queda "Difiere de lo pagado". Fuera de Asignación (`SQL_ASIGNABLE`), del motorizado
+    (`filtroPorRol`, también `GET /:id`, y `/motorizados/:id/ordenes`, también para gestores), de la
+    tienda y Clientes, de "Pendiente", de las devoluciones y de Evidencias.
+  - **Se ve en "Todos los pedidos"** con la etiqueta "Anulado" y su filtro, pero no cuenta en los
+    indicadores. Al exportar sale `ANULADO`.
+
 - **El motorizado solo ve sus órdenes (6 de noviembre de 2026, HECHO en producción).** Confirmado por
   el usuario: `git pull` + `pm2 restart velox`, logs OK. Último commit en producción: `03f23a0`
   (cambio en `727186d`). Ver D-013 en `DECISIONES.md`. Sin migración. `server/routes/ordenes.js`,
@@ -638,7 +655,9 @@ Roles: `admin`, `operador`, `visor`, `tienda`, `motorizado`. `GESTORES = ['admin
 
 ## Migraciones pendientes de aplicar en producción
 
-Ninguna por ahora.
+**`velox_agregar_estado_anulado.sql`** (agrega `anulado` a `chk_ordenes_estado`, D-014). Aplicada en
+local el 6 de noviembre de 2026. **Falta en producción**, con `sa` y `sqlcmd -I`, **antes** del
+`git pull`.
 
 `velox_agregar_fotos_pago_moto.sql` (foto del pago de la Caja de motorizados, D-012: tablas
 `caja_liquidaciones_motorizados` y `caja_liquidaciones_motorizados_fotos` + columna

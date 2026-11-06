@@ -117,6 +117,7 @@
 .badge.ausente      { background: var(--color-amber-bg);  color: var(--color-amber-text); }
 .badge.pendiente    { background: var(--color-blue-bg);   color: var(--color-blue-text); }
 .badge.asignado     { background: var(--color-purple-bg); color: var(--color-purple-text); }
+.badge.anulado      { background: var(--color-bg-secondary); color: var(--color-text-secondary); text-decoration: line-through; }
 
 /* ── Colores de balance ── */
 .balance-pos  { color: var(--color-green);     font-weight: 500; }

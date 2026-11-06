@@ -88,6 +88,7 @@ function _badgeEstado(estado) {
     'reprogramado': '<span class="badge reprogramado">Reprogramado</span>',
     'cancelado':    '<span class="badge no-entregado">Cancelado</span>',
     'devolucion':   '<span class="badge ausente">Devolución</span>',
+    'anulado':      '<span class="badge anulado">Anulado</span>',
   };
   return map[estado] || '<span class="badge pendiente">' + estado + '</span>';
 }
@@ -109,6 +110,7 @@ function _badgeCondicionEspecial(condicion) {
    columna aparte en la base: sale de estado + condición + devuelto +
    devuelto_tienda. Compartido con js/devolucion-tienda.js. */
 function _subEstadoOrden(o) {
+  if (o.estado === 'anulado') return '';
   /* 'devolucion' = estado final que deja "Devolución Tienda" */
   var aplica = (o.estado === 'cancelado' || o.estado === 'devolucion' || o.condicionEspecial) && parseInt(o.devuelto) > 0;
   if (!aplica) return '';
@@ -188,7 +190,7 @@ function _filaOrdenPedido(o) {
 
   /* Orden de foto en ráfaga a la que le faltan datos: en vez de la
      tienda comodín se muestra la marca (se completa en "Pendiente") */
-  var tiendaHTML = o.datos_pendientes
+  var tiendaHTML = (o.datos_pendientes && o.estado !== 'anulado')
     ? (o.tienda !== 'SIN DEFINIR' ? o.tienda + ' ' : '') +
       '<span title="Orden de foto en ráfaga: faltan datos (botón Pendiente)" ' +
       'style="font-size:10px;color:var(--color-amber-text);background:var(--color-amber-bg);padding:1px 6px;border-radius:8px;white-space:nowrap">' +
@@ -279,7 +281,8 @@ async function _cargarOrdenes(fecha) {
 window.renderPedidos = async function() {
   var ordenes = await _cargarOrdenes(_filtroFecha);
 
-  var total       = ordenes.length;
+  /* Las anuladas se listan como registro, pero no cuentan */
+  var total       = ordenes.filter(function(o){ return o.estado !== 'anulado'; }).length;
   var entregados  = ordenes.filter(function(o){ return o.estado === 'entregado'; }).length;
   var enRuta      = ordenes.filter(function(o){ return o.estado === 'en-proceso'; }).length;
   var sinEntregar = ordenes.filter(function(o){

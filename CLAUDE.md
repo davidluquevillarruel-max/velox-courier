@@ -10,19 +10,21 @@ Velox Courier — internal management system for a courier/delivery company in L
 
 ## Estado actual
 
-Última actualización: 5 de noviembre de 2026.
+Última actualización: 6 de noviembre de 2026.
 
-- **El motorizado solo ve sus órdenes (5 de noviembre de 2026, EN LOCAL, sin push ni deploy; va
-  junto con las cajas).** Sin migración. `server/routes/ordenes.js`, `js/asignacion.js`.
+- **El motorizado solo ve sus órdenes (HECHO: probado y aprobado en local el 5/11, pendiente de
+  deploy; va junto con las cajas).** Ver D-013 en `DECISIONES.md`. Commit `727186d`. Sin migración.
+  `server/routes/ordenes.js`, `js/asignacion.js`. **Toca el servidor:** hay que reiniciarlo, y los
+  motorizados con la app abierta tienen que recargarla.
   `filtroPorRol()` exige `id_motorizado = él`: "Mis entregas de hoy", Evidencias, `GET /ordenes` y
   `GET /ordenes/:id` ya no traen las sin asignar. La pantalla Asignación lee de un endpoint propio,
   `GET /ordenes/para-asignacion` (`filtroAsignacion()`): las suyas + las sin asignar asignables,
   nunca las de otro. **Un listado nuevo del motorizado usa `filtroPorRol`, no `filtroAsignacion`.**
 
-- **Las 3 cajas con un solo motor + Caja de motorizados rehecha (5 de noviembre de 2026, EN LOCAL,
-  sin push ni deploy).** Ver D-012 en `DECISIONES.md`. Commits `b50d396`, `933e6e4`, `9178ac6`.
-  **Necesita migración** (ver "Migraciones pendientes") y **toca el servidor**. Falta que el
-  usuario lo pruebe en el navegador y lo despliegue.
+- **Las 3 cajas con un solo motor + Caja de motorizados rehecha (HECHO: probado y aprobado en local
+  el 5/11, pendiente de deploy).** Ver D-012 en `DECISIONES.md`. Commits `b50d396`, `933e6e4`,
+  `9178ac6`. **Necesita migración antes del `git pull`** (ver "Migraciones pendientes") y **toca el
+  servidor**.
   - **Motor** `server/caja-motor.js`: `calcularOrdenCaja()` es la ÚNICA definición de la plata de
     una orden, en céntimos (delivery, retenido, plata en mano del moto, plata directa a Velox,
     pago al moto, prepago, saldos, vías). Sin sesión ni roles, para que después lo usen las vistas
@@ -536,7 +538,10 @@ Velox Courier — internal management system for a courier/delivery company in L
   quien llama es motorizado), no solo visual.
 
 **Pendiente:**
-- **Probar en el navegador y desplegar las 3 cajas** (ver la nota del 5/11 arriba y D-012).
+- **Desplegar las 3 cajas y el fix del motorizado** (aprobados en local el 5/11; ver D-012 y D-013):
+  migración `velox_agregar_fotos_pago_moto.sql` con `sa`, después `git pull` + `pm2 restart velox`, y
+  verificar con `node scripts/verificar-cuadre-cajas.js` (desde `server/`). Los días pagados con la
+  regla vieja van a decir "Difiere de lo pagado": es esperable.
 - **Clientes / Tiendas sigue con la regla vieja** (`server/routes/tiendas.js:119`: entregado /
   ausente). Quedó fuera de las 3 cajas.
 - **Vistas de la tienda y del moto para ver su propia caja:** próximo paso; el motor ya sirve,

@@ -4,7 +4,7 @@
 > Sirve también como contexto de arranque para Claude Code: si se copia a `CLAUDE.md`
 > en la raíz del repo, la herramienta lo lee automáticamente al iniciar.
 >
-> Última actualización: 3 de noviembre de 2026
+> Última actualización: 6 de noviembre de 2026
 
 ---
 
@@ -427,9 +427,9 @@ solo las ven los gestores (todo `/caja` es admin/operador).
 
 ## D-012 · Las cajas leen de un solo motor; la Caja de motorizados cuenta solo lo que pasó por sus manos
 
-**Estado:** Implementado y probado en local el 5 de noviembre de 2026 (commits `b50d396`,
-`933e6e4`, `9178ac6`). Migración `velox_agregar_fotos_pago_moto.sql` aplicada en local. **Falta
-el deploy a producción.**
+**Estado:** HECHO: probado y aprobado en local el 5 de noviembre de 2026, pendiente de deploy (commits
+`b50d396`, `933e6e4`, `9178ac6`). Migración `velox_agregar_fotos_pago_moto.sql` aplicada en local;
+en producción va con `sa` y `sqlcmd -I`, **antes** del `git pull`.
 
 **Problema.** Caja Tienda ya tenía su regla (D-011 y la reescritura del 4/11), pero Liquidez, Caja
 real y Motorizados seguían con la vieja y no coincidían. Con los datos locales, Liquidez daba un
@@ -482,6 +482,31 @@ vieja.
 
 ---
 
+## D-013 · El motorizado solo ve sus órdenes; las sin asignar, solo en Asignación
+
+**Estado:** HECHO: probado y aprobado en local el 5 de noviembre de 2026, pendiente de deploy (commit
+`727186d`). Sin migración.
+
+**Problema.** `filtroPorRol()` le sumaba al motorizado las órdenes sin asignar para que pudiera
+autoasignarse, pero ese filtro lo usan todos sus listados: aparecían en "Mis entregas de hoy" con
+EMPEZAR, contaban en Evidencias y podía abrirlas por id. Venía desde `1170378` (septiembre), no del
+cambio de autoasignar del 3/11, que solo tocó qué órdenes con datos pendientes entraban.
+
+**Decisión.** Dos filtros, porque son dos preguntas distintas:
+- `filtroPorRol()`: el motorizado ve solo `id_motorizado = él`, tomado de la sesión. Lo usan
+  `GET /ordenes` y `GET /ordenes/:id`.
+- `filtroAsignacion()`: las suyas + las sin asignar asignables, nunca las de otro. Solo lo usa
+  `GET /ordenes/para-asignacion`, que alimenta la pantalla Asignación. La tienda recibe 403.
+
+**Descartado: filtrar las sin asignar en cada pantalla.** El servidor las seguiría mandando, y el
+alcance por rol tiene que resolverse en el servidor.
+
+**Efecto aceptado.** En su gestión ve todas sus órdenes, aunque les falten datos y no tengan foto;
+antes esas quedaban ocultas. No se pueden cerrar con datos pendientes, y salen con "Faltan datos".
+Los motorizados con la pestaña vieja abierta ven Asignación sin pendientes hasta que recargan.
+
+---
+
 ## Costos de operación
 
 | Concepto | Mensual |
@@ -510,7 +535,8 @@ downtime). El dominio se traspasa aparte en Namecheap.
 - [ ] **2FA en Namecheap:** activar (la cuenta controla el dominio).
 - [ ] **Cambiar contraseña del admin** desde el propio sistema (ahora que el flujo es seguro).
 - [ ] **Monitoreo:** alertas de DigitalOcean por RAM > 85 % y disco > 80 %.
-- [ ] **Caja:** probar y desplegar las 3 cajas (D-012). Clientes / Tiendas sigue con la regla
+- [ ] **Caja:** desplegar las 3 cajas (D-012) y el fix del motorizado (D-013), aprobados en local el
+      5/11. Clientes / Tiendas sigue con la regla
       vieja; las vistas de la tienda y del moto, próximo paso. Detalle en `CLAUDE.md` → "Pendiente".
 - [x] **Rediseño de la vista del motorizado** ("Mis entregas de hoy": botón EMPEZAR + flujo
       de entrega con fotos por el pipeline único de D-003). **Desplegado en producción** el

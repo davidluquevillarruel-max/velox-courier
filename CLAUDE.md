@@ -12,9 +12,9 @@ Velox Courier — internal management system for a courier/delivery company in L
 
 Última actualización: 6 de noviembre de 2026.
 
-- **Estado `anulado` (HECHO: probado y aprobado en local el 6/11, pendiente de deploy).** Ver D-014
-  en `DECISIONES.md`. Commit `43b6e5d`. **Necesita migración antes del `git pull`** (ver "Migraciones
-  pendientes") y **toca el servidor**. `server/caja-motor.js`, `server/routes/ordenes.js`, `motorizados.js`,
+- **Estado `anulado` (HECHO en producción).** Confirmado por el usuario: migración
+  `velox_agregar_estado_anulado.sql` aplicada, después `git pull` + `pm2 restart velox`, verificado.
+  Último commit en producción: `c0f1312` (cambio en `43b6e5d`). Ver D-014 en `DECISIONES.md`. `server/caja-motor.js`, `server/routes/ordenes.js`, `motorizados.js`,
   `tiendas.js`, `js/motorizados.js`, `js/pedidos.js`, `js/charts.js`, `js/exportar-pedidos.js`,
   `pages/pedidos.html`, `css/components.css`.
   - **Solo el admin** anula y vuelve atrás, desde "Actualizar orden". `PATCH /estado` rechaza al resto
@@ -655,9 +655,10 @@ Roles: `admin`, `operador`, `visor`, `tienda`, `motorizado`. `GESTORES = ['admin
 
 ## Migraciones pendientes de aplicar en producción
 
-**`velox_agregar_estado_anulado.sql`** (agrega `anulado` a `chk_ordenes_estado`, D-014). Aplicada en
-local el 6 de noviembre de 2026. **Falta en producción**, con `sa` y `sqlcmd -I`, **antes** del
-`git pull`.
+Ninguna por ahora.
+
+`velox_agregar_estado_anulado.sql` (agrega `anulado` a `chk_ordenes_estado`, D-014) se aplicó en local
+el 6 de noviembre de 2026 y en producción antes del `git pull` a `c0f1312` (confirmado por el usuario).
 
 `velox_agregar_fotos_pago_moto.sql` (foto del pago de la Caja de motorizados, D-012: tablas
 `caja_liquidaciones_motorizados` y `caja_liquidaciones_motorizados_fotos` + columna

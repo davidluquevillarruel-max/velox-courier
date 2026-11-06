@@ -509,9 +509,9 @@ Los motorizados con la pestaña vieja abierta ven Asignación sin pendientes has
 
 ## D-014 · Estado `anulado`: override del admin que cuenta cero, sin borrar la orden
 
-**Estado:** HECHO: probado y aprobado en local el 6 de noviembre de 2026, pendiente de deploy (commit
-`43b6e5d`). Migración `velox_agregar_estado_anulado.sql` aplicada en local; en producción va con `sa`
-y `sqlcmd -I`, **antes** del `git pull`.
+**Estado:** HECHO en producción (confirmado por el usuario; cambio en `43b6e5d`, último commit
+`c0f1312`). Migración `velox_agregar_estado_anulado.sql` aplicada en local y en producción, antes del
+`git pull`.
 
 **Problema.** No había forma de sacar de circulación una orden cargada por error sin borrarla ni
 dejarla sumando en las cajas.

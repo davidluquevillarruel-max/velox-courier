@@ -314,13 +314,13 @@ window.abrirDetalleMotoHistorial = async function(motoId) {
         '<button class="btn btn-sm" onclick="cerrarDetalleMotoHistorial()"><i class="ti ti-x"></i> Cerrar</button>' +
       '</div>' +
     '</div>' +
-    '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px">' +
+    '<div class="moto-kpis">' +
       _kpiCard('Total órdenes', s.total, 'blue', 'ti-package') +
       _kpiCard('Entregados', s.entregados, 'green', 'ti-circle-check') +
       _kpiCard('No entregados / Ausentes', s.noEntregados + s.ausentes, 'red', 'ti-circle-x') +
       _kpiCard('Tasa entrega', s.tasa, tc, 'ti-chart-line') +
     '</div>' +
-    '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px">' +
+    '<div class="moto-kpis">' +
       _kpiCard('Pago a motorizado', 'S/ ' + s.pagoTotal.toFixed(2), 'amber', 'ti-wallet') +
       _kpiCard('Total cobrado', 'S/ ' + s.cobrado.toFixed(2), 'blue', 'ti-cash') +
       _kpiCard('Total moto', 'S/ ' + (s.cobrado - s.pagoTotal).toFixed(2), (s.cobrado - s.pagoTotal) >= 0 ? 'green' : 'red', 'ti-calculator') +

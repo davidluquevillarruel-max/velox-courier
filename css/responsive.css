@@ -282,6 +282,23 @@
   background: var(--color-bg-secondary);
 }
 
+/* Los 8 cuadros del panel de detalle de un motorizado: 4 columnas, y 2
+   hasta 768 px para que se vean todos completos. minmax(0, 1fr) deja que
+   el cuadro se achique en vez de empujar al de al lado afuera del panel.
+   En el celular va sin ícono: se salía del cuadro con montos largos, y
+   el color del borde ya lo identifica. */
+.moto-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  margin-bottom: 14px;
+}
+@media (max-width: 768px) {
+  .moto-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .moto-kpis .metric-icon { display: none; }
+  .moto-kpis .metric-body { min-width: 0; overflow-wrap: anywhere; }
+}
+
 /* Esa misma tabla en pantalla chica: con Código y Actualizar fijos a los
    dos costados, a 360 px quedaban unos 110 px libres y columnas como
    Contacto no se llegaban a ver enteras. Se suelta Código (Actualizar

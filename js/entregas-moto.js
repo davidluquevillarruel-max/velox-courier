@@ -116,29 +116,30 @@ async function _recargarEntregasHoy(inicial) {
     html += '<div class="entregas-hoy-vacio"><i class="ti ti-circle-check"></i> No tienes entregas pendientes para hoy.</div>';
   } else {
     html += '<div class="entregas-hoy-lista">' + _entPendientes.map(function(o) {
-      var cond = o.condicionEspecial ? ' · <span class="badge ausente">' + _escEnt(_ENT_CONDICIONES[o.condicionEspecial] || o.condicionEspecial) + '</span>' : '';
+      var cond = o.condicionEspecial ? ' <span class="badge ausente">' + _escEnt(_ENT_CONDICIONES[o.condicionEspecial] || o.condicionEspecial) + '</span>' : '';
       /* Con datos por completar no se muestra "Sin cobro · S/ 0": el
          monto todavía no se sabe (lo carga la oficina) */
       var pendiente = !!o.datos_pendientes;
       var cobro = pendiente
-        ? '<span class="entrega-item-falta">Por cobrar: por completar</span>'
-        : o.metodo_pago === 'contraentrega'
-          ? '<span class="entrega-item-cobro">Por cobrar ' + _soles(o.monto_cobrado) + '</span>'
-          : 'Sin cobro';
+        ? '<div class="assign-dato assign-falta"><i class="ti ti-cash"></i> Por cobrar: por completar' + cond + '</div>'
+        : '<div class="assign-dato"><i class="ti ti-cash"></i> ' +
+            (o.metodo_pago === 'contraentrega' ? 'Por cobrar ' + _soles(o.monto_cobrado) : 'Sin cobro') + cond + '</div>';
       var distrito = o.distrito === 'SIN DEFINIR'
-        ? '<span class="entrega-item-falta">Distrito por definir</span>'
-        : _escEnt(o.distrito);
+        ? '<div class="assign-dato assign-falta"><i class="ti ti-map-pin"></i> Distrito por definir</div>'
+        : '<div class="assign-dato"><i class="ti ti-map-pin"></i> ' + _escEnt(o.distrito) + '</div>';
       var cliente = o.dest_nombre
-        ? _escEnt(o.dest_nombre)
-        : (pendiente ? '<span class="entrega-item-falta">Cliente por completar</span>' : '—');
+        ? '<div class="assign-dato"><i class="ti ti-user"></i> ' + _escEnt(o.dest_nombre) + '</div>'
+        : (pendiente ? '<div class="assign-dato assign-falta"><i class="ti ti-user"></i> Cliente por completar</div>' : '');
       var accion = pendiente
         ? '<div class="entrega-item-espera"><i class="ti ti-clock-exclamation"></i> Faltan datos: la oficina los está completando</div>'
         : '<button type="button" class="btn-empezar" onclick="empezarEntrega(' + o.id + ')">EMPEZAR</button>';
+      /* Misma jerarquía que Asignación (_datosOrdenAsig en js/asignacion.js):
+         los datos grandes y en negrita, el código chico al final */
       return '<div class="entrega-item">' +
-        '<div class="entrega-item-datos">' +
-          '<strong>#' + _escEnt(o.codigo) + '</strong> · ' + distrito + '<br>' +
-          cliente + ' · ' + _escEnt(o.tienda) + '<br>' +
-          cobro + cond +
+        '<div class="entrega-item-datos assign-info">' +
+          '<div class="assign-tienda">' + _escEnt(o.tienda) + '</div>' +
+          distrito + cliente + cobro +
+          '<div class="assign-code">#' + _escEnt(o.codigo) + '</div>' +
         '</div>' +
         accion +
       '</div>';

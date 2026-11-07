@@ -646,27 +646,12 @@
   border-radius: var(--radius-lg);
   padding: 12px 14px;
 }
+/* Los textos usan las clases assign-* de Asignación */
 .entrega-item-datos {
   flex: 1;
-  min-width: 0;
-  font-size: 12px;
-  color: var(--color-text-secondary);
-  line-height: 1.5;
 }
-.entrega-item-datos strong {
-  font-size: 14px;
-  color: var(--color-text-primary);
-}
-.entrega-item-cobro {
-  font-weight: 600;
-  color: var(--color-text-primary);
-}
-/* Orden con datos por completar (la oficina los carga): en ámbar lo
-   que falta y, en vez de EMPEZAR, el aviso */
-.entrega-item-falta {
-  font-weight: 600;
-  color: var(--color-amber-text);
-}
+/* Orden con datos por completar (la oficina los carga): en vez de
+   EMPEZAR, el aviso */
 .entrega-item-espera {
   flex-shrink: 0;
   max-width: 150px;

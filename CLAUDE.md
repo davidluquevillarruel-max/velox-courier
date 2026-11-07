@@ -10,7 +10,26 @@ Velox Courier — internal management system for a courier/delivery company in L
 
 ## Estado actual
 
-Última actualización: 6 de noviembre de 2026.
+Última actualización: 7 de noviembre de 2026.
+
+- **Limpieza de producción (7 de noviembre de 2026, HECHA).** Confirmado por el usuario: con backup
+  previo, corrió `server/scripts/limpiar_ordenes_y_caja.sql`. Las órdenes y toda la Caja eran de
+  simulación y quedaron en 0; usuarios, tiendas, motorizados, distritos, zonas y orígenes, intactos.
+  Las cifras de órdenes de las notas de abajo (como las 274 del 20/10) son historia: **hoy producción
+  arranca sin órdenes**, y los ids y la numeración vuelven a empezar. Ver D-015 en `DECISIONES.md`.
+- **Número de orden desde C-1 (7 de noviembre de 2026, HECHO en producción).** Confirmado por el
+  usuario. Commit `bc98079`. Con la tabla vacía el código empezaba en C-1001; ahora en C-1. Con órdenes
+  sigue siendo el mayor + 1. Sale de `insertarConCodigoNuevo` y de la copia de `/devolver`, en
+  `server/routes/ordenes.js`, no de la base: `ordenes.id` y el código son números distintos.
+- **Cambios visuales del motorizado (7 de noviembre de 2026, HECHO en producción).** Confirmado por el
+  usuario. Solo frontend, sin migración.
+  - **"Mis entregas de hoy"** (`feb1061`): la tarjeta usa las clases `assign-*` de Asignación. Tienda,
+    distrito, cliente y monto, grandes y en negrita; el código, chico y sin negrita.
+  - **Tabla del historial** (`911fa2b`): el contenedor ya tenía `overflow-x: auto`; el problema era el
+    espacio. Hasta 768 px, en `#tabla-ordenes-moto-detalle`, Código deja de estar fijo (Actualizar
+    sigue fijo), la barra se ve más y un aviso indica que se puede deslizar.
+  - **Los 8 cuadros del detalle** (`75b952b`, clase `.moto-kpis`): 2 columnas y sin ícono hasta 768 px.
+    Entre 769 y unos 950 px siguen en 4 columnas y se cortan: se dejó así a pedido del usuario.
 
 - **Estado `anulado` (HECHO en producción).** Confirmado por el usuario: migración
   `velox_agregar_estado_anulado.sql` aplicada, después `git pull` + `pm2 restart velox`, verificado.
@@ -280,7 +299,7 @@ Velox Courier — internal management system for a courier/delivery company in L
     `PATCH /completar-datos`). En la Caja, Motorizados, Clientes y el dashboard sigue "Cobrado":
     ahí es plata ya cobrada (solo entregadas / ausentes). "Total por cobrar" de la Caja es otra
     cosa (lo que la tienda le debe a Velox) y no se tocó.
-  - Scripts en `server/scripts/`: `limpiar_ordenes.sql`, `importar-ordenes-excel.js`,
+  - Scripts en `server/scripts/`: `limpiar_ordenes_y_caja.sql` (del 7/11, ver abajo), `importar-ordenes-excel.js`,
     `leer-xlsx.js`, `revisar_dias_pagados_fecha_reparto.sql`. Migración (gitignored, solo
     en la PC): `velox_agregar_fecha_reparto.sql`, ya aplicada en producción.
   - Backups locales en la carpeta `Backup` de SQL Server:
@@ -401,10 +420,11 @@ Velox Courier — internal management system for a courier/delivery company in L
   `D:\subir sist velox.xlsx` (274 órdenes: 241 entregado, 28 reprogramado, 5 cancelado). Backup
   previo en la carpeta `Backup` de SQL Server: `velox_courier_antes_import_20261022.bak`. Tres
   scripts en `server/scripts/`:
-  - `limpiar_ordenes.sql` — borra `ordenes_fotos`, `caja_pagos_motorizados`,
-    `caja_pagos_tiendas` y `ordenes`, y reinicia el identity (la próxima orden es la id 1). No
-    toca tiendas, motorizados, usuarios, distritos, zonas ni orígenes. Las fotos (R2 o
-    `uploads_local/`) quedan huérfanas: solo se borran sus filas.
+  - `limpiar_ordenes_y_caja.sql` (reemplaza al script de limpieza de ese momento) — vacía `ordenes`,
+    las tablas `caja_*` y todo lo que dependa de ellas por FK, y reinicia sus identity. Los
+    dependientes y el orden de borrado salen del esquema al correr. No toca tiendas, motorizados,
+    usuarios, distritos, zonas ni orígenes. Las fotos (R2 o `uploads_local/`) quedan huérfanas: solo
+    se borran sus filas.
   - `importar-ordenes-excel.js` — sin flags solo valida (nombres que no existen + filas raras) y
     no escribe nada. Con `--insertar --fecha-asignacion=YYYY-MM-DD` crea las tiendas,
     motorizados y distritos que falten e inserta todo en **una transacción** (todo o nada).
@@ -418,12 +438,11 @@ Velox Courier — internal management system for a courier/delivery company in L
     a importar si ya hay órdenes de ese día (salvo `--forzar`).
   - `leer-xlsx.js` — lector de `.xlsx` sin dependencias (el `.xlsx` es un zip con XML).
 
-  **Ya corridos en producción** (limpieza + import del 20/10, ver arriba). Si se vuelven a usar
-  en el servidor: `limpiar_ordenes.sql` borra **TODAS** las órdenes y los pagos de caja (backup
-  antes); se corre con `sa`, porque `velox_user` no alcanza para el backup ni para
-  `DBCC CHECKIDENT` (con `sqlcmd`, el script ya pone `QUOTED_IDENTIFIER ON`; sin eso el DELETE
-  falla por el índice filtrado de `id_creacion`); el import se corre primero sin flags y se
-  revisa la validación antes de `--insertar`.
+  **Ya corridos en producción.** Si se vuelven a usar en el servidor:
+  `limpiar_ordenes_y_caja.sql` borra **TODAS** las órdenes y toda la Caja (backup antes, app parada
+  con `pm2 stop velox` y sin fotos en cola en los teléfonos, porque los ids se reutilizan); se corre
+  con `sa`, porque `velox_user` no alcanza para el backup ni para `DBCC CHECKIDENT`. El import se corre
+  primero sin flags y se revisa la validación antes de `--insertar`.
 
 - **En producción: el motorizado ve sus órdenes el día en que se le asignaron.** Columna
   nueva `ordenes.fecha_asignacion` (migración ya aplicada en producción, ver abajo), la llena `/asignar`. La
@@ -555,9 +574,11 @@ Velox Courier — internal management system for a courier/delivery company in L
   quien llama es motorizado), no solo visual.
 
 **Pendiente:**
-- **Las cajas en producción:** los días pagados con la regla vieja van a decir "Difiere de lo
-  pagado": es esperable. El cuadre se revisa con `node scripts/verificar-cuadre-cajas.js` (desde
-  `server/`).
+- **El cuadre de las cajas** se revisa con `node scripts/verificar-cuadre-cajas.js` (desde `server/`).
+- **Importador de Excel:** `server/scripts/importar-ordenes-excel.js` todavía arranca en 1000. Con la
+  base vacía, sus órdenes saldrían desde C-1001, y las siguientes seguirían desde ahí. Cambiarlo antes
+  de importar.
+- **Fotos huérfanas en R2:** la limpieza del 7/11 borró las filas, no los archivos del bucket.
 - **Clientes / Tiendas sigue con la regla vieja** (`server/routes/tiendas.js:119`: entregado /
   ausente). Quedó fuera de las 3 cajas.
 - **Vistas de la tienda y del moto para ver su propia caja:** próximo paso; el motor ya sirve,
@@ -566,8 +587,6 @@ Velox Courier — internal management system for a courier/delivery company in L
   cerrar, `/resolver` lo rechaza). En motos ya se excluyen; decidir si se hace igual.
 - `/estado`, `/completo` y `/medio-pago` siguen sin bloquear por día pagado: lo pagado no cambia y
   queda "Difiere de lo pagado".
-- Las fechas de pago viejas de motos (`GETDATE()` en UTC) no se corrigieron: en Caja real pueden
-  estar un día corridas.
 - Borrar las 3 fotos de prueba del bucket (`productos/orden-0/`) y, si quedó, la carpeta
   `server/uploads_local/` del servidor (ya no se usa con R2 activo; las fotos de modo prueba
   **no se migran** a R2).

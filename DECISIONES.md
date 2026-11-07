@@ -4,7 +4,7 @@
 > Sirve también como contexto de arranque para Claude Code: si se copia a `CLAUDE.md`
 > en la raíz del repo, la herramienta lo lee automáticamente al iniciar.
 >
-> Última actualización: 6 de noviembre de 2026
+> Última actualización: 7 de noviembre de 2026
 
 ---
 
@@ -543,6 +543,31 @@ dejarla sumando en las cajas.
 **Límites aceptados.** Si el motorizado tiene la pantalla abierta al anularse la orden, se entera al
 intentar cerrarla o en el próximo refresco. Mientras la orden siga anulada, los cambios del formulario
 que no sean el estado no se guardan.
+
+---
+
+## D-015 · Limpieza de la simulación en producción y numeración desde C-1
+
+**Estado:** HECHO en producción el 7 de noviembre de 2026 (confirmado por el usuario, con backup
+previo). Cambio de numeración en `bc98079`, script en `47e52ff`. Sin migración.
+
+**Problema.** Las órdenes y la Caja de producción eran de simulación, y había que arrancar de cero sin
+perder usuarios, tiendas, motorizados ni tarifas. El script anterior ya no alcanzaba: era una lista
+fija, escrita antes de las liquidaciones.
+
+**Decisión.**
+- **`limpiar_ordenes_y_caja.sql` descubre lo que borra:** `ordenes`, las tablas `caja_*` y sus
+  dependientes por FK, directos o indirectos, y de ahí también sale el orden de borrado. Una tabla nueva
+  con FK a estas entra sola. Si una tabla protegida apareciera como dependiente, no borra nada.
+- **Todo o nada:** una transacción con `XACT_ABORT ON`, que antes de confirmar revisa que lo vaciado
+  quedó en 0 y que el resto no cambió.
+- **Se corre con la app parada y con `sa`.** Se probó en una copia local, no en la base de trabajo:
+  falla provocada a mitad de camino, tablas nuevas con FK, tabla protegida dependiente.
+- **C-1:** el código no sale de la base sino de `server/routes/ordenes.js` (`ISNULL(MAX(...), 0) + 1`),
+  así que el script no podía reiniciarlo: se cambió el valor inicial en el código, de 1000 a 0.
+
+**Límites aceptados.** Los archivos de fotos quedan huérfanos en R2. El importador de Excel sigue
+arrancando en 1000 (ver `CLAUDE.md` → "Pendiente").
 
 ---
 

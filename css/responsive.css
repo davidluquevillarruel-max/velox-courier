@@ -282,6 +282,28 @@
   background: var(--color-bg-secondary);
 }
 
+/* Esa misma tabla en pantalla chica: con Código y Actualizar fijos a los
+   dos costados, a 360 px quedaban unos 110 px libres y columnas como
+   Contacto no se llegaban a ver enteras. Se suelta Código (Actualizar
+   sigue fijo), la barra se ve más y un aviso dice que se puede deslizar,
+   porque algunos celulares no muestran la barra hasta que se desliza. */
+.tabla-moto-aviso { display: none; }
+@media (max-width: 768px) {
+  .tabla-moto-aviso {
+    display: block;
+    margin-bottom: 6px;
+    font-size: 12px;
+    color: var(--color-text-secondary);
+  }
+  #tabla-ordenes-moto-detalle th:first-child,
+  #tabla-ordenes-moto-detalle td:first-child {
+    position: static;
+    box-shadow: none;
+  }
+  .tabla-moto-wrap::-webkit-scrollbar { height: 12px; }
+  .tabla-moto-wrap::-webkit-scrollbar-thumb { background: var(--color-text-tertiary); }
+}
+
 /* ══════════════════════════════════════
    ÚLTIMA COLUMNA FIJA — "Clientes / Tiendas"
    La columna "Acciones" (ojo, lápiz, tacho) queda pegada a la

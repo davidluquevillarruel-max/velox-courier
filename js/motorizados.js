@@ -414,7 +414,8 @@ function _renderTablaOrdenesDetalle(ordenes) {
   var cols = ['Código','Tienda','Destinatario','','Distrito','Estado','Método',
               'Delivery','Cobrado','Pago moto','Total moto','Especial','Fecha',''];
 
-  return '<div class="table-wrap"><table id="tabla-ordenes-moto-detalle" style="width:100%;border-collapse:collapse;font-size:12px">' +
+  return '<div class="tabla-moto-aviso"><i class="ti ti-arrows-horizontal"></i> Desliza la tabla a los lados para ver todas las columnas</div>' +
+    '<div class="table-wrap tabla-moto-wrap"><table id="tabla-ordenes-moto-detalle" style="width:100%;border-collapse:collapse;font-size:12px">' +
     '<thead><tr>' +
     cols.map(function(h){
       return '<th style="background:var(--color-bg-secondary);padding:9px 12px;text-align:left;' +

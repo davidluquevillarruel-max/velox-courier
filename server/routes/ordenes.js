@@ -146,7 +146,7 @@ function esDuplicado(err, nombreIndice) {
 async function insertarConCodigoNuevo(pool, insertar) {
   for (let intento = 1; ; intento++) {
     const codRes = await pool.request().query(`
-      SELECT ISNULL(MAX(CAST(SUBSTRING(codigo,3,LEN(codigo)) AS INT)),1000) + 1 AS siguiente
+      SELECT ISNULL(MAX(CAST(SUBSTRING(codigo,3,LEN(codigo)) AS INT)),0) + 1 AS siguiente
       FROM ordenes WHERE codigo LIKE 'C-%'
     `);
     const codigo = `C-${codRes.recordset[0].siguiente}`;
@@ -1528,7 +1528,7 @@ router.patch('/:id/devolver', requireRol(...GESTORES), soloAdminSiAnulada, async
         .query(`UPDATE ordenes SET devuelto = devuelto + 1 WHERE id = @id`);
 
       const codRes = await pool.request().query(`
-        SELECT ISNULL(MAX(CAST(SUBSTRING(codigo,3,LEN(codigo)) AS INT)),1000) + 1 AS siguiente
+        SELECT ISNULL(MAX(CAST(SUBSTRING(codigo,3,LEN(codigo)) AS INT)),0) + 1 AS siguiente
         FROM ordenes WHERE codigo LIKE 'C-%'
       `);
       const nuevoCodigo = `C-${codRes.recordset[0].siguiente}`;

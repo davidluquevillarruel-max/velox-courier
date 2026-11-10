@@ -22,6 +22,12 @@ Velox Courier — internal management system for a courier/delivery company in L
   al servidor, así desaparece aunque no haya señal) y después la sincroniza. Igual en el 409
   `yaResuelta`. El motorizado elige la siguiente con EMPEZAR. Deploy: `git pull` + `pm2 restart
   velox` (o ni eso: es solo un `.js` estático; los motorizados recargan la app).
+- **"Mis entregas de hoy": botón de WhatsApp en cada tarjeta (10 de noviembre de 2026, en local,
+  falta deploy).** `js/entregas-moto.js` + `css/components.css` (`.entrega-item-whatsapp`), sin
+  servidor ni migración. A la izquierda de EMPEZAR (o del aviso "Faltan datos"), el **mismo**
+  `_botonWhatsApp()` de `js/motorizados.js` que usan admin y Pedidos: misma frase, "Adicional" si
+  hay `dest_telefono_2`, "Sin teléfono" si no hay ninguno. No se duplicó la lógica: cambiar la
+  frase allá la cambia en las tres vistas.
 
 - **Limpieza de producción (7 de noviembre de 2026, HECHA).** Confirmado por el usuario: con backup
   previo, corrió `server/scripts/limpiar_ordenes_y_caja.sql`. Las órdenes y toda la Caja eran de

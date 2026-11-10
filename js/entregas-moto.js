@@ -142,6 +142,12 @@ function _pintarEntregasHoy() {
       var accion = pendiente
         ? '<div class="entrega-item-espera"><i class="ti ti-clock-exclamation"></i> Faltan datos: la oficina los está completando</div>'
         : '<button type="button" class="btn-empezar" onclick="empezarEntrega(' + o.id + ')">EMPEZAR</button>';
+      /* El mismo botón de WhatsApp de la vista de admin (_botonWhatsApp, en
+         js/motorizados.js): misma frase, "Adicional" si hay 2.º teléfono y
+         "Sin teléfono" si no hay ninguno */
+      var whatsapp = typeof _botonWhatsApp === 'function'
+        ? '<div class="entrega-item-whatsapp">' + _botonWhatsApp(o.dest_telefono, o.dest_nombre, o.dest_telefono_2) + '</div>'
+        : '';
       /* Misma jerarquía que Asignación (_datosOrdenAsig en js/asignacion.js):
          los datos grandes y en negrita, el código chico al final */
       return '<div class="entrega-item">' +
@@ -150,7 +156,7 @@ function _pintarEntregasHoy() {
           distrito + cliente + cobro +
           '<div class="assign-code">#' + _escEnt(o.codigo) + '</div>' +
         '</div>' +
-        accion +
+        whatsapp + accion +
       '</div>';
     }).join('') + '</div>';
   }

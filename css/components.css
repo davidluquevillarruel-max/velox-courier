@@ -650,6 +650,10 @@
 .entrega-item-datos {
   flex: 1;
 }
+/* WhatsApp al cliente, a la izquierda de EMPEZAR: no se encoge */
+.entrega-item-whatsapp {
+  flex-shrink: 0;
+}
 /* Orden con datos por completar (la oficina los carga): en vez de
    EMPEZAR, el aviso */
 .entrega-item-espera {

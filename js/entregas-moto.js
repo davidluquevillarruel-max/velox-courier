@@ -18,7 +18,8 @@
    js/camara-foto.js, o la galería) y quedan en memoria; recién cuando el servidor
    respondió bien entran a la cola de siempre (encolarFoto, en
    js/cola-fotos.js), que las sube a R2 en segundo plano: el motorizado
-   no espera ninguna subida y pasa directo a la siguiente orden.
+   no espera ninguna subida y vuelve directo a la lista, donde elige
+   la siguiente con EMPEZAR (no se abre ninguna sola).
    La orden cerrada desaparece de esta lista; la tabla de abajo
    (_renderTablaOrdenesDetalle) sigue igual.
    ============================================================ */
@@ -105,6 +106,14 @@ async function _recargarEntregasHoy(inicial) {
     if (inicial) cont.innerHTML = '<div class="entrega-error" style="display:block">' + _escEnt(err.message) + '</div>';
     return;
   }
+  _pintarEntregasHoy();
+}
+
+/* Pinta la lista con lo que hay en _entPendientes, sin ir al servidor
+   (así, al cerrar una orden, desaparece al instante aunque no haya señal) */
+function _pintarEntregasHoy() {
+  var cont = document.getElementById('mis-entregas-hoy');
+  if (!cont) return;
 
   var html =
     '<div class="entregas-hoy-head">' +
@@ -553,7 +562,7 @@ function _pedidoResolverEnt(o, b, modo) {
 }
 
 /* Cierra la orden: PATCH /resolver y, si salió bien, las fotos a la
-   cola y directo a la siguiente orden. Si falla, la pantalla queda
+   cola y de vuelta a la lista. Si falla, la pantalla queda
    como estaba (con las fotos) para reintentar. */
 window.confirmarEntrega = async function(modo) {
   if (!_entOrden || _entGuardando) return;
@@ -587,12 +596,12 @@ window.confirmarEntrega = async function(modo) {
   if (!r.ok) {
     _entGuardando = false;
     /* Ya la cerró alguien (la oficina, u otra pestaña): se saca de la
-       lista y se pasa a la siguiente sin subir estas fotos */
+       lista y se vuelve a ella sin subir estas fotos */
     if (r.status === 409 && data.yaResuelta) {
       if (typeof showNotif === 'function') showNotif(data.error || 'Esta orden ya estaba cerrada', 4000);
       _soltarUrlsEnt(b);
       delete _entBorradores[o.id];
-      return _irASiguienteEnt(o.id);
+      return _volverTrasCerrarEnt(o.id);
     }
     /* Otro usuario la modificó: se toma la versión nueva para que el
        reintento no vuelva a chocar, y se avisa */
@@ -633,36 +642,23 @@ window.confirmarEntrega = async function(modo) {
   if (typeof _renderTablaResumen === 'function') _renderTablaResumen();
   if (typeof _refrescarPanelDetalleSiAbierto === 'function') _refrescarPanelDetalleSiAbierto();
 
-  _irASiguienteEnt(o.id);
+  _volverTrasCerrarEnt(o.id);
 };
 
-/* Modo app: abre directo la siguiente orden pendiente. Sin pendientes,
-   vuelve a la lista (que muestra que se terminó el día). */
-async function _irASiguienteEnt(idCerrada) {
-  var anterior = _entPendientes.map(function(x) { return x.id; });
-  try {
-    _entPendientes = await _cargarPendientesHoy();
-  } catch (err) {
-    /* Sin red para recargar: se sigue con la lista que había */
-    _entPendientes = _entPendientes.filter(function(x) { return x.id != idCerrada; });
-  }
-  _entUltimoHtml = null;
+/* Después de cerrar una orden se vuelve SIEMPRE a la lista "Mis entregas
+   de hoy" (nunca se abre otra sola): el motorizado elige la siguiente con
+   EMPEZAR. La cerrada se saca al instante y después se sincroniza con el
+   servidor (si no hay señal, queda la lista local sin la cerrada). */
+function _volverTrasCerrarEnt(idCerrada) {
+  var ov = document.getElementById('entrega-overlay');
+  if (ov) ov.style.display = 'none';
+  _entOrden = null;
+
+  _entPendientes = _entPendientes.filter(function(x) { return x.id != idCerrada; });
+  _pintarEntregasHoy();
   _recargarEntregasHoy(false);
 
-  /* La que seguía en la lista; si ya no está, la primera que quede */
-  /* Las que todavía tienen datos por completar no se abren */
-  var listas = _entPendientes.filter(function(x) { return !x.datos_pendientes; });
-  var desde = anterior.indexOf(idCerrada);
-  var siguiente = null;
-  for (var i = desde + 1; i < anterior.length && !siguiente; i++) {
-    siguiente = listas.find(function(x) { return x.id == anterior[i]; }) || null;
-  }
-  siguiente = siguiente || listas.find(function(x) { return x.id != idCerrada; }) || null;
-
-  if (siguiente) {
-    empezarEntrega(siguiente.id);
-  } else {
-    volverAListaEntregas();
-    if (typeof showNotif === 'function') showNotif('¡Terminaste las entregas de hoy!', 3500);
+  if (!_entPendientes.length && typeof showNotif === 'function') {
+    showNotif('¡Terminaste las entregas de hoy!', 3500);
   }
 }

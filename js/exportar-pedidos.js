@@ -361,17 +361,56 @@ function _descargarArchivo(contenido, tipo, nombre) {
   setTimeout(function() { URL.revokeObjectURL(url); }, 1000);
 }
 
-/* Fotos de las órdenes a exportar: { "<id>": [{tipo, url}] }. Si no
-   llegan, no se descarga (un archivo sin las URLs parecería completo) */
+/* Fotos de las órdenes a exportar: { fotos: { "<id>": [{tipo, url}] },
+   fallaron: N }. NUNCA lanza ni frena la descarga: se piden de a
+   _EXPORT_IDS_POR_PEDIDO (el servidor no acepta cuerpos de más de
+   100 KB) y con un tiempo máximo total; lo que no llega, o llega mal,
+   queda vacío y se cuenta en "fallaron" para avisar. */
+var _EXPORT_IDS_POR_PEDIDO = 2000;
+var _EXPORT_ESPERA_FOTOS_MS = 15000;
+
 async function _fotosParaExport(ordenes) {
-  var r = await fetch(API + '/ordenes/fotos-export', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ids: ordenes.map(function(o) { return o.id; }) }),
-  });
-  var data = await r.json().catch(function() { return {}; });
-  if (!r.ok) throw new Error(data.error || 'No se pudieron traer las fotos');
-  return data;
+  var ids = ordenes.map(function(o) { return o.id; });
+  var fotos = {}, fallaron = 0;
+  var control = typeof AbortController === 'function' ? new AbortController() : null;
+  var timer = control ? setTimeout(function() { control.abort(); }, _EXPORT_ESPERA_FOTOS_MS) : null;
+
+  for (var i = 0; i < ids.length; i += _EXPORT_IDS_POR_PEDIDO) {
+    var tanda = ids.slice(i, i + _EXPORT_IDS_POR_PEDIDO);
+    try {
+      var r = await fetch(API + '/ordenes/fotos-export', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: tanda }),
+        signal: control ? control.signal : undefined,
+      });
+      var data = r.ok ? await r.json() : null;
+      if (!data || typeof data !== 'object') throw new Error('HTTP ' + r.status);
+      Object.keys(data).forEach(function(id) { if (Array.isArray(data[id])) fotos[id] = data[id]; });
+    } catch (err) {
+      console.warn('Export: fotos de ' + tanda.length + ' órdenes no llegaron:', err.message || err);
+      fallaron += tanda.length;
+    }
+  }
+  if (timer) clearTimeout(timer);
+  return { fotos: fotos, fallaron: fallaron };
+}
+
+/* Una fila nunca deja sin descarga: si una orden trae un dato raro y el
+   armado falla, sale con lo básico en vez de cortar el archivo */
+function _filaSegura(o, fotosDeOrden) {
+  var base;
+  try {
+    base = filaExportOrden(o);
+  } catch (err) {
+    console.warn('Export: orden ' + (o && o.id) + ' con datos raros:', err.message);
+    base = _EXPORT_COLUMNAS.map(function() { return ''; });
+    base[0] = (o && o.fecha) || ''; base[2] = (o && o.tienda) || ''; base[4] = (o && o.dest_nombre) || '';
+  }
+  var celdas;
+  try { celdas = celdasFotosExport(fotosDeOrden); }
+  catch (err) { celdas = _EXPORT_COLUMNAS_FOTOS.map(function() { return ''; }); }
+  return base.concat(celdas);
 }
 
 var _exportando = false;
@@ -384,20 +423,17 @@ window.exportarPedidos = async function(formato) {
     return;
   }
 
-  var fotosPorOrden;
   _exportando = true;
+  var resFotos;
   try {
-    fotosPorOrden = await _fotosParaExport(ordenes);
+    resFotos = await _fotosParaExport(ordenes);
   } catch (err) {
-    if (typeof showNotif === 'function') showNotif('No se pudo descargar: ' + err.message + '. Prueba de nuevo.', 5000);
-    return;
+    resFotos = { fotos: {}, fallaron: ordenes.length };   /* no debería pasar: igual se descarga */
   } finally {
     _exportando = false;
   }
 
-  var filas = ordenes.map(function(o) {
-    return filaExportOrden(o).concat(celdasFotosExport(fotosPorOrden[o.id]));
-  });
+  var filas = ordenes.map(function(o) { return _filaSegura(o, resFotos.fotos[o.id]); });
   if (formato === 'csv') {
     _descargarArchivo(generarCsvPedidos(filas), 'text/csv;charset=utf-8', _nombreArchivoPedidos('csv'));
   } else {
@@ -405,7 +441,14 @@ window.exportarPedidos = async function(formato) {
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', _nombreArchivoPedidos('xlsx'));
   }
   if (typeof showNotif === 'function') {
-    showNotif('Descargando ' + ordenes.length + (ordenes.length === 1 ? ' orden' : ' órdenes'));
+    var cuantas = ordenes.length + (ordenes.length === 1 ? ' orden' : ' órdenes');
+    if (!resFotos.fallaron) {
+      showNotif('Descargando ' + cuantas);
+    } else if (resFotos.fallaron >= ordenes.length) {
+      showNotif('Se descargaron ' + cuantas + ' sin las URLs de las fotos (no se pudieron traer). Prueba de nuevo para tenerlas.', 7000);
+    } else {
+      showNotif('Se descargaron ' + cuantas + '; a ' + resFotos.fallaron + ' les faltan las URLs de las fotos (no se pudieron traer).', 7000);
+    }
   }
 };
 

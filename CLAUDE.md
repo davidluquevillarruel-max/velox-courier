@@ -47,10 +47,15 @@ Velox Courier — internal management system for a courier/delivery company in L
   tienda") + "Fotos otros tipos (URL)" para un tipo que no esté en la lista. Varias del mismo
   tipo en una celda, separadas por `" | "`, en el orden en que se subieron. Las fotos salen de
   **`POST /ordenes/fotos-export {ids}`** (nuevo, antes de `GET /:id`): de a 1000 ids por consulta,
-  tope 20 000, alcance por `filtroPorRol` y tipos por rol (`tiposFotoVisiblesExport`: gestores
-  todos, motorizado sin devolución, tienda solo producto, visor ninguno). Si ese pedido falla no
-  se descarga nada (un archivo sin URLs parecería completo). **Un tipo de foto nuevo se suma
-  también a `_EXPORT_COLUMNAS_FOTOS`.**
+  tope **5000 por pedido** (el cuerpo JSON no puede pasar de 100 KB con `express.json()`), alcance
+  por `filtroPorRol` y tipos por rol (`tiposFotoVisiblesExport`: gestores todos, motorizado sin
+  devolución, tienda solo producto, visor ninguno). El frontend pide de a 2000 ids
+  (`_EXPORT_IDS_POR_PEDIDO`) con 15 s máximo en total. **La descarga nunca se bloquea por las
+  fotos:** si un pedido falla, tarda o el servidor no tiene la ruta, el archivo sale igual con
+  esas celdas vacías y un aviso no bloqueante ("sin las URLs de las fotos" / "a N les faltan");
+  una orden con un dato raro sale con lo básico (`_filaSegura`). **Un tipo de foto nuevo se suma
+  también a `_EXPORT_COLUMNAS_FOTOS`.** El 10/11 el "No se pudieron traer las fotos" del usuario
+  era el servidor local viejo (arrancado antes del commit `cd8b257`): la ruta no existía (404).
 
 - **Limpieza de producción (7 de noviembre de 2026, HECHA).** Confirmado por el usuario: con backup
   previo, corrió `server/scripts/limpiar_ordenes_y_caja.sql`. Las órdenes y toda la Caja eran de

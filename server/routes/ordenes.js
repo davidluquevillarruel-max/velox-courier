@@ -464,7 +464,10 @@ router.get('/pendientes-datos/total', requireRol(...GESTORES), async (req, res) 
    (filtroPorRol); los gestores ven todos los tipos, el motorizado
    todos menos los de devolución, la tienda solo la del producto y el
    visor ninguna. */
-const MAX_IDS_FOTOS_EXPORT = 20000;
+/* Tope por pedido: el frontend manda de a 2000. Con express.json() el
+   cuerpo no puede pasar de 100 KB (unos 14 000 ids), así que el tope
+   tiene que quedar bien por debajo de eso. */
+const MAX_IDS_FOTOS_EXPORT = 5000;
 const IDS_POR_CONSULTA     = 1000;   /* SQL Server admite hasta 2100 parámetros */
 
 function tiposFotoVisiblesExport(rol) {

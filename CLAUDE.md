@@ -28,6 +28,16 @@ Velox Courier — internal management system for a courier/delivery company in L
   `_botonWhatsApp()` de `js/motorizados.js` que usan admin y Pedidos: misma frase, "Adicional" si
   hay `dest_telefono_2`, "Sin teléfono" si no hay ninguno. No se duplicó la lógica: cambiar la
   frase allá la cambia en las tres vistas.
+- **"Actualizar orden": todas las fotos de la orden (10 de noviembre de 2026, en local, falta
+  deploy).** Solo `js/motorizados.js`, sin servidor ni migración: `GET /ordenes/:id` ya devolvía
+  `fotos` con todos los tipos que el rol puede ver. El bloque "Fotos del motorizado" pasó a ser
+  **"Fotos de la orden"** (`_seccionFotosOrdenHTML`, lista `_GRUPOS_FOTOS_ORDEN`): un grupo por
+  tipo de `ordenes_fotos`, solo los que tienen fotos, en el orden del flujo (Producto, Entrega,
+  Cambio, Pago, Reprogramado, Ausente, Cancelado, No entregado, Devolución, Devolución tienda) y
+  un grupo "Otras" para un tipo que no esté en la lista. Mismo visor de siempre
+  (`verFotoEnSeccion`). **Un tipo de foto nuevo se suma también a `_GRUPOS_FOTOS_ORDEN`**, con su
+  nombre. El ícono grande de la foto del producto y los botones de devolución de la zona
+  amarilla/verde siguen donde estaban.
 
 - **Limpieza de producción (7 de noviembre de 2026, HECHA).** Confirmado por el usuario: con backup
   previo, corrió `server/scripts/limpiar_ordenes_y_caja.sql`. Las órdenes y toda la Caja eran de

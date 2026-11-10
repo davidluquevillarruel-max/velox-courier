@@ -979,7 +979,7 @@ function _renderModalActualizarOrden(orden, tiendas, distritos, motorizados) {
   var fotosDevolucionHTML = _fotosDevolucionHTML(fotosOrden.filter(function(f) {
     return f.tipo === 'foto_devolucion' || f.tipo === 'foto_devolucion_tienda';
   }));
-  var seccionFotosEntrega = _seccionFotosEntregaHTML(fotosOrden, orden.motivo_no_entrega);
+  var seccionFotosOrden = _seccionFotosOrdenHTML(fotosOrden, orden.motivo_no_entrega);
   var codigoAttr = String(orden.codigo || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;');
 
   var seccionDevuelto = '';
@@ -1048,7 +1048,7 @@ function _renderModalActualizarOrden(orden, tiendas, distritos, motorizados) {
         '<button onclick="cerrarActualizarEstadoOrden()" style="background:none;border:none;cursor:pointer;font-size:18px;color:var(--color-text-secondary)"><i class="ti ti-x"></i></button>' +
       '</div>' +
       seccionFotoProducto +
-      seccionFotosEntrega +
+      seccionFotosOrden +
       '<div style="display:flex;flex-direction:column;gap:14px">' +
 
         '<div>' +
@@ -1543,33 +1543,46 @@ function _fotosDevolucionHTML(fotos) {
     '</div>';
 }
 
-/* Las que toma el motorizado al cerrar la orden (js/entregas-moto.js),
-   cada una en su lugar, más el motivo del último intento fallido */
-var _GRUPOS_FOTOS_ENTREGA = [
-  { tipo: 'foto_entrega',         label: 'Entrega' },
-  { tipo: 'foto_cambio',          label: 'Cambio' },
-  { tipo: 'evidencia_medio_pago', label: 'Pago' },
-  { tipo: 'foto_reprogramado',    label: 'Reprogramado' },
-  { tipo: 'foto_ausente',         label: 'Ausente' },
-  { tipo: 'foto_cancelado',       label: 'Cancelado' },
-  { tipo: 'foto_no_entregado',    label: 'No entregado' },
+/* TODAS las fotos de la orden (ordenes_fotos, por tipo), en el orden
+   del flujo: producto → lo que toma el motorizado al cerrarla
+   (js/entregas-moto.js) → devoluciones de la oficina. Un grupo por tipo,
+   solo si ese tipo tiene fotos. Un tipo que no esté en esta lista sale
+   igual, en "Otras", para que ninguna foto quede escondida. Las que este
+   rol no puede ver ya no vienen del servidor (GET /ordenes/:id). */
+var _GRUPOS_FOTOS_ORDEN = [
+  { tipo: 'foto_producto',          label: 'Producto' },
+  { tipo: 'foto_entrega',           label: 'Entrega' },
+  { tipo: 'foto_cambio',            label: 'Cambio' },
+  { tipo: 'evidencia_medio_pago',   label: 'Pago' },
+  { tipo: 'foto_reprogramado',      label: 'Reprogramado' },
+  { tipo: 'foto_ausente',           label: 'Ausente' },
+  { tipo: 'foto_cancelado',         label: 'Cancelado' },
+  { tipo: 'foto_no_entregado',      label: 'No entregado' },
+  { tipo: 'foto_devolucion',        label: 'Devolución' },
+  { tipo: 'foto_devolucion_tienda', label: 'Devolución tienda' },
 ];
 
-function _seccionFotosEntregaHTML(fotos, motivo) {
-  var grupos = _GRUPOS_FOTOS_ENTREGA.map(function(g) {
+function _grupoFotosOrdenHTML(label, deEste) {
+  return '<div class="fotos-orden-grupo">' +
+      '<span class="fotos-orden-grupo-label">' + _escFoto(label) + '</span>' +
+      deEste.map(function(f, i) {
+        return _botonFotoOrden(f, deEste.length > 1 ? String(i + 1) : 'Ver', 'Foto: ' + label.toLowerCase());
+      }).join('') +
+    '</div>';
+}
+
+function _seccionFotosOrdenHTML(fotos, motivo) {
+  var conocidos = _GRUPOS_FOTOS_ORDEN.map(function(g) { return g.tipo; });
+  var grupos = _GRUPOS_FOTOS_ORDEN.map(function(g) {
     var deEste = fotos.filter(function(f) { return f.tipo === g.tipo; });
-    if (!deEste.length) return '';
-    return '<div class="fotos-orden-grupo">' +
-        '<span class="fotos-orden-grupo-label">' + g.label + '</span>' +
-        deEste.map(function(f, i) {
-          return _botonFotoOrden(f, deEste.length > 1 ? String(i + 1) : 'Ver', 'Foto: ' + g.label.toLowerCase());
-        }).join('') +
-      '</div>';
+    return deEste.length ? _grupoFotosOrdenHTML(g.label, deEste) : '';
   }).join('');
+  var otras = fotos.filter(function(f) { return conocidos.indexOf(f.tipo) === -1; });
+  if (otras.length) grupos += _grupoFotosOrdenHTML('Otras', otras);
   if (!grupos && !motivo) return '';
 
   return '<div data-fotos-seccion style="background:var(--color-bg-secondary);border-radius:var(--radius-md);padding:10px 12px;margin-bottom:12px;display:flex;flex-direction:column;gap:6px">' +
-      '<div style="font-size:12px;font-weight:600;color:var(--color-text-secondary)">Fotos del motorizado</div>' +
+      '<div style="font-size:12px;font-weight:600;color:var(--color-text-secondary)">Fotos de la orden</div>' +
       grupos +
       (motivo ? '<div style="font-size:12px;color:var(--color-text-secondary)">Motivo del último intento: <strong style="color:var(--color-text-primary)">' + _escFoto(motivo) + '</strong></div>' : '') +
       _vistaPreviaFotosHTML() +

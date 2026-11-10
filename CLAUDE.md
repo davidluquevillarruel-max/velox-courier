@@ -12,6 +12,32 @@ Velox Courier — internal management system for a courier/delivery company in L
 
 Última actualización: 10 de noviembre de 2026.
 
+- **Reporte del día de una tienda como IMAGEN (10 de noviembre de 2026, en local, falta que el usuario
+  lo pruebe; sin migración).** En el detalle de "Clientes / Tiendas", **solo admin**: "Generar
+  reporte dd/mm" (el día de la primera pestaña, el mismo de "Enviar resumen", que no cambió) y, ya
+  generado, "Ver imagen (hh:mm)" + "Copiar" (copia la URL). `js/reporte-tienda.js` (nuevo, `<script>`
+  antes de `clientes.js`), `js/clientes.js`, `index.html`, `server/routes/caja.js`, `server/r2.js`.
+  **Toca el servidor:** hay que reiniciarlo.
+  - **Datos:** `GET /caja/tiendas/:id/reporte?fecha=` (solo admin): TODOS los pedidos del día menos
+    los anulados, cada uno con `calcularOrdenCaja()` (los no cobrables, en 0), resumen por estado,
+    totales (delivery, retenido = "cobrado al cliente, lo tiene Velox", saldo) y `liquidado` si el
+    día ya se pagó (`fecha_pago`, `saldo_pagado`, `difiere`). Probado: el saldo coincide con la Caja.
+  - **Imagen:** se dibuja a mano en un `<canvas>` del navegador (`dibujarReporteTienda`, 1080 px de
+    ancho y alto según los pedidos), sin librerías ni trabajo en el servidor. La paleta va en el JS
+    (`_REP_COLOR`): el canvas no lee variables CSS y la imagen sale igual con cualquier tema.
+  - **R2:** `POST /caja/tiendas/:id/reporte/subida {fecha}` (solo admin) da un PUT firmado a
+    `reportes/tienda-<id>/<fecha>-<firma>.png`. La firma es un HMAC de tienda + fecha con
+    `JWT_SECRET`: **siempre la misma URL para esa tienda y día** (regenerar pisa el archivo), pero
+    no se puede adivinar la de otra tienda. Sin tabla: "ya generado" y la hora salen de un `HEAD` a
+    R2 (`infoReporte`). Se sube con `Cache-Control: no-cache, max-age=0`. Si se rota `JWT_SECRET`,
+    los reportes ya enviados quedan en su URL vieja y los nuevos salen con otra.
+  - **⚠️ Requisito en Cloudflare (lo hace el usuario):** el CORS del bucket tiene que permitir el
+    encabezado `cache-control` además de `content-type`. Sin eso, el PUT del navegador falla y
+    sale el aviso "revisá que el CORS del bucket permita cache-control".
+  - Probado el 10/11 contra la base local y R2: permisos (operador 403), fecha/tienda inválidas, la
+    misma URL al regenerar, `no-cache` guardado en R2 y el dibujo con datos reales (día normal y
+    día liquidado). Quedó un PNG de prueba de 1×1 en `reportes/tienda-2280/2026-10-01-…png` (la
+    tienda "PRUEBA CAJA" de local); se pisa al generar ese reporte.
 - **Cambios del 10 de noviembre de 2026: los 4 de abajo, HECHOS en producción.** Confirmado por el
   usuario el 10/11 ("subido"): `git pull` + `pm2 restart velox`, sin migración. Último commit en
   producción: `a7938a0` (código hasta `2773762`). Los motorizados con la app abierta tienen que
@@ -633,7 +659,9 @@ Velox Courier — internal management system for a courier/delivery company in L
   de importar.
 - **Fotos huérfanas en R2:** la limpieza del 7/11 borró las filas, no los archivos del bucket.
 - **Clientes / Tiendas sigue con la regla vieja** (`server/routes/tiendas.js:119`: entregado /
-  ausente). Quedó fuera de las 3 cajas.
+  ausente). Quedó fuera de las 3 cajas. El **texto** de "Enviar resumen" por WhatsApp
+  (`_construirMensajeResumenTienda`) también usa la regla vieja, así que su saldo puede no coincidir
+  con la Caja ni con el reporte en imagen, que sí usa el motor.
 - **Vistas de la tienda y del moto para ver su propia caja:** próximo paso; el motor ya sirve,
   falta construirlas con el alcance por sesión (`filtroPorRol`).
 - **"Marcar pagado" de tiendas sigue liquidando días con órdenes en proceso** (después no se pueden

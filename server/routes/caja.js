@@ -16,9 +16,13 @@ const { requireAuth, requireRol } = require('../middleware/auth');
 const {
   r2Habilitado, generarUrlSubidaPagoTienda, esUrlDePagoTienda,
   generarUrlSubidaPagoMoto, esUrlDePagoMoto,
+  generarUrlSubidaReporte, infoReporte,
 } = require('../r2');
 const { guardarFoto, rutaArchivo, existeFoto } = require('../almacenamiento-local');
-const { aCentimos, aSoles, filtroFecha, ordenesCaja, ordenesPrepagadas, cuadreCaja } = require('../caja-motor');
+const {
+  aCentimos, aSoles, filtroFecha, ordenesCaja, ordenesPrepagadas, cuadreCaja,
+  calcularOrdenCaja, ESTADO_ANULADO,
+} = require('../caja-motor');
 
 /* Caja maneja dinero: solo admin y operador, sin excepción */
 router.use(requireAuth);
@@ -234,6 +238,115 @@ router.get('/tiendas/:id/detalle', async (req, res) => {
   } catch (err) {
     console.error('GET /caja/tiendas/:id/detalle:', err.message);
     res.status(500).json({ error: 'Error al obtener el detalle de la tienda' });
+  }
+});
+
+/* ════════════════════════════════════════════════════════════
+   REPORTE DEL DÍA DE UNA TIENDA (imagen, en Clientes / Tiendas)
+   Solo admin. El navegador lo dibuja (js/reporte-tienda.js) con estos
+   datos y lo sube a R2 con el PUT firmado de abajo. La plata sale del
+   mismo motor que la Caja (calcularOrdenCaja), así el saldo coincide.
+   A diferencia de ordenesCaja(), trae TODOS los pedidos del día (menos
+   los anulados): los no cobrables, como un reprogramado, van con 0.
+   ════════════════════════════════════════════════════════════ */
+
+/* Tienda + fecha válidas del pedido, o responde el error y da null */
+async function leerTiendaYFecha(req, res, pool, fechaCruda) {
+  const idTienda = parseInt(req.params.id, 10);
+  const fecha = FECHA_RE.test(fechaCruda || '') ? fechaCruda : '';
+  if (!idTienda) { res.status(400).json({ error: 'Tienda no válida' }); return null; }
+  if (!fecha)    { res.status(400).json({ error: 'Fecha no válida (YYYY-MM-DD)' }); return null; }
+  const t = await pool.request().input('id', sql.Int, idTienda)
+    .query('SELECT id, nombre FROM tiendas WHERE id = @id');
+  if (!t.recordset.length) { res.status(404).json({ error: 'Tienda no encontrada' }); return null; }
+  return { idTienda, fecha, tienda: t.recordset[0].nombre };
+}
+
+/* GET /api/caja/tiendas/:id/reporte?fecha=YYYY-MM-DD */
+router.get('/tiendas/:id/reporte', requireRol('admin'), async (req, res) => {
+  try {
+    const pool = await getPool();
+    const base = await leerTiendaYFecha(req, res, pool, req.query.fecha);
+    if (!base) return;
+    const { idTienda, fecha, tienda } = base;
+
+    const r = await pool.request()
+      .input('id_tienda', sql.Int, idTienda)
+      .input('fecha', sql.Date, fecha)
+      .query(`
+        SELECT o.id, o.codigo, o.estado, o.metodo_pago, o.medio_pago, o.pago_velox, o.pago_velox_metodo,
+               o.delivery_total, o.pago_moto_total, o.monto_cobrado, o.id_motorizado,
+               o.dest_nombre, d.nombre AS distrito
+        FROM ordenes o
+        LEFT JOIN distritos d ON d.id = o.id_distrito
+        WHERE o.id_tienda = @id_tienda AND o.fecha_reparto = @fecha AND o.estado <> '${ESTADO_ANULADO}'
+        ORDER BY o.id`);
+
+    const tot = { delivery: 0, retenido: 0, saldo: 0 };
+    const resumen = { pedidos: 0, entregados: 0, ausentes: 0, devoluciones: 0,
+                      reprogramados: 0, no_entregados: 0, cancelados: 0, en_proceso: 0 };
+    const CLAVE_RESUMEN = { 'entregado': 'entregados', 'ausente': 'ausentes', 'devolucion': 'devoluciones',
+                            'reprogramado': 'reprogramados', 'no-entregado': 'no_entregados',
+                            'cancelado': 'cancelados', 'en-proceso': 'en_proceso' };
+    const pedidos = r.recordset.map((o) => {
+      const c = calcularOrdenCaja(o);
+      tot.delivery += c.delivery; tot.retenido += c.retenido; tot.saldo += c.saldo_tienda;
+      resumen.pedidos++;
+      if (CLAVE_RESUMEN[o.estado]) resumen[CLAVE_RESUMEN[o.estado]]++;
+      return {
+        codigo: o.codigo, dest_nombre: o.dest_nombre, distrito: o.distrito,
+        estado: o.estado, metodo_pago: o.metodo_pago, medio_pago: o.medio_pago,
+        prepago: c.es_prepago, cobrable: c.cobrable,
+        delivery: aSoles(c.delivery), retenido: aSoles(c.retenido), saldo: aSoles(c.saldo_tienda),
+      };
+    });
+
+    /* Día ya liquidado ("Marcar pagado"): se muestra el saldo igual, con
+       la marca; saldo_pagado es lo que se guardó al pagar */
+    const pagado = await pool.request()
+      .input('id_tienda', sql.Int, idTienda)
+      .input('fecha', sql.Date, fecha)
+      .query(`SELECT TOP 1 CONVERT(varchar, fecha_pago, 23) AS fecha_pago, monto_cobrar, monto_devolver
+              FROM caja_pagos_tiendas
+              WHERE id_tienda = @id_tienda AND fecha_ciclo = @fecha AND pagado = 1`);
+    const p = pagado.recordset[0];
+    const liquidado = p ? {
+      fecha_pago: p.fecha_pago,
+      saldo_pagado: aSoles(aCentimos(p.monto_cobrar) - aCentimos(p.monto_devolver)),
+      difiere: aCentimos(p.monto_cobrar) - aCentimos(p.monto_devolver) !== tot.saldo,
+    } : null;
+
+    res.json({
+      tienda: { id: idTienda, nombre: tienda },
+      fecha,
+      resumen,
+      pedidos,
+      totales: { delivery: aSoles(tot.delivery), retenido: aSoles(tot.retenido), saldo: aSoles(tot.saldo) },
+      liquidado,
+      r2: r2Habilitado(),
+      reporte: r2Habilitado() ? await infoReporte(idTienda, fecha) : null,
+    });
+  } catch (err) {
+    console.error('GET /caja/tiendas/:id/reporte:', err.message);
+    res.status(500).json({ error: 'Error al armar el reporte de la tienda' });
+  }
+});
+
+/* POST /api/caja/tiendas/:id/reporte/subida { fecha } → PUT firmado a
+   reportes/tienda-<id>/<fecha>-<firma>.png (siempre el mismo archivo
+   para esa tienda y fecha: regenerar lo pisa) */
+router.post('/tiendas/:id/reporte/subida', requireRol('admin'), async (req, res) => {
+  try {
+    if (!r2Habilitado()) {
+      return res.status(503).json({ error: 'El almacenamiento de imágenes (R2) no está configurado.' });
+    }
+    const pool = await getPool();
+    const base = await leerTiendaYFecha(req, res, pool, req.body && req.body.fecha);
+    if (!base) return;
+    res.json(await generarUrlSubidaReporte(base.idTienda, base.fecha));
+  } catch (err) {
+    console.error('POST /caja/tiendas/:id/reporte/subida:', err.message);
+    res.status(500).json({ error: 'No se pudo preparar la subida del reporte' });
   }
 });
 

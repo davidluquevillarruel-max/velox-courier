@@ -19,7 +19,7 @@
    opcional hasta que se complete el setup (ver DECISIONES.md D-003).
    ============================================================ */
 
-const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
+const { S3Client, PutObjectCommand, HeadObjectCommand } = require('@aws-sdk/client-s3');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 const crypto = require('crypto');
 
@@ -116,6 +116,60 @@ async function firmarSubida(carpeta, contentType, ext, idSubida) {
   return { uploadUrl, publicUrl };
 }
 
+/* ── Reporte del día de una tienda (imagen PNG, Clientes / Tiendas) ──
+   No es una foto: lo dibuja el navegador (js/reporte-tienda.js) y se
+   sube con el mismo PUT firmado. El nombre es FIJO por tienda + fecha,
+   así "Generar de nuevo" pisa el mismo archivo y la URL no cambia,
+   pero lleva una firma HMAC para que no se pueda adivinar la URL de
+   otra tienda cambiando el número. No se guarda nada en la BD:
+   la URL se vuelve a calcular y "cuándo" sale del LastModified de R2.
+   Cache-Control no-cache: al regenerar, el navegador no muestra la
+   vieja (el CORS del bucket tiene que permitir el encabezado
+   cache-control, además de content-type). */
+const CARPETA_REPORTES = 'reportes';
+const CACHE_REPORTE = 'no-cache, max-age=0';
+
+function claveReporteTienda(idTienda, fecha) {
+  const secreto = process.env.JWT_SECRET;
+  if (!secreto) throw new Error('Falta JWT_SECRET para firmar el nombre del reporte');
+  const id = parseInt(idTienda, 10);
+  const firma = crypto.createHmac('sha256', secreto)
+    .update(`velox-reporte-tienda|${id}|${fecha}`).digest('hex').slice(0, 16);
+  return `${CARPETA_REPORTES}/tienda-${id}/${fecha}-${firma}.png`;
+}
+
+function urlPublicaDe(clave) {
+  return `${process.env.R2_PUBLIC_URL.replace(/\/$/, '')}/${clave}`;
+}
+
+/* PUT firmado (5 min) del reporte. El navegador tiene que mandar
+   exactamente estos dos encabezados (van firmados). */
+async function generarUrlSubidaReporte(idTienda, fecha) {
+  const clave = claveReporteTienda(idTienda, fecha);
+  const comando = new PutObjectCommand({
+    Bucket: process.env.R2_BUCKET,
+    Key: clave,
+    ContentType: 'image/png',
+    CacheControl: CACHE_REPORTE,
+  });
+  const uploadUrl = await getSignedUrl(getCliente(), comando, { expiresIn: 300 });
+  return { uploadUrl, publicUrl: urlPublicaDe(clave), headers: { 'Content-Type': 'image/png', 'Cache-Control': CACHE_REPORTE } };
+}
+
+/* { url, generado_en } si el reporte ya existe en R2; null si no
+   existe o no se pudo consultar (no es motivo para cortar nada) */
+async function infoReporte(idTienda, fecha) {
+  const clave = claveReporteTienda(idTienda, fecha);
+  try {
+    const r = await getCliente().send(new HeadObjectCommand({ Bucket: process.env.R2_BUCKET, Key: clave }));
+    return { url: urlPublicaDe(clave), generado_en: r.LastModified ? r.LastModified.toISOString() : null };
+  } catch (err) {
+    const status = err && err.$metadata && err.$metadata.httpStatusCode;
+    if (status !== 404) console.warn('R2 HEAD reporte:', err.name || err.message);
+    return null;
+  }
+}
+
 /* true si la URL es una foto de NUESTRO bucket y de ESA orden. Evita
    que un cliente registre como evidencia una URL cualquiera. */
 function esUrlDeOrden(url, ordenId) {
@@ -135,6 +189,7 @@ const esUrlDePagoTienda = (url, id) => esUrlDeLiquidacion(CARPETA_PAGOS_TIENDA, 
 const esUrlDePagoMoto = (url, id) => esUrlDeLiquidacion(CARPETA_PAGOS_MOTO, url, id);
 
 module.exports = {
+  generarUrlSubidaReporte, infoReporte,
   r2Habilitado, generarUrlSubidaEvidencia, esUrlDeOrden, TIPOS_PERMITIDOS,
   generarUrlSubidaPagoTienda, esUrlDePagoTienda,
   generarUrlSubidaPagoMoto, esUrlDePagoMoto,

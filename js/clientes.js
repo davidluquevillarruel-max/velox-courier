@@ -534,6 +534,9 @@ window.renderDetalleTienda = async function(tiendaId) {
     fechas = [_filtroDesdeClientes].concat(fechas.filter(function(f){ return f !== _filtroDesdeClientes; }));
   }
   window._detalleMapaFechaCache = mapaFecha; /* para enviarResumenWP */
+  /* Día del reporte en imagen (js/reporte-tienda.js): el mismo que usa
+     "Enviar resumen" (la primera pestaña); sin órdenes, el del filtro */
+  var fechaReporte = fechas[0] || _filtroDesdeClientes || _hoyCli();
 
   var estadoT  = tot.saldo > 0 ? 'Deuda' : tot.saldo < 0 ? 'Dev. pendiente' : 'Al día';
   var badgeEstadoMap = { 'Al día':'entregado', 'Dev. pendiente':'ausente', 'Deuda':'no-entregado' };
@@ -557,7 +560,8 @@ window.renderDetalleTienda = async function(tiendaId) {
           '</div>' +
         '</div>' +
       '</div>' +
-      '<div style="display:flex;gap:8px;align-items:center">' +
+      '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">' +
+        (typeof botonesReporteTiendaHTML === 'function' ? botonesReporteTiendaHTML(tienda.id, fechaReporte) : '') +
         (tienda.telefono
           ? '<button class="btn btn-sm" style="background:#25D366;color:#fff;border-color:#25D366;font-weight:600" ' +
               'onclick="enviarResumenWP(\'' + tienda.telefono + '\',\'' + tienda.nombre.replace(/'/g,"\\'") + '\')">' +

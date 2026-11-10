@@ -454,6 +454,61 @@ router.get('/pendientes-datos/total', requireRol(...GESTORES), async (req, res) 
   }
 });
 
+/* ── POST /api/ordenes/fotos-export ──────────────────────────
+   Las fotos de varias órdenes de una vez, para las columnas de URLs
+   del "Descargar Excel / CSV" de "Todos los pedidos"
+   (js/exportar-pedidos.js). Body: { ids: [..] } (POST porque pueden
+   ser miles y no entran en una URL). Devuelve { "<id>": [{tipo, url}] }
+   en el orden en que se subieron. Mismas reglas que GET /:id y
+   puedeVerFotoOrden: el alcance de órdenes sale de la sesión
+   (filtroPorRol); los gestores ven todos los tipos, el motorizado
+   todos menos los de devolución, la tienda solo la del producto y el
+   visor ninguna. */
+const MAX_IDS_FOTOS_EXPORT = 20000;
+const IDS_POR_CONSULTA     = 1000;   /* SQL Server admite hasta 2100 parámetros */
+
+function tiposFotoVisiblesExport(rol) {
+  if (GESTORES.includes(rol)) return null;                       /* todos */
+  if (rol === 'motorizado') return TIPOS_FOTO.filter((t) => !TIPOS_FOTO_DEVOLUCION.includes(t));
+  if (rol === 'tienda') return [TIPO_FOTO_PRODUCTO];
+  return [];                                                     /* visor */
+}
+
+router.post('/fotos-export', async (req, res) => {
+  const ids = [...new Set((Array.isArray(req.body && req.body.ids) ? req.body.ids : [])
+    .map((x) => parseInt(x, 10)).filter((x) => x > 0))];
+  if (ids.length > MAX_IDS_FOTOS_EXPORT) {
+    return res.status(400).json({ error: `Se pueden exportar hasta ${MAX_IDS_FOTOS_EXPORT} órdenes de una vez` });
+  }
+  const tipos = tiposFotoVisiblesExport(req.usuario.rol);
+  const resultado = {};
+  if (!ids.length || (tipos && !tipos.length)) return res.json(resultado);
+
+  try {
+    const pool = await getPool();
+    for (let i = 0; i < ids.length; i += IDS_POR_CONSULTA) {
+      const tanda   = ids.slice(i, i + IDS_POR_CONSULTA);
+      const request = pool.request();
+      const params  = tanda.map((id, n) => { request.input('i' + n, sql.BigInt, id); return '@i' + n; });
+      const r = await request.query(
+        `SELECT f.id_orden, f.tipo, f.url
+         FROM ordenes_fotos f
+         JOIN ordenes o ON o.id = f.id_orden
+         WHERE f.id_orden IN (${params.join(',')}) AND f.url <> '' ${filtroPorRol(req.usuario, request).sql}
+         ORDER BY f.id_orden, f.subido_en, f.id`
+      );
+      r.recordset.forEach((f) => {
+        if (tipos && !tipos.includes(f.tipo)) return;
+        (resultado[f.id_orden] = resultado[f.id_orden] || []).push({ tipo: f.tipo, url: f.url });
+      });
+    }
+    res.json(resultado);
+  } catch (err) {
+    console.error('POST /ordenes/fotos-export:', err.message);
+    res.status(500).json({ error: 'Error al traer las fotos para exportar' });
+  }
+});
+
 /* ── GET /api/ordenes/:id ────────────────────────────────── */
 router.get('/:id', async (req, res) => {
   try {

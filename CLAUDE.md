@@ -38,6 +38,19 @@ Velox Courier — internal management system for a courier/delivery company in L
   (`verFotoEnSeccion`). **Un tipo de foto nuevo se suma también a `_GRUPOS_FOTOS_ORDEN`**, con su
   nombre. El ícono grande de la foto del producto y los botones de devolución de la zona
   amarilla/verde siguen donde estaban.
+- **Descargar Excel / CSV con las URLs de las fotos (10 de noviembre de 2026, en local, falta
+  deploy).** `js/exportar-pedidos.js` + `server/routes/ordenes.js`, sin migración. **Toca el
+  servidor:** hay que reiniciarlo. Después de las 15 columnas de siempre (sin cambios, el import
+  las sigue leyendo por nombre e ignora las nuevas) van 11 de fotos (`_EXPORT_COLUMNAS_FOTOS`):
+  una por tipo de `ordenes_fotos` ("Foto producto (URL)", "Foto entrega motorizado (URL)", "Foto
+  cambio", "Foto evidencia de pago", los 4 "Foto intento …", "Foto devolución", "Foto devolución
+  tienda") + "Fotos otros tipos (URL)" para un tipo que no esté en la lista. Varias del mismo
+  tipo en una celda, separadas por `" | "`, en el orden en que se subieron. Las fotos salen de
+  **`POST /ordenes/fotos-export {ids}`** (nuevo, antes de `GET /:id`): de a 1000 ids por consulta,
+  tope 20 000, alcance por `filtroPorRol` y tipos por rol (`tiposFotoVisiblesExport`: gestores
+  todos, motorizado sin devolución, tienda solo producto, visor ninguno). Si ese pedido falla no
+  se descarga nada (un archivo sin URLs parecería completo). **Un tipo de foto nuevo se suma
+  también a `_EXPORT_COLUMNAS_FOTOS`.**
 
 - **Limpieza de producción (7 de noviembre de 2026, HECHA).** Confirmado por el usuario: con backup
   previo, corrió `server/scripts/limpiar_ordenes_y_caja.sql`. Las órdenes y toda la Caja eran de

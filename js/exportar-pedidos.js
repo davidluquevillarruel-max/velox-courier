@@ -7,9 +7,13 @@
    y se buscan sus órdenes en _ordenesCache (js/pedidos.js) por su
    data-id. Sin librerías: el CSV y el .xlsx se arman a mano.
 
-   Las columnas son las mismas del Excel de importación
+   Las primeras 15 columnas son las mismas del Excel de importación
    (server/scripts/importar-ordenes-excel.js), en el mismo orden, así
-   un archivo exportado se puede volver a importar.
+   un archivo exportado se puede volver a importar. Después van las
+   URLs de las fotos, una columna por tipo de ordenes_fotos (el import
+   busca sus columnas por nombre e ignora estas). Las fotos se piden
+   al servidor al descargar (POST /api/ordenes/fotos-export), que
+   aplica las mismas reglas de quién ve qué foto.
    ============================================================ */
 
 var _EXPORT_COLUMNAS = [
@@ -17,6 +21,37 @@ var _EXPORT_COLUMNAS = [
   'CAMBIO/ESCOJE TALLA', 'MONTO POR COBRAR', 'MOTORIZADO', 'METODO DE PAGO', 'ESTADO',
   'PRODUCTO ESPECIAL', 'MONTO ADICIONAL AL DELIVERY BASE', 'PAGO ADICIONAL MOTORIZADO', 'MONTO'
 ];
+
+/* Una columna por tipo de foto (TIPOS_FOTO en server/routes/ordenes.js),
+   en el orden del flujo. Un tipo nuevo se suma acá; mientras no esté,
+   sus URLs salen en la última, "otros tipos", para no perder ninguna. */
+var _EXPORT_COLUMNAS_FOTOS = [
+  { tipo: 'foto_producto',          titulo: 'Foto producto (URL)' },
+  { tipo: 'foto_entrega',           titulo: 'Foto entrega motorizado (URL)' },
+  { tipo: 'foto_cambio',            titulo: 'Foto cambio (URL)' },
+  { tipo: 'evidencia_medio_pago',   titulo: 'Foto evidencia de pago (URL)' },
+  { tipo: 'foto_reprogramado',      titulo: 'Foto intento reprogramado (URL)' },
+  { tipo: 'foto_ausente',           titulo: 'Foto intento ausente (URL)' },
+  { tipo: 'foto_cancelado',         titulo: 'Foto intento cancelado (URL)' },
+  { tipo: 'foto_no_entregado',      titulo: 'Foto intento no entregado (URL)' },
+  { tipo: 'foto_devolucion',        titulo: 'Foto devolución (URL)' },
+  { tipo: 'foto_devolucion_tienda', titulo: 'Foto devolución tienda (URL)' },
+  { tipo: null,                     titulo: 'Fotos otros tipos (URL)' }
+];
+var _EXPORT_SEPARADOR_FOTOS = ' | ';
+
+var _EXPORT_ENCABEZADOS = _EXPORT_COLUMNAS.concat(_EXPORT_COLUMNAS_FOTOS.map(function(c) { return c.titulo; }));
+
+/* Fotos de una orden ([{tipo, url}], en el orden en que se subieron)
+   → una celda por columna de fotos; varias del mismo tipo, separadas */
+function celdasFotosExport(fotos) {
+  var conocidos = _EXPORT_COLUMNAS_FOTOS.map(function(c) { return c.tipo; });
+  return _EXPORT_COLUMNAS_FOTOS.map(function(c) {
+    return (fotos || []).filter(function(f) {
+      return c.tipo ? f.tipo === c.tipo : conocidos.indexOf(f.tipo) === -1;
+    }).map(function(f) { return f.url; }).join(_EXPORT_SEPARADOR_FOTOS);
+  });
+}
 
 /* Estado guardado → etiqueta del Excel */
 var _EXPORT_ESTADOS = {
@@ -103,7 +138,7 @@ function _celdaCsv(v) {
 }
 
 function generarCsvPedidos(filas) {
-  var lineas = [_EXPORT_COLUMNAS.map(_celdaCsv).join(_CSV_SEPARADOR)];
+  var lineas = [_EXPORT_ENCABEZADOS.map(_celdaCsv).join(_CSV_SEPARADOR)];
   filas.forEach(function(f) {
     var celdas = f.slice();
     if (celdas[0]) celdas[0] = _fechaDMY(celdas[0]);
@@ -212,7 +247,7 @@ function generarXlsxPedidos(filas) {
     return '<c r="' + ref + '"' + s + ' t="inlineStr"><is><t xml:space="preserve">' + _xml(v) + '</t></is></c>';
   };
 
-  var filasXml = ['<row r="1">' + _EXPORT_COLUMNAS.map(function(t, i) {
+  var filasXml = ['<row r="1">' + _EXPORT_ENCABEZADOS.map(function(t, i) {
     return celda(_letraColumna(i) + '1', t, 2);
   }).join('') + '</row>'];
 
@@ -225,7 +260,8 @@ function generarXlsxPedidos(filas) {
     }).join('') + '</row>');
   });
 
-  var anchos = [12, 12, 22, 12, 22, 24, 12, 12, 18, 18, 16, 12, 14, 14, 10];
+  var anchos = [12, 12, 22, 12, 22, 24, 12, 12, 18, 18, 16, 12, 14, 14, 10]
+    .concat(_EXPORT_COLUMNAS_FOTOS.map(function() { return 45; }));
   var cols = anchos.map(function(w, i) {
     return '<col min="' + (i + 1) + '" max="' + (i + 1) + '" width="' + w + '" customWidth="1"/>';
   }).join('');
@@ -325,13 +361,43 @@ function _descargarArchivo(contenido, tipo, nombre) {
   setTimeout(function() { URL.revokeObjectURL(url); }, 1000);
 }
 
-window.exportarPedidos = function(formato) {
+/* Fotos de las órdenes a exportar: { "<id>": [{tipo, url}] }. Si no
+   llegan, no se descarga (un archivo sin las URLs parecería completo) */
+async function _fotosParaExport(ordenes) {
+  var r = await fetch(API + '/ordenes/fotos-export', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ids: ordenes.map(function(o) { return o.id; }) }),
+  });
+  var data = await r.json().catch(function() { return {}; });
+  if (!r.ok) throw new Error(data.error || 'No se pudieron traer las fotos');
+  return data;
+}
+
+var _exportando = false;
+
+window.exportarPedidos = async function(formato) {
+  if (_exportando) return;
   var ordenes = _ordenesVisiblesPedidos();
   if (ordenes.length === 0) {
     if (typeof showNotif === 'function') showNotif('No hay órdenes en la tabla para descargar.');
     return;
   }
-  var filas = ordenes.map(filaExportOrden);
+
+  var fotosPorOrden;
+  _exportando = true;
+  try {
+    fotosPorOrden = await _fotosParaExport(ordenes);
+  } catch (err) {
+    if (typeof showNotif === 'function') showNotif('No se pudo descargar: ' + err.message + '. Prueba de nuevo.', 5000);
+    return;
+  } finally {
+    _exportando = false;
+  }
+
+  var filas = ordenes.map(function(o) {
+    return filaExportOrden(o).concat(celdasFotosExport(fotosPorOrden[o.id]));
+  });
   if (formato === 'csv') {
     _descargarArchivo(generarCsvPedidos(filas), 'text/csv;charset=utf-8', _nombreArchivoPedidos('csv'));
   } else {
@@ -346,5 +412,6 @@ window.exportarPedidos = function(formato) {
 /* Para probar el mapeo y los generadores desde Node, sin navegador */
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = { filaExportOrden: filaExportOrden, generarCsvPedidos: generarCsvPedidos,
-                     generarXlsxPedidos: generarXlsxPedidos, COLUMNAS: _EXPORT_COLUMNAS };
+                     generarXlsxPedidos: generarXlsxPedidos, COLUMNAS: _EXPORT_COLUMNAS,
+                     ENCABEZADOS: _EXPORT_ENCABEZADOS, celdasFotosExport: celdasFotosExport };
 }

@@ -4,7 +4,7 @@
 > Sirve también como contexto de arranque para Claude Code: si se copia a `CLAUDE.md`
 > en la raíz del repo, la herramienta lo lee automáticamente al iniciar.
 >
-> Última actualización: 7 de noviembre de 2026
+> Última actualización: 10 de noviembre de 2026
 
 ---
 
@@ -579,6 +579,45 @@ arrancando en 1000 (ver `CLAUDE.md` → "Pendiente").
 
 ---
 
+## D-016 · Todas las fotos de la orden, a la vista y en el export (sin bloquear la descarga)
+
+**Estado:** probado por el usuario en local el 10 de noviembre de 2026 y subido a `origin/main`
+(commits `5de0bb6`, `cd8b257`, `2773762`). **Falta el deploy:** `git pull` + `pm2 restart velox`
+(toca el servidor), sin migración.
+
+**Problema.** Cada foto se veía solo donde se tomó: en "Actualizar orden", la del producto y las del
+motorizado; las de devolución, solo mientras la orden estaba en la zona de devolución. Y el Excel / CSV
+de "Todos los pedidos" no tenía ninguna, aunque son la prueba de la entrega, del pago y de la
+devolución.
+
+**Decisión.**
+- **Una sola fuente:** `ordenes_fotos`, agrupada por `tipo`. No se agregó ningún almacenamiento ni
+  columna (D-003).
+- **"Actualizar orden"** muestra el bloque "Fotos de la orden": un grupo por tipo, solo los que tienen
+  fotos, en el orden del flujo, y un grupo "Otras" para un tipo que no esté en la lista. Usa el mismo
+  visor de siempre. Los datos ya venían de `GET /ordenes/:id`.
+- **Export:** a las 15 columnas de siempre se le suman al final 11 columnas de URLs, una por tipo más
+  "otros tipos". Varias fotos del mismo tipo van en una celda, separadas por " | ". El importador lee
+  sus columnas por nombre, así que un archivo exportado se sigue pudiendo reimportar.
+- **Endpoint por lote `POST /ordenes/fotos-export`**, en vez de un pedido por orden. Las reglas de
+  quién ve qué son las de `GET /:id` y `puedeVerFotoOrden`:
+  - Alcance de órdenes por `filtroPorRol`.
+  - Gestores: todas las fotos.
+  - Motorizado: sin las de devolución.
+  - Tienda: solo la del producto.
+  - Visor: ninguna.
+- **La descarga nunca se bloquea por las fotos** (pedido del usuario): si el endpoint falla, tarda más
+  de 15 s o no existe (servidor sin reiniciar), el archivo sale igual, con esas celdas vacías y un
+  aviso no bloqueante.
+
+**Límites aceptados.**
+- El cuerpo JSON no puede pasar de 100 KB (`express.json()`). Por eso el frontend pide de a 2000 ids y
+  el servidor acepta hasta 5000 por pedido.
+- Un tipo de foto nuevo se tiene que sumar a mano a `_GRUPOS_FOTOS_ORDEN` y a
+  `_EXPORT_COLUMNAS_FOTOS`. Mientras tanto, sale en "Otras" / "otros tipos", sin perderse.
+
+---
+
 ## Costos de operación
 
 | Concepto | Mensual |
@@ -621,6 +660,16 @@ downtime). El dominio se traspasa aparte en Namecheap.
       reactivar), crear accesos y resetear contraseñas (por fila o en masa, contraseña
       aleatoria mostrada una vez), filtro de activos en selecciones y servidor, y "Mostrar
       inactivos" en los filtros de las tablas.
+- [ ] **Deploy de los cambios del 10/11/2026** (probados por el usuario en local, ya en
+      `origin/main`, sin migración; toca el servidor, así que va con `git pull` + `pm2 restart
+      velox`). Son cuatro cambios:
+      - "Mis entregas de hoy" vuelve a la lista al cerrar una orden, en vez de abrir sola la
+        siguiente.
+      - Botón de WhatsApp en cada tarjeta del motorizado.
+      - Todas las fotos en "Actualizar orden".
+      - URLs de las fotos en el Excel / CSV, con descarga a prueba de fallos (D-016).
+
+      Los motorizados tienen que recargar la app.
 - [ ] **Fase 4:** rotar las 89 contraseñas de fórmula de las tiendas (con "Resetear
       contraseñas") y sacar el secreto de `server/db.js`. Ver D-007.
 - [ ] **Opcional:** cortar las sesiones abiertas al resetear una contraseña (necesita

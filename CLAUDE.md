@@ -15,8 +15,8 @@ Velox Courier — internal management system for a courier/delivery company in L
 - **Reglas de trabajo nuevas (10 de noviembre de 2026).** Actualizar este `CLAUDE.md` al terminar
   cada parte sin que lo pidan, y commit en local sin push (ver "Cómo trabajar", puntos 6 y 7).
   `server/scripts/limpiar_ordenes.sql` quedó marcado OBSOLETO: el vigente es `limpiar_ordenes_y_caja.sql`.
-- **"Mis entregas de hoy": al cerrar una orden vuelve a la lista (10 de noviembre de 2026, en local,
-  falta deploy).** Solo `js/entregas-moto.js`, sin migración ni cambios en el servidor. Antes
+- **"Mis entregas de hoy": al cerrar una orden vuelve a la lista (10 de noviembre de 2026, commit
+  `b49cde5`, probado por el usuario en local; falta deploy).** Solo `js/entregas-moto.js`, sin migración ni cambios en el servidor. Antes
   `_irASiguienteEnt` abría sola la orden siguiente; ahora `_volverTrasCerrarEnt` cierra la pantalla
   sobrepuesta, saca la orden cerrada de la lista al instante (`_pintarEntregasHoy`, que pinta sin ir
   al servidor, así desaparece aunque no haya señal) y después la sincroniza. Igual en el 409

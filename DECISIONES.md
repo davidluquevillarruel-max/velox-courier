@@ -618,6 +618,46 @@ devolución.
 
 ---
 
+## D-017 · Reporte del día de una tienda como imagen: canvas en el navegador, URL fija con HMAC, sin tabla
+
+**Estado:** probado por el usuario en local el 10 de noviembre de 2026 y subido a `origin/main`
+(commit `9e92546`). **Falta el deploy:** `git pull` + `pm2 restart velox` (rutas nuevas en el
+servidor), sin migración. El CORS del bucket ya permite `cache-control` (lo cambió el usuario el
+10/11).
+
+**Problema.** El resumen por WhatsApp de "Clientes / Tiendas" es solo texto. Hacía falta un reporte
+del día prolijo, en imagen, con una URL para mandarle a la tienda.
+
+**Decisión.**
+- **Solo admin**, en el detalle de la tienda: "Generar reporte" y "Copiar" (la URL). El resumen en
+  texto de WhatsApp no se tocó.
+- **La plata sale del motor de la Caja** (`calcularOrdenCaja`, D-012), así que el saldo coincide con
+  la Caja Tienda. Hay una ruta propia (`GET /caja/tiendas/:id/reporte`) que trae **todos** los
+  pedidos del día, menos los anulados; los no cobrables salen con saldo 0. Si el día ya se liquidó,
+  la imagen lo marca ("Día liquidado el dd/mm") y no parece una deuda pendiente.
+- **La imagen se dibuja a mano en un `<canvas>` del navegador.** Se descartaron html2canvas (una
+  dependencia nueva que se lleva mal con las variables CSS y la fuente de íconos) y generarla en el
+  servidor (puppeteer o node-canvas: peso y CPU en el droplet). La paleta vive en el JS, para que la
+  imagen salga igual con cualquier tema.
+- **Nombre fijo en R2, firmado:** `reportes/tienda-<id>/<fecha>-<HMAC>.png`. La firma es un HMAC de
+  tienda + fecha con `JWT_SECRET`. "Generar de nuevo" pisa el mismo archivo y la URL no cambia,
+  pero nadie puede adivinar la URL de otra tienda cambiando el número.
+- **Sin tabla.** La URL se recalcula, y "ya generado" y la hora salen de un `HEAD` a R2.
+- **Cache-Control: no-cache** al subir, para que al regenerar no se vea la imagen vieja. Por eso el
+  CORS del bucket tiene que permitir `cache-control`.
+
+**Límites aceptados.**
+- Si se rota `JWT_SECRET` (Fase 4), los reportes ya enviados siguen viéndose en su URL vieja, y los
+  nuevos salen con otra URL.
+- No hay auditoría de quién generó cada reporte. Si hiciera falta, se agrega una tabla sin cambiar
+  la URL.
+- La vista previa que WhatsApp ya guardó de un mensaje enviado no se actualiza; al abrir el link
+  se ve la imagen nueva.
+- El **texto** de "Enviar resumen" sigue con la regla vieja de saldo y puede no coincidir con la
+  imagen (ver `CLAUDE.md` → "Pendiente").
+
+---
+
 ## Costos de operación
 
 | Concepto | Mensual |
@@ -670,6 +710,9 @@ downtime). El dominio se traspasa aparte en Namecheap.
       - URLs de las fotos en el Excel / CSV, con descarga a prueba de fallos (D-016).
 
       Los motorizados con la app abierta tienen que recargarla.
+- [ ] **Deploy del reporte del día en imagen** (D-017; probado por el usuario en local, ya en
+      `origin/main`, commit `9e92546`, sin migración): `git pull` + `pm2 restart velox`. El CORS
+      del bucket ya está listo.
 - [ ] **Fase 4:** rotar las 89 contraseñas de fórmula de las tiendas (con "Resetear
       contraseñas") y sacar el secreto de `server/db.js`. Ver D-007.
 - [ ] **Opcional:** cortar las sesiones abiertas al resetear una contraseña (necesita

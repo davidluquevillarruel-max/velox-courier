@@ -12,8 +12,10 @@ Velox Courier — internal management system for a courier/delivery company in L
 
 Última actualización: 10 de noviembre de 2026.
 
-- **Reporte del día de una tienda como IMAGEN (10 de noviembre de 2026, en local, falta que el usuario
-  lo pruebe; sin migración).** En el detalle de "Clientes / Tiendas", **solo admin**: "Generar
+- **Reporte del día de una tienda como IMAGEN (10 de noviembre de 2026, commit `9e92546`, probado por
+  el usuario en local y subido a `origin/main`; FALTA EL DEPLOY: `git pull` + `pm2 restart velox`,
+  sin migración; ver D-017 en `DECISIONES.md`).** El CORS del bucket ya permite `cache-control`
+  (hecho por el usuario el 10/11). En el detalle de "Clientes / Tiendas", **solo admin**: "Generar
   reporte dd/mm" (el día de la primera pestaña, el mismo de "Enviar resumen", que no cambió) y, ya
   generado, "Ver imagen (hh:mm)" + "Copiar" (copia la URL). `js/reporte-tienda.js` (nuevo, `<script>`
   antes de `clientes.js`), `js/clientes.js`, `index.html`, `server/routes/caja.js`, `server/r2.js`.
@@ -31,9 +33,10 @@ Velox Courier — internal management system for a courier/delivery company in L
     no se puede adivinar la de otra tienda. Sin tabla: "ya generado" y la hora salen de un `HEAD` a
     R2 (`infoReporte`). Se sube con `Cache-Control: no-cache, max-age=0`. Si se rota `JWT_SECRET`,
     los reportes ya enviados quedan en su URL vieja y los nuevos salen con otra.
-  - **⚠️ Requisito en Cloudflare (lo hace el usuario):** el CORS del bucket tiene que permitir el
-    encabezado `cache-control` además de `content-type`. Sin eso, el PUT del navegador falla y
-    sale el aviso "revisá que el CORS del bucket permita cache-control".
+  - **CORS del bucket (HECHO el 10/11):** permite `content-type` y `cache-control`, métodos PUT y
+    GET, para `http://localhost:3000` y `https://sistema.veloxcourierperu.com`. Si alguien lo
+    vuelve a dejar solo con `content-type`, el PUT del navegador falla y sale el aviso "revisá que
+    el CORS del bucket permita cache-control".
   - Probado el 10/11 contra la base local y R2: permisos (operador 403), fecha/tienda inválidas, la
     misma URL al regenerar, `no-cache` guardado en R2 y el dibujo con datos reales (día normal y
     día liquidado). Quedó un PNG de prueba de 1×1 en `reportes/tienda-2280/2026-10-01-…png` (la
@@ -448,7 +451,8 @@ Velox Courier — internal management system for a courier/delivery company in L
   Cuenta R2 creada, bucket `velox-fotos`, las 5 variables `R2_*` en el `server/.env` de cada
   máquina (nunca en el repo), URL pública `pub-b64e...r2.dev`. CORS del bucket configurado para
   `http://localhost:3000` y `https://sistema.veloxcourierperu.com` (métodos PUT y GET,
-  encabezado `content-type`: el navegador sube directo a R2 desde `js/cola-fotos.js`).
+  encabezados `content-type` y, desde el 10/11, `cache-control` para el reporte en imagen: el
+  navegador sube directo a R2 desde `js/cola-fotos.js` y `js/reporte-tienda.js`).
   Probado el 21 de octubre de 2026: las fotos (incluida la ráfaga) suben a R2, se ven con su
   URL pública y quedan registradas en `ordenes_fotos` con la URL de R2, sin duplicados.
   Ojo: el servidor usa R2 apenas las 5 variables tienen **cualquier** valor; si una falta o

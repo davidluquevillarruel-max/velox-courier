@@ -12,28 +12,28 @@ Velox Courier — internal management system for a courier/delivery company in L
 
 Última actualización: 10 de noviembre de 2026.
 
-- **Cambios del 10 de noviembre de 2026: los 4 de abajo, probados por el usuario en local y subidos
-  a `origin/main` (push del 10/11, último commit `2773762` + docs). FALTA EL DEPLOY:** sin migración,
-  pero el export toca el servidor, así que va con `git pull` + `pm2 restart velox`. Los motorizados
-  tienen que recargar la app. Decisión de las fotos en D-016 de `DECISIONES.md`.
+- **Cambios del 10 de noviembre de 2026: los 4 de abajo, HECHOS en producción.** Confirmado por el
+  usuario el 10/11 ("subido"): `git pull` + `pm2 restart velox`, sin migración. Último commit en
+  producción: `a7938a0` (código hasta `2773762`). Los motorizados con la app abierta tienen que
+  recargarla. Decisión de las fotos en D-016 de `DECISIONES.md`.
 - **Reglas de trabajo nuevas (10 de noviembre de 2026).** Actualizar este `CLAUDE.md` al terminar
   cada parte sin que lo pidan, y commit en local sin push (ver "Cómo trabajar", puntos 6 y 7).
   `server/scripts/limpiar_ordenes.sql` quedó marcado OBSOLETO: el vigente es `limpiar_ordenes_y_caja.sql`.
 - **"Mis entregas de hoy": al cerrar una orden vuelve a la lista (10 de noviembre de 2026, commit
-  `b49cde5`, probado por el usuario; en origin, falta deploy).** Solo `js/entregas-moto.js`, sin migración ni cambios en el servidor. Antes
+  `b49cde5`, HECHO en producción).** Solo `js/entregas-moto.js`, sin migración ni cambios en el servidor. Antes
   `_irASiguienteEnt` abría sola la orden siguiente; ahora `_volverTrasCerrarEnt` cierra la pantalla
   sobrepuesta, saca la orden cerrada de la lista al instante (`_pintarEntregasHoy`, que pinta sin ir
   al servidor, así desaparece aunque no haya señal) y después la sincroniza. Igual en el 409
   `yaResuelta`. El motorizado elige la siguiente con EMPEZAR. Deploy: `git pull` + `pm2 restart
   velox` (o ni eso: es solo un `.js` estático; los motorizados recargan la app).
 - **"Mis entregas de hoy": botón de WhatsApp en cada tarjeta (10 de noviembre de 2026, commit
-  `8ecbe36`, probado por el usuario; en origin, falta deploy).** `js/entregas-moto.js` + `css/components.css` (`.entrega-item-whatsapp`), sin
+  `8ecbe36`, HECHO en producción).** `js/entregas-moto.js` + `css/components.css` (`.entrega-item-whatsapp`), sin
   servidor ni migración. A la izquierda de EMPEZAR (o del aviso "Faltan datos"), el **mismo**
   `_botonWhatsApp()` de `js/motorizados.js` que usan admin y Pedidos: misma frase, "Adicional" si
   hay `dest_telefono_2`, "Sin teléfono" si no hay ninguno. No se duplicó la lógica: cambiar la
   frase allá la cambia en las tres vistas.
 - **"Actualizar orden": todas las fotos de la orden (10 de noviembre de 2026, commit `5de0bb6`,
-  probado por el usuario; en origin, falta deploy; D-016).** Incluye las de "Pendiente devolución"
+  HECHO en producción; D-016).** Incluye las de "Pendiente devolución"
   (`foto_devolucion`) y "Devolución Tienda" (`foto_devolucion_tienda`), solo para gestores. Solo `js/motorizados.js`, sin servidor ni migración: `GET /ordenes/:id` ya devolvía
   `fotos` con todos los tipos que el rol puede ver. El bloque "Fotos del motorizado" pasó a ser
   **"Fotos de la orden"** (`_seccionFotosOrdenHTML`, lista `_GRUPOS_FOTOS_ORDEN`): un grupo por
@@ -44,7 +44,7 @@ Velox Courier — internal management system for a courier/delivery company in L
   nombre. El ícono grande de la foto del producto y los botones de devolución de la zona
   amarilla/verde siguen donde estaban.
 - **Descargar Excel / CSV con las URLs de las fotos (10 de noviembre de 2026, commits `cd8b257` y
-  `2773762`, probado por el usuario, también la descarga sin fotos; en origin, falta deploy; D-016).** `js/exportar-pedidos.js` + `server/routes/ordenes.js`, sin migración. **Toca el
+  `2773762`, probado por el usuario, también la descarga sin fotos; HECHO en producción; D-016).** `js/exportar-pedidos.js` + `server/routes/ordenes.js`, sin migración. **Toca el
   servidor:** hay que reiniciarlo. Después de las 15 columnas de siempre (sin cambios, el import
   las sigue leyendo por nombre e ignora las nuevas) van 11 de fotos (`_EXPORT_COLUMNAS_FOTOS`):
   una por tipo de `ordenes_fotos` ("Foto producto (URL)", "Foto entrega motorizado (URL)", "Foto

@@ -581,9 +581,9 @@ arrancando en 1000 (ver `CLAUDE.md` → "Pendiente").
 
 ## D-016 · Todas las fotos de la orden, a la vista y en el export (sin bloquear la descarga)
 
-**Estado:** probado por el usuario en local el 10 de noviembre de 2026 y subido a `origin/main`
-(commits `5de0bb6`, `cd8b257`, `2773762`). **Falta el deploy:** `git pull` + `pm2 restart velox`
-(toca el servidor), sin migración.
+**Estado:** HECHO en producción el 10 de noviembre de 2026 (confirmado por el usuario: `git pull` +
+`pm2 restart velox`, sin migración). Commits `5de0bb6`, `cd8b257`, `2773762`; último commit en
+producción `a7938a0`.
 
 **Problema.** Cada foto se veía solo donde se tomó: en "Actualizar orden", la del producto y las del
 motorizado; las de devolución, solo mientras la orden estaba en la zona de devolución. Y el Excel / CSV
@@ -660,16 +660,16 @@ downtime). El dominio se traspasa aparte en Namecheap.
       reactivar), crear accesos y resetear contraseñas (por fila o en masa, contraseña
       aleatoria mostrada una vez), filtro de activos en selecciones y servidor, y "Mostrar
       inactivos" en los filtros de las tablas.
-- [ ] **Deploy de los cambios del 10/11/2026** (probados por el usuario en local, ya en
-      `origin/main`, sin migración; toca el servidor, así que va con `git pull` + `pm2 restart
-      velox`). Son cuatro cambios:
+- [x] **Cambios del 10/11/2026: desplegados en producción** el mismo día (confirmado por el
+      usuario; `git pull` + `pm2 restart velox`, sin migración, último commit `a7938a0`). Son
+      cuatro cambios:
       - "Mis entregas de hoy" vuelve a la lista al cerrar una orden, en vez de abrir sola la
         siguiente.
       - Botón de WhatsApp en cada tarjeta del motorizado.
       - Todas las fotos en "Actualizar orden".
       - URLs de las fotos en el Excel / CSV, con descarga a prueba de fallos (D-016).
 
-      Los motorizados tienen que recargar la app.
+      Los motorizados con la app abierta tienen que recargarla.
 - [ ] **Fase 4:** rotar las 89 contraseñas de fórmula de las tiendas (con "Resetear
       contraseñas") y sacar el secreto de `server/db.js`. Ver D-007.
 - [ ] **Opcional:** cortar las sesiones abiertas al resetear una contraseña (necesita

@@ -39,12 +39,20 @@ URL: `https://sistema.veloxcourierperu.com`
 ### Flujo de actualización
 
 ```
-# En la PC (desarrollo)
-git add -A && git commit -m "..." && git push
+# En la PC (desarrollo) — Claude commitea en local, SIN push
+git add <archivos de la parte> && git commit -m "..."
 
-# En el servidor (produccion)
+# En la PC — el push lo hace el usuario, cuando decide subir
+git push
+
+# En el servidor (produccion) — lo hace el usuario
+# 1) migraciones nuevas, si las hay, con sa y ANTES del pull
+# 2) codigo
 cd ~/velox-courier && git pull && pm2 restart velox
 ```
+
+**Regla (10 de noviembre de 2026):** Claude commitea en local y **no hace push** salvo que el
+usuario lo pida. El push, las migraciones y el deploy los hace siempre el usuario.
 
 **Los cambios de esquema de BD NO viajan por git.** Se aplican a mano en el servidor con
 `sqlcmd` o con scripts de migracion versionados.

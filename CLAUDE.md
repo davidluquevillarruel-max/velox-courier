@@ -10,7 +10,11 @@ Velox Courier — internal management system for a courier/delivery company in L
 
 ## Estado actual
 
-Última actualización: 7 de noviembre de 2026.
+Última actualización: 10 de noviembre de 2026.
+
+- **Reglas de trabajo nuevas (10 de noviembre de 2026).** Actualizar este `CLAUDE.md` al terminar
+  cada parte sin que lo pidan, y commit en local sin push (ver "Cómo trabajar", puntos 6 y 7).
+  `server/scripts/limpiar_ordenes.sql` quedó marcado OBSOLETO: el vigente es `limpiar_ordenes_y_caja.sql`.
 
 - **Limpieza de producción (7 de noviembre de 2026, HECHA).** Confirmado por el usuario: con backup
   previo, corrió `server/scripts/limpiar_ordenes_y_caja.sql`. Las órdenes y toda la Caja eran de
@@ -425,6 +429,8 @@ Velox Courier — internal management system for a courier/delivery company in L
     dependientes y el orden de borrado salen del esquema al correr. No toca tiendas, motorizados,
     usuarios, distritos, zonas ni orígenes. Las fotos (R2 o `uploads_local/`) quedan huérfanas: solo
     se borran sus filas.
+  - `limpiar_ordenes.sql` — **OBSOLETO, no usar.** Se deja solo como referencia (lista fija de
+    tablas, anterior a las liquidaciones). El script de limpieza vigente es `limpiar_ordenes_y_caja.sql`.
   - `importar-ordenes-excel.js` — sin flags solo valida (nombres que no existen + filas raras) y
     no escribe nada. Con `--insertar --fecha-asignacion=YYYY-MM-DD` crea las tiendas,
     motorizados y distritos que falten e inserta todo en **una transacción** (todo o nada).
@@ -665,7 +671,7 @@ Roles: `admin`, `operador`, `visor`, `tienda`, `motorizado`. `GESTORES = ['admin
 
 ## Production rules (read before DB or deploy work)
 
-- Production runs on a DigitalOcean droplet (Ubuntu 22.04, SQL Server 2022 Express, Node + PM2 + Nginx) at `sistema.veloxcourierperu.com`. Full details, costs, and the deploy flow (`git push` locally → `git pull && pm2 restart velox` on the server) are in `DECISIONES.md`.
+- Production runs on a DigitalOcean droplet (Ubuntu 22.04, SQL Server 2022 Express, Node + PM2 + Nginx) at `sistema.veloxcourierperu.com`. Full details, costs, and the deploy flow (local commit → the user pushes → `git pull && pm2 restart velox` on the server) are in `DECISIONES.md`. Claude commits locally and never pushes unless the user asks.
 - **Never restore a local `.bak` over the production database.** Local (`DESKTOP-E9N76IK`, SQL Server 2025) and production (SQL Server 2022) are separate databases that do not sync; backups only flow production → local, never the reverse.
 - **Never generate a local `.bak` to restore on the server.** A backup taken on SQL Server 2025 cannot be restored on SQL Server 2022 (backups don't restore to an older version), so it would fail outright — and even if the versions matched, it would overwrite real production data. The only way DB changes reach production is by hand-applied `ALTER TABLE` / migration `.sql` scripts.
 - **Database schema changes do not travel through git.** They're applied by hand on the server (`sqlcmd` or versioned migration scripts). A migration file added to this repo does not get run automatically anywhere. Production changes go **only** as `ALTER TABLE` scripts (never as a `.bak`, see above). Note that `velox_agregar_*.sql` migration scripts are gitignored, so they exist only on the dev PC.
@@ -726,6 +732,8 @@ permisos de `ALTER`), **antes** del `git pull`.
 3. Al terminar un cambio, decir exactamente cómo probarlo: qué comando correr y qué revisar en el navegador.
 4. Mantener el estilo del código existente. No introducir frameworks, librerías ni dependencias nuevas sin preguntar antes y explicar por qué.
 5. Tareas grandes que tocan varios archivos: trabajarlas por partes, un archivo a la vez, esperando el OK antes de pasar al siguiente (así, si se corta la sesión, cada parte queda completa). Excepción: si un cambio requiere tocar dos archivos para que el sistema no quede roto a medias (ej. una ruta del backend y su llamada en el frontend, o una variable CSS y el archivo donde se usa), hacerlos juntos, pero avisar que van en pareja y por qué.
+6. **Al terminar cada parte, actualizar este `CLAUDE.md` sin que el usuario lo pida:** tablas o columnas nuevas, scripts, migraciones pendientes, decisiones tomadas y pendientes que quedan. Solo este archivo: `DECISIONES.md` se toca únicamente cuando el usuario lo pide.
+7. **Commit en local, sin push, salvo que el usuario lo pida.** El usuario hace el `git push` y el deploy en el servidor (`git pull` + migraciones + `pm2 restart velox`). Commitear solo los archivos de la parte terminada, nunca con `git add -A`.
 
 ### CSS y estilos
 
@@ -785,4 +793,4 @@ mismo indicador (`js/indicador-fotos.js`).
 
 ### Despliegue (contexto — no ejecutar)
 
-El despliegue lo hace el usuario manualmente: `git push` desde la PC, y en el servidor `git pull` + `pm2 restart velox` (ver "Production rules" arriba para el detalle completo). No hay acceso al servidor de producción desde aquí — nunca intentar desplegar ni conectarse a él.
+El despliegue lo hace el usuario manualmente: Claude deja los cambios commiteados en local (sin push, salvo que el usuario lo pida); el usuario hace `git push` desde la PC y, en el servidor, aplica las migraciones con `sa`, `git pull` y `pm2 restart velox` (ver "Production rules" arriba para el detalle completo). No hay acceso al servidor de producción desde aquí — nunca intentar desplegar ni conectarse a él.

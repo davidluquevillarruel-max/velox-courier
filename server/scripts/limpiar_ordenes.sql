@@ -1,3 +1,9 @@
+/* ############################################################
+   ##  OBSOLETO — NO USAR.                                     ##
+   ##  Se deja solo como referencia. El script de limpieza     ##
+   ##  vigente es limpiar_ordenes_y_caja.sql (D-015).          ##
+   ############################################################ */
+
 /* ============================================================
    limpiar_ordenes.sql — Borra TODAS las órdenes y lo que depende
    de ellas, y reinicia el identity de ordenes (el próximo id es 1).

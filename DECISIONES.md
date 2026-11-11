@@ -656,6 +656,27 @@ del día prolijo, en imagen, con una URL para mandarle a la tienda.
 - El **texto** de "Enviar resumen" sigue con la regla vieja de saldo y puede no coincidir con la
   imagen (ver `CLAUDE.md` → "Pendiente").
 
+**Ampliación: reporte del día del motorizado (10 de noviembre de 2026).** Probado por el usuario en
+local y subido a `origin/main` (commits `c206fe7` y `3df4580`). Falta el deploy, el mismo que el
+de tienda: `git pull` + `pm2 restart velox`, sin migración.
+- **Mismo mecanismo, no uno nuevo.** Canvas, nombre firmado, `no-cache`, solo admin, sin tabla y
+  marca de día liquidado (sale de `caja_pagos_motorizados`). El código se generalizó en lugar de
+  copiarse: en el servidor, `TIPOS_REPORTE` en `server/r2.js` (etiqueta del HMAC + ruta por tipo);
+  en el navegador, `_REP_TIPOS` en `js/reporte-tienda.js` (ruta de la API + función de dibujo).
+  Un reporte de otra cosa = registrar un tipo más.
+- **Archivo:** `reportes-moto/<id>-<fecha>-<HMAC>.png`, con su propia etiqueta de HMAC
+  (`velox-reporte-moto`). **Ni la etiqueta ni la ruta de un tipo se cambian:** cambiarían las URLs
+  ya mandadas. Se comprobó que la URL de la tienda quedó idéntica después del cambio.
+- **La plata, desde el lado del moto:** el moto entrega **todo** lo que pasó por sus manos (efectivo
+  + Yape = "A ENTREGAR A VELOX") y Velox le paga aparte ("VELOX TE PAGA" = su pago). El neto
+  (entregar − su pago) es el `saldo_moto` del motor, así que coincide con la Caja de motorizados.
+  Pago Velox y Pago tienda no suman a lo que entrega: salen con "—" y una nota.
+- **Dónde:** en **Caja → Motorizados**, arriba del detalle del moto (al principio estuvo en la
+  página Motorizados; el usuario lo prefirió en la Caja). Es de un día: el del filtro si es uno
+  solo; sin filtro, hoy; con un rango, pide filtrar un día en vez de elegir uno por su cuenta.
+  Como la Caja arma su HTML cada 8 s, los botones se arman sin consultar y se "hidratan"
+  (`hidratarReportes`) solo cuando la lista se repinta: no se le pregunta a R2 en cada refresco.
+
 ---
 
 ## Costos de operación
@@ -710,9 +731,9 @@ downtime). El dominio se traspasa aparte en Namecheap.
       - URLs de las fotos en el Excel / CSV, con descarga a prueba de fallos (D-016).
 
       Los motorizados con la app abierta tienen que recargarla.
-- [ ] **Deploy del reporte del día en imagen** (D-017; probado por el usuario en local, ya en
-      `origin/main`, commit `9e92546`, sin migración): `git pull` + `pm2 restart velox`. El CORS
-      del bucket ya está listo.
+- [ ] **Deploy de los reportes del día en imagen, de tienda y de motorizado** (D-017; probados
+      por el usuario en local y ya en `origin/main`, commits `9e92546`, `c206fe7` y `3df4580`, sin
+      migración): `git pull` + `pm2 restart velox`. El CORS del bucket ya está listo.
 - [ ] **Fase 4:** rotar las 89 contraseñas de fórmula de las tiendas (con "Resetear
       contraseñas") y sacar el secreto de `server/db.js`. Ver D-007.
 - [ ] **Opcional:** cortar las sesiones abiertas al resetear una contraseña (necesita

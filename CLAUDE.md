@@ -12,8 +12,10 @@ Velox Courier — internal management system for a courier/delivery company in L
 
 Última actualización: 10 de noviembre de 2026.
 
-- **Reporte del día de un MOTORIZADO como imagen (10 de noviembre de 2026, en local, falta que el
-  usuario lo pruebe; sin migración).** El mismo mecanismo que el de tienda (abajo, D-017). **Toca el
+- **Reporte del día de un MOTORIZADO como imagen (10 de noviembre de 2026, commits `c206fe7` y
+  `3df4580`, probado por el usuario en local en Caja → Motorizados y subido a `origin/main`; FALTA
+  EL DEPLOY: `git pull` + `pm2 restart velox`, sin migración, el mismo del de tienda; ampliación de
+  D-017 en `DECISIONES.md`).** El mismo mecanismo que el de tienda (abajo). **Toca el
   servidor:** hay que reiniciarlo. `js/reporte-moto.js` (nuevo, `<script>` después de
   `reporte-tienda.js`), `js/reporte-tienda.js`, `js/caja.js`, `index.html`,
   `server/routes/caja.js`, `server/r2.js`.
@@ -41,7 +43,7 @@ Velox Courier — internal management system for a courier/delivery company in L
     **La etiqueta y la ruta de cada tipo no se cambian:** cambiarían las URLs ya mandadas. Probado
     que la de tienda quedó igual después del refactor.
   - **Frontend compartido:** en `reporte-tienda.js`, `_REP_TIPOS` registra cada tipo (`api` +
-    `dibujar`) y `_repBotonesHTML(tipo, id, fecha)` arma los botones; `reporte-moto.js` registra
+    `dibujar`) y `_repBotonesHTML(tipo, id, fecha, diferido)` arma los botones; `reporte-moto.js` registra
     `moto` y expone `botonesReporteMotoHTML`. Un reporte nuevo = registrar otro tipo.
   - Quedó un PNG de prueba de 1×1 en `reportes-moto/1046-2026-10-01-…png` (el moto "PRUEBA CAJA" de
     local); se pisa al generar ese reporte.

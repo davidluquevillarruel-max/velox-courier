@@ -264,7 +264,14 @@ function dibujarReporteTienda(datos, generadoEn) {
   return canvas;
 }
 
-/* ── botones en Clientes / Tiendas ──────────────────────── */
+/* ── botones y subida (compartidos por todos los reportes) ──
+   Cada tipo de reporte se registra con la base de su ruta en la API
+   y su función de dibujo. El del motorizado se registra en
+   js/reporte-moto.js. Las rutas son <api><id>/reporte y
+   <api><id>/reporte/subida. */
+var _REP_TIPOS = {
+  tienda: { api: '/caja/tiendas/', dibujar: function(d, t) { return dibujarReporteTienda(d, t); } },
+};
 
 function _repEsAdmin() {
   try { return (JSON.parse(localStorage.getItem('velox_usuario')) || {}).rol === 'admin'; }
@@ -275,14 +282,14 @@ function _repEsc(s) {
   return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
 }
 
-/* HTML de los botones para el detalle de una tienda. Solo admin: para
-   el resto devuelve ''. Al pintarse, pregunta si ya hay un reporte de
-   ese día para mostrar su URL y "Copiar". */
-window.botonesReporteTiendaHTML = function(idTienda, fecha) {
-  if (!_repEsAdmin() || !idTienda || !fecha) return '';
-  var id = 'rep-tienda-' + idTienda + '-' + fecha;
+/* HTML de los botones "Generar reporte dd/mm" / "Ver imagen" / "Copiar".
+   Solo admin: para el resto devuelve ''. Al pintarse, pregunta si ya
+   hay un reporte de ese día para mostrar su URL y "Copiar". */
+function _repBotonesHTML(tipo, idQuien, fecha) {
+  if (!_REP_TIPOS[tipo] || !_repEsAdmin() || !idQuien || !fecha) return '';
+  var id = 'rep-' + tipo + '-' + idQuien + '-' + fecha;
   setTimeout(function() { _repConsultarExistente(id); }, 0);
-  return '<span id="' + id + '" class="reporte-tienda" data-tienda="' + _repEsc(idTienda) + '" data-fecha="' + _repEsc(fecha) + '" ' +
+  return '<span id="' + id + '" class="reporte-tienda" data-tipo="' + _repEsc(tipo) + '" data-id="' + _repEsc(idQuien) + '" data-fecha="' + _repEsc(fecha) + '" ' +
       'style="display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap">' +
       '<button type="button" class="btn btn-sm" data-rep="generar" onclick="generarReporteTienda(this)" ' +
         'title="Crea una imagen del reporte del ' + _repEsc(_repDiaMes(fecha)) + ' y le da una URL para mandar">' +
@@ -291,7 +298,18 @@ window.botonesReporteTiendaHTML = function(idTienda, fecha) {
       '<button type="button" class="btn btn-sm" data-rep="copiar" onclick="copiarUrlReporte(this)" style="display:none" title="Copiar la URL de la imagen">' +
         '<i class="ti ti-copy"></i> Copiar</button>' +
     '</span>';
+}
+
+/* Detalle de una tienda (js/clientes.js) */
+window.botonesReporteTiendaHTML = function(idTienda, fecha) {
+  return _repBotonesHTML('tienda', idTienda, fecha);
 };
+
+/* Base de las rutas del reporte del contenedor: '/api/caja/tiendas/15' */
+function _repRutaBase(cont) {
+  var cfg = _REP_TIPOS[cont.getAttribute('data-tipo')];
+  return cfg ? API + cfg.api + cont.getAttribute('data-id') : null;
+}
 
 function _repMostrarUrl(cont, url, generadoEn) {
   var link = cont.querySelector('[data-rep="link"]');
@@ -309,9 +327,10 @@ function _repMostrarUrl(cont, url, generadoEn) {
 
 async function _repConsultarExistente(id) {
   var cont = document.getElementById(id);
-  if (!cont) return;
+  var base = cont && _repRutaBase(cont);
+  if (!base) return;
   try {
-    var r = await fetch(API + '/caja/tiendas/' + cont.getAttribute('data-tienda') + '/reporte?fecha=' + cont.getAttribute('data-fecha'));
+    var r = await fetch(base + '/reporte?fecha=' + cont.getAttribute('data-fecha'));
     if (!r.ok) return;
     var d = await r.json();
     if (d.reporte && d.reporte.url) _repMostrarUrl(cont, d.reporte.url, d.reporte.generado_en);
@@ -329,7 +348,9 @@ var _repGenerando = false;
 window.generarReporteTienda = async function(btn) {
   var cont = btn && btn.closest('.reporte-tienda');
   if (!cont || _repGenerando) return;
-  var idTienda = cont.getAttribute('data-tienda');
+  var cfg = _REP_TIPOS[cont.getAttribute('data-tipo')];
+  var base = _repRutaBase(cont);
+  if (!cfg || !base) return;
   var fecha = cont.getAttribute('data-fecha');
   var htmlBtn = btn.innerHTML;
   _repGenerando = true;
@@ -338,14 +359,14 @@ window.generarReporteTienda = async function(btn) {
 
   var blob = null;
   try {
-    var r = await fetch(API + '/caja/tiendas/' + idTienda + '/reporte?fecha=' + fecha);
+    var r = await fetch(base + '/reporte?fecha=' + fecha);
     var datos = await r.json().catch(function() { return {}; });
     if (!r.ok) throw new Error(datos.error || 'No se pudieron traer los datos del día');
 
     var ahora = new Date();
-    blob = await _repCanvasABlob(dibujarReporteTienda(datos, ahora));
+    blob = await _repCanvasABlob(cfg.dibujar(datos, ahora));
 
-    var s = await fetch(API + '/caja/tiendas/' + idTienda + '/reporte/subida', {
+    var s = await fetch(base + '/reporte/subida', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ fecha: fecha }),

@@ -12,6 +12,34 @@ Velox Courier — internal management system for a courier/delivery company in L
 
 Última actualización: 10 de noviembre de 2026.
 
+- **Reporte del día de un MOTORIZADO como imagen (10 de noviembre de 2026, en local, falta que el
+  usuario lo pruebe; sin migración).** El mismo mecanismo que el de tienda (abajo, D-017). **Toca el
+  servidor:** hay que reiniciarlo. `js/reporte-moto.js` (nuevo, `<script>` después de
+  `reporte-tienda.js`), `js/reporte-tienda.js`, `js/motorizados.js`, `index.html`,
+  `server/routes/caja.js`, `server/r2.js`.
+  - **Dónde:** en el panel del moto que abre el ojito en "Motorizados" (`abrirDetalleMotoHistorial`),
+    solo admin, al lado de "Cerrar": "Generar reporte dd/mm" + "Ver imagen" + "Copiar". El día es el
+    del filtro de fecha de la página; con "historial completo", hoy.
+  - **Datos:** `GET /caja/motorizados/:id/reporte?fecha=` (solo admin): todos los pedidos del moto
+    ese día menos los anulados, con `calcularOrdenCaja()`. Por pedido: `efectivo` y `yape` (lo que
+    pasó por sus manos), `directo_velox`, `pago_moto`. Totales: `efectivo`, `yape`, `a_entregar =
+    efectivo + yape` (lo entrega COMPLETO), `pago_moto` ("Velox te paga", aparte) y `neto =
+    a_entregar − pago_moto` (= `saldo_moto` del motor; probado: coincide con la Caja de
+    motorizados). Pago Velox y Pago tienda no suman a lo que entrega. `liquidado` sale de
+    `caja_pagos_motorizados` (`diasPagadosMoto`).
+  - **Imagen:** "Cobró" = monto + tag Efectivo / Yape; "—" con nota en Pago a Velox, Pago tienda,
+    Medio por definir y Sin cobro; "—" solo en ausente, reprogramado, etc. Totales: efectivo, Yape,
+    "A ENTREGAR A VELOX" (ámbar), "VELOX TE PAGA" (verde) y la línea del neto.
+  - **R2:** `POST /caja/motorizados/:id/reporte/subida` → `reportes-moto/<id>-<fecha>-<HMAC>.png`
+    (etiqueta HMAC `velox-reporte-moto`). En `server/r2.js` los dos tipos están en `TIPOS_REPORTE`
+    (`claveReporte(tipo, id, fecha)`, `generarUrlSubidaReporte(tipo, …)`, `infoReporte(tipo, …)`).
+    **La etiqueta y la ruta de cada tipo no se cambian:** cambiarían las URLs ya mandadas. Probado
+    que la de tienda quedó igual después del refactor.
+  - **Frontend compartido:** en `reporte-tienda.js`, `_REP_TIPOS` registra cada tipo (`api` +
+    `dibujar`) y `_repBotonesHTML(tipo, id, fecha)` arma los botones; `reporte-moto.js` registra
+    `moto` y expone `botonesReporteMotoHTML`. Un reporte nuevo = registrar otro tipo.
+  - Quedó un PNG de prueba de 1×1 en `reportes-moto/1046-2026-10-01-…png` (el moto "PRUEBA CAJA" de
+    local); se pisa al generar ese reporte.
 - **Reporte del día de una tienda como IMAGEN (10 de noviembre de 2026, commit `9e92546`, probado por
   el usuario en local y subido a `origin/main`; FALTA EL DEPLOY: `git pull` + `pm2 restart velox`,
   sin migración; ver D-017 en `DECISIONES.md`).** El CORS del bucket ya permite `cache-control`

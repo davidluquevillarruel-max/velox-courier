@@ -116,26 +116,33 @@ async function firmarSubida(carpeta, contentType, ext, idSubida) {
   return { uploadUrl, publicUrl };
 }
 
-/* ── Reporte del día de una tienda (imagen PNG, Clientes / Tiendas) ──
-   No es una foto: lo dibuja el navegador (js/reporte-tienda.js) y se
-   sube con el mismo PUT firmado. El nombre es FIJO por tienda + fecha,
-   así "Generar de nuevo" pisa el mismo archivo y la URL no cambia,
-   pero lleva una firma HMAC para que no se pueda adivinar la URL de
-   otra tienda cambiando el número. No se guarda nada en la BD:
-   la URL se vuelve a calcular y "cuándo" sale del LastModified de R2.
+/* ── Reportes del día en imagen (PNG): tienda (D-017) y motorizado ──
+   No son fotos: los dibuja el navegador (js/reporte-tienda.js,
+   js/reporte-moto.js) y se suben con el mismo PUT firmado. El nombre
+   es FIJO por quién + fecha, así "Generar de nuevo" pisa el mismo
+   archivo y la URL no cambia, pero lleva una firma HMAC para que no
+   se pueda adivinar la URL de otro cambiando el número. No se guarda
+   nada en la BD: la URL se vuelve a calcular y "cuándo" sale del
+   LastModified de R2.
    Cache-Control no-cache: al regenerar, el navegador no muestra la
-   vieja (el CORS del bucket tiene que permitir el encabezado
-   cache-control, además de content-type). */
-const CARPETA_REPORTES = 'reportes';
+   vieja (el CORS del bucket permite el encabezado cache-control).
+   El texto que entra al HMAC de cada tipo no se puede cambiar: si
+   cambia, cambian las URLs de los reportes ya mandados. */
 const CACHE_REPORTE = 'no-cache, max-age=0';
+const TIPOS_REPORTE = {
+  tienda: { etiqueta: 'velox-reporte-tienda', ruta: (id, fecha, firma) => `reportes/tienda-${id}/${fecha}-${firma}.png` },
+  moto:   { etiqueta: 'velox-reporte-moto',   ruta: (id, fecha, firma) => `reportes-moto/${id}-${fecha}-${firma}.png` },
+};
 
-function claveReporteTienda(idTienda, fecha) {
+function claveReporte(tipo, idQuien, fecha) {
+  const cfg = TIPOS_REPORTE[tipo];
+  if (!cfg) throw new Error('Tipo de reporte desconocido: ' + tipo);
   const secreto = process.env.JWT_SECRET;
   if (!secreto) throw new Error('Falta JWT_SECRET para firmar el nombre del reporte');
-  const id = parseInt(idTienda, 10);
+  const id = parseInt(idQuien, 10);
   const firma = crypto.createHmac('sha256', secreto)
-    .update(`velox-reporte-tienda|${id}|${fecha}`).digest('hex').slice(0, 16);
-  return `${CARPETA_REPORTES}/tienda-${id}/${fecha}-${firma}.png`;
+    .update(`${cfg.etiqueta}|${id}|${fecha}`).digest('hex').slice(0, 16);
+  return cfg.ruta(id, fecha, firma);
 }
 
 function urlPublicaDe(clave) {
@@ -143,9 +150,9 @@ function urlPublicaDe(clave) {
 }
 
 /* PUT firmado (5 min) del reporte. El navegador tiene que mandar
-   exactamente estos dos encabezados (van firmados). */
-async function generarUrlSubidaReporte(idTienda, fecha) {
-  const clave = claveReporteTienda(idTienda, fecha);
+   exactamente estos dos encabezados. */
+async function generarUrlSubidaReporte(tipo, idQuien, fecha) {
+  const clave = claveReporte(tipo, idQuien, fecha);
   const comando = new PutObjectCommand({
     Bucket: process.env.R2_BUCKET,
     Key: clave,
@@ -158,8 +165,8 @@ async function generarUrlSubidaReporte(idTienda, fecha) {
 
 /* { url, generado_en } si el reporte ya existe en R2; null si no
    existe o no se pudo consultar (no es motivo para cortar nada) */
-async function infoReporte(idTienda, fecha) {
-  const clave = claveReporteTienda(idTienda, fecha);
+async function infoReporte(tipo, idQuien, fecha) {
+  const clave = claveReporte(tipo, idQuien, fecha);
   try {
     const r = await getCliente().send(new HeadObjectCommand({ Bucket: process.env.R2_BUCKET, Key: clave }));
     return { url: urlPublicaDe(clave), generado_en: r.LastModified ? r.LastModified.toISOString() : null };

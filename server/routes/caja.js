@@ -324,7 +324,7 @@ router.get('/tiendas/:id/reporte', requireRol('admin'), async (req, res) => {
       totales: { delivery: aSoles(tot.delivery), retenido: aSoles(tot.retenido), saldo: aSoles(tot.saldo) },
       liquidado,
       r2: r2Habilitado(),
-      reporte: r2Habilitado() ? await infoReporte(idTienda, fecha) : null,
+      reporte: r2Habilitado() ? await infoReporte('tienda', idTienda, fecha) : null,
     });
   } catch (err) {
     console.error('GET /caja/tiendas/:id/reporte:', err.message);
@@ -343,9 +343,114 @@ router.post('/tiendas/:id/reporte/subida', requireRol('admin'), async (req, res)
     const pool = await getPool();
     const base = await leerTiendaYFecha(req, res, pool, req.body && req.body.fecha);
     if (!base) return;
-    res.json(await generarUrlSubidaReporte(base.idTienda, base.fecha));
+    res.json(await generarUrlSubidaReporte('tienda', base.idTienda, base.fecha));
   } catch (err) {
     console.error('POST /caja/tiendas/:id/reporte/subida:', err.message);
+    res.status(500).json({ error: 'No se pudo preparar la subida del reporte' });
+  }
+});
+
+/* ════════════════════════════════════════════════════════════
+   REPORTE DEL DÍA DE UN MOTORIZADO (imagen, en Motorizados)
+   Solo admin, igual que el de tienda (D-017). Lo dibuja
+   js/reporte-moto.js. Regla: el moto entrega TODO lo que pasó por sus
+   manos (efectivo + Yape) y Velox le paga su delivery aparte; Pago
+   Velox y Pago tienda no pasan por él. Neto = saldo_moto del motor.
+   ════════════════════════════════════════════════════════════ */
+
+async function leerMotoYFecha(req, res, pool, fechaCruda) {
+  const idMoto = parseInt(req.params.id, 10);
+  const fecha = FECHA_RE.test(fechaCruda || '') ? fechaCruda : '';
+  if (!idMoto) { res.status(400).json({ error: 'Motorizado no válido' }); return null; }
+  if (!fecha)  { res.status(400).json({ error: 'Fecha no válida (YYYY-MM-DD)' }); return null; }
+  const m = await pool.request().input('id', sql.Int, idMoto)
+    .query('SELECT id, nombre FROM motorizados WHERE id = @id');
+  if (!m.recordset.length) { res.status(404).json({ error: 'Motorizado no encontrado' }); return null; }
+  return { idMoto, fecha, motorizado: m.recordset[0].nombre };
+}
+
+/* GET /api/caja/motorizados/:id/reporte?fecha=YYYY-MM-DD */
+router.get('/motorizados/:id/reporte', requireRol('admin'), async (req, res) => {
+  try {
+    const pool = await getPool();
+    const base = await leerMotoYFecha(req, res, pool, req.query.fecha);
+    if (!base) return;
+    const { idMoto, fecha, motorizado } = base;
+
+    const r = await pool.request()
+      .input('id_motorizado', sql.Int, idMoto)
+      .input('fecha', sql.Date, fecha)
+      .query(`
+        SELECT o.id, o.codigo, o.estado, o.metodo_pago, o.medio_pago, o.pago_velox, o.pago_velox_metodo,
+               o.delivery_total, o.pago_moto_total, o.monto_cobrado, o.id_motorizado,
+               o.dest_nombre, d.nombre AS distrito, t.nombre AS tienda
+        FROM ordenes o
+        LEFT JOIN distritos d ON d.id = o.id_distrito
+        LEFT JOIN tiendas t ON t.id = o.id_tienda
+        WHERE o.id_motorizado = @id_motorizado AND o.fecha_reparto = @fecha AND o.estado <> '${ESTADO_ANULADO}'
+        ORDER BY o.id`);
+
+    const tot = { efectivo: 0, yape: 0, pago_moto: 0, saldo: 0 };
+    const resumen = { pedidos: 0, entregados: 0, ausentes: 0, devoluciones: 0,
+                      reprogramados: 0, no_entregados: 0, cancelados: 0, en_proceso: 0 };
+    const CLAVE_RESUMEN = { 'entregado': 'entregados', 'ausente': 'ausentes', 'devolucion': 'devoluciones',
+                            'reprogramado': 'reprogramados', 'no-entregado': 'no_entregados',
+                            'cancelado': 'cancelados', 'en-proceso': 'en_proceso' };
+    const pedidos = r.recordset.map((o) => {
+      const c = calcularOrdenCaja(o);
+      tot.efectivo += c.en_mano_efectivo; tot.yape += c.en_mano_yape;
+      tot.pago_moto += c.pago_moto; tot.saldo += c.saldo_moto;
+      resumen.pedidos++;
+      if (CLAVE_RESUMEN[o.estado]) resumen[CLAVE_RESUMEN[o.estado]]++;
+      return {
+        codigo: o.codigo, dest_nombre: o.dest_nombre, distrito: o.distrito, tienda: o.tienda,
+        estado: o.estado, metodo_pago: o.metodo_pago, medio_pago: o.medio_pago,
+        efectivo: aSoles(c.en_mano_efectivo), yape: aSoles(c.en_mano_yape),
+        directo_velox: aSoles(c.directo_velox), pago_moto: aSoles(c.pago_moto),
+      };
+    });
+
+    const pagado = (await diasPagadosMoto(pool, { desde: fecha, idMotorizado: idMoto }))[0];
+    const liquidado = pagado ? {
+      fecha_pago: pagado.fecha_pago,
+      saldo_pagado: aSoles(pagado.saldo),
+      difiere: pagado.saldo !== tot.saldo,
+    } : null;
+
+    res.json({
+      motorizado: { id: idMoto, nombre: motorizado },
+      fecha,
+      resumen,
+      pedidos,
+      totales: {
+        efectivo: aSoles(tot.efectivo), yape: aSoles(tot.yape),
+        a_entregar: aSoles(tot.efectivo + tot.yape),
+        pago_moto: aSoles(tot.pago_moto),
+        neto: aSoles(tot.saldo),          /* > 0 entrega a Velox después de su pago; < 0 Velox le paga */
+      },
+      liquidado,
+      r2: r2Habilitado(),
+      reporte: r2Habilitado() ? await infoReporte('moto', idMoto, fecha) : null,
+    });
+  } catch (err) {
+    console.error('GET /caja/motorizados/:id/reporte:', err.message);
+    res.status(500).json({ error: 'Error al armar el reporte del motorizado' });
+  }
+});
+
+/* POST /api/caja/motorizados/:id/reporte/subida { fecha } → PUT firmado a
+   reportes-moto/<id>-<fecha>-<firma>.png */
+router.post('/motorizados/:id/reporte/subida', requireRol('admin'), async (req, res) => {
+  try {
+    if (!r2Habilitado()) {
+      return res.status(503).json({ error: 'El almacenamiento de imágenes (R2) no está configurado.' });
+    }
+    const pool = await getPool();
+    const base = await leerMotoYFecha(req, res, pool, req.body && req.body.fecha);
+    if (!base) return;
+    res.json(await generarUrlSubidaReporte('moto', base.idMoto, base.fecha));
+  } catch (err) {
+    console.error('POST /caja/motorizados/:id/reporte/subida:', err.message);
     res.status(500).json({ error: 'No se pudo preparar la subida del reporte' });
   }
 });

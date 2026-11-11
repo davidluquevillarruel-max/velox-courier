@@ -15,11 +15,16 @@ Velox Courier — internal management system for a courier/delivery company in L
 - **Reporte del día de un MOTORIZADO como imagen (10 de noviembre de 2026, en local, falta que el
   usuario lo pruebe; sin migración).** El mismo mecanismo que el de tienda (abajo, D-017). **Toca el
   servidor:** hay que reiniciarlo. `js/reporte-moto.js` (nuevo, `<script>` después de
-  `reporte-tienda.js`), `js/reporte-tienda.js`, `js/motorizados.js`, `index.html`,
+  `reporte-tienda.js`), `js/reporte-tienda.js`, `js/caja.js`, `index.html`,
   `server/routes/caja.js`, `server/r2.js`.
-  - **Dónde:** en el panel del moto que abre el ojito en "Motorizados" (`abrirDetalleMotoHistorial`),
-    solo admin, al lado de "Cerrar": "Generar reporte dd/mm" + "Ver imagen" + "Copiar". El día es el
-    del filtro de fecha de la página; con "historial completo", hoy.
+  - **Dónde:** en **Caja → Motorizados**, arriba del detalle que abre el ojito del moto
+    (`_reporteMotoCajaHTML` en `js/caja.js`), solo admin: "Generar reporte dd/mm" + "Ver imagen" +
+    "Copiar". Es de UN día: el del filtro si es uno solo (desde, o desde = hasta); sin filtro, hoy;
+    con un rango de varios días dice "filtrá un solo día". (Primero estuvo en el panel de la página
+    Motorizados; el usuario lo pidió en la Caja y se sacó de allá.) Como la Caja arma el HTML cada
+    8 s y solo lo pinta si cambió, los botones van **diferidos** (`_repBotonesHTML(…, true)`) y
+    `pintarMotosCaja` llama `hidratarReportes(tbody)` después de pintar: así no se consulta R2 en
+    cada refresco.
   - **Datos:** `GET /caja/motorizados/:id/reporte?fecha=` (solo admin): todos los pedidos del moto
     ese día menos los anulados, con `calcularOrdenCaja()`. Por pedido: `efectivo` y `yape` (lo que
     pasó por sus manos), `directo_velox`, `pago_moto`. Totales: `efectivo`, `yape`, `a_entregar =

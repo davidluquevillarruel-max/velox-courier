@@ -179,7 +179,8 @@ if (typeof _REP_TIPOS !== 'undefined') {
   _REP_TIPOS.moto = { api: '/caja/motorizados/', dibujar: function(d, t) { return dibujarReporteMoto(d, t); } };
 }
 
-/* Detalle del motorizado (js/motorizados.js) */
+/* Detalle del moto en la Caja de motorizados (js/caja.js). Va diferido:
+   caja.js llama hidratarReportes() después de pintar. */
 window.botonesReporteMotoHTML = function(idMoto, fecha) {
-  return typeof _repBotonesHTML === 'function' ? _repBotonesHTML('moto', idMoto, fecha) : '';
+  return typeof _repBotonesHTML === 'function' ? _repBotonesHTML('moto', idMoto, fecha, true) : '';
 };

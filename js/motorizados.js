@@ -311,10 +311,6 @@ window.abrirDetalleMotoHistorial = async function(motoId) {
           '</div></div>' +
       '</div>' +
       '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">' +
-        /* Reporte del día en imagen (js/reporte-moto.js, solo admin): el
-           día del filtro; con "historial completo", hoy */
-        (typeof botonesReporteMotoHTML === 'function'
-          ? botonesReporteMotoHTML(m.id, _filtroFechaMoto || _fechaHaceDiasMoto(0)) : '') +
         '<button class="btn btn-sm" onclick="cerrarDetalleMotoHistorial()"><i class="ti ti-x"></i> Cerrar</button>' +
       '</div>' +
     '</div>' +

@@ -284,12 +284,17 @@ function _repEsc(s) {
 
 /* HTML de los botones "Generar reporte dd/mm" / "Ver imagen" / "Copiar".
    Solo admin: para el resto devuelve ''. Al pintarse, pregunta si ya
-   hay un reporte de ese día para mostrar su URL y "Copiar". */
-function _repBotonesHTML(tipo, idQuien, fecha) {
+   hay un reporte de ese día para mostrar su URL y "Copiar".
+   Con diferido = true no pregunta sola: lo hace hidratarReportes(raiz)
+   cuando el HTML ya está en la página. Es para las listas que arman su
+   HTML cada pocos segundos y solo lo pintan si cambió (la Caja): así no
+   se consulta a R2 en cada refresco. */
+function _repBotonesHTML(tipo, idQuien, fecha, diferido) {
   if (!_REP_TIPOS[tipo] || !_repEsAdmin() || !idQuien || !fecha) return '';
   var id = 'rep-' + tipo + '-' + idQuien + '-' + fecha;
-  setTimeout(function() { _repConsultarExistente(id); }, 0);
+  if (!diferido) setTimeout(function() { _repConsultarExistente(id); }, 0);
   return '<span id="' + id + '" class="reporte-tienda" data-tipo="' + _repEsc(tipo) + '" data-id="' + _repEsc(idQuien) + '" data-fecha="' + _repEsc(fecha) + '" ' +
+      (diferido ? 'data-rep-pendiente="1" ' : '') +
       'style="display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap">' +
       '<button type="button" class="btn btn-sm" data-rep="generar" onclick="generarReporteTienda(this)" ' +
         'title="Crea una imagen del reporte del ' + _repEsc(_repDiaMes(fecha)) + ' y le da una URL para mandar">' +
@@ -303,6 +308,15 @@ function _repBotonesHTML(tipo, idQuien, fecha) {
 /* Detalle de una tienda (js/clientes.js) */
 window.botonesReporteTiendaHTML = function(idTienda, fecha) {
   return _repBotonesHTML('tienda', idTienda, fecha);
+};
+
+/* Pregunta por los botones diferidos que ya están pintados dentro de raiz */
+window.hidratarReportes = function(raiz) {
+  if (!raiz) return;
+  raiz.querySelectorAll('.reporte-tienda[data-rep-pendiente]').forEach(function(cont) {
+    cont.removeAttribute('data-rep-pendiente');
+    _repConsultarExistente(cont.id);
+  });
 };
 
 /* Base de las rutas del reporte del contenedor: '/api/caja/tiendas/15' */

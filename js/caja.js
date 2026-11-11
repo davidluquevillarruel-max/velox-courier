@@ -776,6 +776,27 @@ function _motoCaja(idMoto) {
   return _motoResumen && _motoResumen.motorizados.find(function(x) { return x.id === idMoto; });
 }
 
+/* Reporte del día en imagen (js/reporte-moto.js, solo admin). Es de UN
+   día: el del filtro si es uno solo; sin filtro, hoy. Con un rango de
+   varios días se pide elegir uno. */
+function _fechaReporteMotoCaja() {
+  var d = _motoFiltroDesde, h = _motoFiltroHasta;
+  if (!d && !h) return _formatFechaCaja(new Date());
+  if (d && (!h || h === d)) return d;
+  return null;
+}
+
+function _reporteMotoCajaHTML(idMoto) {
+  if (typeof botonesReporteMotoHTML !== 'function') return '';
+  var fecha = _fechaReporteMotoCaja();
+  var html = fecha
+    ? botonesReporteMotoHTML(idMoto, fecha)
+    : (typeof _repEsAdmin === 'function' && _repEsAdmin()
+        ? '<span class="caja-tenue" style="font-size:12px"><i class="ti ti-photo"></i> Para el reporte en imagen, filtrá un solo día</span>'
+        : '');
+  return html ? '<div style="display:flex;justify-content:flex-end;padding:10px 24px 0">' + html + '</div>' : '';
+}
+
 function _detalleMotoHTML(idMoto) {
   var d = _motoDetalles[idMoto];
   if (!d || d.cargando) {
@@ -808,7 +829,8 @@ function _detalleMotoHTML(idMoto) {
         d.dias_abiertos.map(_fechaDisplayCaja).join(', ') + ': no se liquidan hasta cerrarlas.</div>'
     : '';
   var t = d.totales;
-  return _liquidacionesHTML(d.liquidaciones, 'moto') + _diasDifierenHTML(d.dias_pagados) + abiertos + '<div class="caja-detalle"><table>' +
+  return _reporteMotoCajaHTML(idMoto) +
+    _liquidacionesHTML(d.liquidaciones, 'moto') + _diasDifierenHTML(d.dias_pagados) + abiertos + '<div class="caja-detalle"><table>' +
     '<thead><tr><th>N° pedido</th><th>Fecha</th><th>Tienda</th><th>Estado</th><th>Medio de pago</th>' +
       '<th>En mano</th><th>Su pago</th><th>Saldo</th><th>Pago</th><th></th></tr></thead>' +
     '<tbody>' + filas +
@@ -883,6 +905,7 @@ window.pintarMotosCaja = function() {
   if (html === _motoFirma) return;
   _motoFirma = html;
   tbody.innerHTML = html;
+  if (typeof hidratarReportes === 'function') hidratarReportes(tbody);
 };
 
 async function _cargarDetalleMotoCaja(idMoto) {

@@ -182,7 +182,10 @@ router.get('/:id/ordenes', async (req, res) => {
       WHERE o.id_motorizado = @id AND o.estado <> 'anulado'
     `;
     if (fecha) query += ` AND o.fecha_reparto = @fecha`;
-    query += ` ORDER BY o.fecha_reparto DESC, o.id`;
+    /* Por día (el más reciente arriba) y, dentro del día, la última
+       asignada arriba (asignada_en, hora de Lima). Las que no tienen
+       hora (anteriores a la columna) van al final del día, por id. */
+    query += ` ORDER BY o.fecha_reparto DESC, o.asignada_en DESC, o.id DESC`;
     const request = pool.request().input('id', sql.Int, req.params.id);
     if (fecha) request.input('fecha', sql.Date, fecha);
     const result = await request.query(query);

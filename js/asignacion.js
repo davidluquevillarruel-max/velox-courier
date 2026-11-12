@@ -243,14 +243,15 @@ window.filtrarPoolAsignacion = function() {
   _renderPoolPendientes();
 };
 
-/* Ordenes asignadas al motorizado seleccionado */
+/* Ordenes asignadas al motorizado seleccionado: la última asignada
+   arriba (_compararPorAsignacion, en js/motorizados.js) */
 function _getOrdenesAsignadas(nombreMoto) {
   if (!nombreMoto) return [];
   return ORDENES_ASIG.filter(function(o) {
     return o.motorizado && o.motorizado.trim().toUpperCase() === nombreMoto.trim().toUpperCase()
       && o.estado !== 'entregado'
       && o.estado !== 'cancelado';
-  });
+  }).sort(_compararPorAsignacion);
 }
 
 function _badgeEstadoAsig(estado) {

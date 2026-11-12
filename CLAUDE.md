@@ -12,17 +12,33 @@ Velox Courier — internal management system for a courier/delivery company in L
 
 Última actualización: 12 de noviembre de 2026.
 
-- **"Mis entregas de hoy": buscador (12 de noviembre de 2026, en local, falta que el usuario lo
-  pruebe).** Solo `js/entregas-moto.js` + `css/components.css` (`.entregas-hoy-buscar`,
+- **Listas del motorizado: la última asignada arriba (12 de noviembre de 2026, en local, falta que
+  el usuario lo pruebe; NECESITA MIGRACIÓN `velox_agregar_asignada_en.sql`, ya aplicada en local,
+  ver "Migraciones pendientes").** **Toca el servidor:** hay que reiniciarlo. `server/routes/ordenes.js`,
+  `server/routes/motorizados.js`, `js/motorizados.js`, `js/entregas-moto.js`, `js/asignacion.js`.
+  - **Columna nueva `ordenes.asignada_en DATETIME2(0) NULL`:** hora de LIMA en que se asignó la orden
+    al motorizado actual. Hacía falta porque `fecha_asignacion` es `DATE` y `hora_asignacion`, **pese
+    al nombre, es la hora de CREACIÓN** (la llena el `INSERT`; `/asignar` no la toca): no usarla para
+    ordenar por asignación. Se guarda con `ahoraEnLima()` (texto + `CONVERT(datetime2(0), @x, 120)`:
+    un `Date` de JS quedaría en UTC). `SELECT_ORDEN` la devuelve como `'YYYY-MM-DD HH:mm:ss'`.
+  - **Quién la toca:** `/asignar` la pone en ahora al asignar o pasar a OTRO moto, la **conserva**
+    si es el mismo moto (guardar "Actualizar orden" o cambiar solo la fecha no la sube) y la borra al
+    desasignar; `/devolver` la borra cuando la orden vuelve a Asignación; `POST /ordenes` creada ya con
+    motorizado nace con la hora. El import de Excel no la llena (quedan sin hora). No la usa la Caja.
+  - **Orden:** día de reparto más reciente primero; dentro del día `asignada_en` DESC; las sin hora al
+    final, por id DESC. En el servidor, `GET /motorizados/:id/ordenes` (historial de abajo) y
+    `GET /ordenes/para-asignacion`; en el navegador, `_compararPorAsignacion` (en `js/motorizados.js`)
+    para "Mis entregas de hoy" y "Órdenes asignadas al motorizado" de Asignación.
+  - Probado el 12/11 contra la base local y la API (órdenes TST-AS-*, borradas): orden de 3
+    asignaciones seguidas, hora de Lima, mismo moto conserva, pasar a otro moto sube arriba,
+    desasignar y `/devolver` la vacían, `POST` con y sin moto, y la sin hora al final.
+- **"Mis entregas de hoy": buscador (12 de noviembre de 2026, commit `223635a`, probado por el
+  usuario en local).** Solo `js/entregas-moto.js` + `css/components.css` (`.entregas-hoy-buscar`,
   `.entregas-hoy-sin-resultado`), sin servidor ni migración. Arriba de la lista (solo si hay
   órdenes), filtra al escribir por cliente, distrito, tienda y código, sin tildes ni mayúsculas;
   cada palabra puede estar en cualquiera de los campos ("moda juan"). La cuenta pasa a "N de M".
   El buscador vive en un esqueleto que se arma una sola vez (`_esqueletoEntregasHoy`): el refresco
   de 8 s repinta solo `#ent-hoy-lista` y la cuenta, así no se pierde lo escrito ni el teclado.
-  - **Orden por asignación: NO hecho, a la espera de decidir la señal.** No hay hora de
-    asignación: `fecha_asignacion` es `DATE` y `hora_asignacion`, pese al nombre, es la hora de
-    **creación** (la llena el `INSERT`; `/asignar` no la toca). Hoy la lista ordena por
-    `hora_asignacion` ascendente + id.
 - **Reporte del día de un MOTORIZADO como imagen (10 de noviembre de 2026, commits `c206fe7` y
   `3df4580`, probado por el usuario en local en Caja → Motorizados y subido a `origin/main`; FALTA
   EL DEPLOY: `git pull` + `pm2 restart velox`, sin migración, el mismo del de tienda; ampliación de
@@ -805,7 +821,14 @@ Roles: `admin`, `operador`, `visor`, `tienda`, `motorizado`. `GESTORES = ['admin
 
 ## Migraciones pendientes de aplicar en producción
 
-Ninguna por ahora.
+- `velox_agregar_asignada_en.sql` (12 de noviembre de 2026): columna `ordenes.asignada_en
+  DATETIME2(0) NULL`, la hora de Lima en que se asignó la orden, para ordenar las listas del
+  motorizado con la última asignada arriba. **Aplicada en local** el 12/11 (con `sqlcmd -E -C`,
+  verificada en `sys.columns`). **Falta en producción**, con `sa` y **antes** del `git pull`: sin
+  la columna, el código nuevo da 500 en asignar, devolver, crear orden, Asignación y el historial
+  del moto. El script ahora hace `USE velox_courier` y comprueba la columna antes de decir OK: la
+  primera versión imprimía "creada" aunque el `ALTER` hubiera fallado (pasó en local, corrida en
+  `master`).
 
 `velox_agregar_estado_anulado.sql` (agrega `anulado` a `chk_ordenes_estado`, D-014) se aplicó en local
 el 6 de noviembre de 2026 y en producción antes del `git pull` a `c0f1312` (confirmado por el usuario).

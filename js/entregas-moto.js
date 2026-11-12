@@ -88,11 +88,9 @@ async function _cargarPendientesHoy() {
        tienen datos por completar: se ven, pero sin EMPEZAR hasta que la
        oficina las complete (el refresco de 8 s habilita el botón) */
     .filter(function(o) { return o.estado === 'en-proceso'; })
-    .sort(function(a, b) {
-      var ha = a.hora_asignacion || '', hb = b.hora_asignacion || '';
-      if (ha !== hb) return ha < hb ? -1 : 1;
-      return a.id - b.id;
-    });
+    /* La última asignada arriba (_compararPorAsignacion, js/motorizados.js).
+       hora_asignacion no sirve: pese al nombre, es la hora de creación */
+    .sort(_compararPorAsignacion);
 }
 
 async function _recargarEntregasHoy(inicial) {

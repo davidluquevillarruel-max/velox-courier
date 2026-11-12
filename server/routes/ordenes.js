@@ -131,6 +131,19 @@ function hoyEnLima() {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Lima' }).format(new Date());
 }
 
+/* Fecha y hora de ahora en Lima ('YYYY-MM-DD HH:mm:ss'), para
+   ordenes.asignada_en. Va como texto y se convierte en el SQL con
+   CONVERT(datetime2(0), @x, 120): un Date de JS lo guardaría en UTC. */
+function ahoraEnLima() {
+  const p = {};
+  new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Lima', hourCycle: 'h23',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+  }).formatToParts(new Date()).forEach(x => { p[x.type] = x.value; });
+  return `${p.year}-${p.month}-${p.day} ${p.hour}:${p.minute}:${p.second}`;
+}
+
 /* 2601 / 2627 = clave duplicada; el mensaje trae el nombre del
    índice o restricción que chocó */
 function esDuplicado(err, nombreIndice) {
@@ -289,6 +302,10 @@ const SELECT_ORDEN = `
     CONVERT(varchar(20), o.row_version, 1) AS version,
     o.hora_asignacion,
     CONVERT(varchar, o.fecha_asignacion, 23) AS fecha_asignacion,
+    /* Cuándo se asignó al motorizado actual, hora de Lima
+       ('YYYY-MM-DD HH:mm:ss', se ordena como texto). NULL sin moto o
+       asignada antes de velox_agregar_asignada_en.sql */
+    CONVERT(varchar(19), o.asignada_en, 120) AS asignada_en,
     /* Día que manda (lista, motorizado, Caja): fecha_asignacion o,
        sin asignar, la de creación (ver velox_agregar_fecha_reparto.sql) */
     CONVERT(varchar, o.fecha_reparto, 23) AS fecha_reparto,
@@ -408,7 +425,7 @@ router.get('/para-asignacion', requireRol('admin', 'operador', 'visor', 'motoriz
     const request = pool.request();
     const where   = 'WHERE 1 = 1 ' + filtroAsignacion(req.usuario, request).sql;
     const result  = await request.query(
-      `${SELECT_ORDEN} ${where} ORDER BY o.fecha_reparto DESC, o.id DESC`
+      `${SELECT_ORDEN} ${where} ORDER BY o.fecha_reparto DESC, o.asignada_en DESC, o.id DESC`
     );
     res.json(result.recordset);
   } catch (err) {
@@ -628,10 +645,11 @@ router.post('/', requireRol(...GESTORES), async (req, res) => {
         .input('pago_moto_ad', sql.Decimal(10,2), parseFloat(o.pagoMotoAdic) || 0)
         .input('especial',     sql.Bit,           o.productoEspecial ? 1 : 0)
         .input('obs',          sql.NVarChar,      o.obs || '')
+        .input('ahora',        sql.VarChar(19),   ahoraEnLima())
         .query(`
           INSERT INTO ordenes (
             codigo, fecha, hora_asignacion,
-            id_tienda, id_origen, id_distrito, id_motorizado,
+            id_tienda, id_origen, id_distrito, id_motorizado, asignada_en,
             dest_nombre, dest_telefono, dest_telefono_2, dest_direccion,
             estado, condicion_especial, pago_velox, pago_velox_metodo, metodo_pago,
             delivery_base, monto_adicional, monto_cobrado, monto_producto,
@@ -640,6 +658,8 @@ router.post('/', requireRol(...GESTORES), async (req, res) => {
           ) VALUES (
             @codigo, @fecha, @hora,
             @id_tienda, @id_origen, @id_distrito, @id_moto,
+            /* Creada ya con motorizado = asignada ahora (orden de sus listas) */
+            CASE WHEN @id_moto IS NULL THEN NULL ELSE CONVERT(datetime2(0), @ahora, 120) END,
             @dest_nombre, @dest_tel, @dest_tel2, @dest_dir,
             @estado, @condicion, @pago_velox, @pago_velox_metodo, @metodo,
             @delivery, @adicional, @cobrado, @producto,
@@ -1503,14 +1523,26 @@ router.patch('/:id/asignar', soloAdminSiAnulada, async (req, res) => {
     const request = pool.request()
       .input('id',    sql.BigInt, req.params.id)
       .input('moto',  sql.Int,    id_motorizado)
-      .input('fasig', sql.Date,   fechaAsignacion);
+      .input('fasig', sql.Date,   fechaAsignacion)
+      .input('ahora', sql.VarChar(19), ahoraEnLima());
     let whereVersion = '';
     if (ifVersion) { request.input('ifVersion', sql.VarBinary(8), ifVersion); whereVersion = ' AND row_version = @ifVersion'; }
 
     const result = await request.query(`
       UPDATE ordenes
       SET fecha_asignacion = @fasig,
-          id_motorizado    = @moto
+          id_motorizado    = @moto,
+          /* asignada_en (orden de las listas del motorizado, la última
+             arriba): desasignar la borra; asignarla o pasarla a OTRO
+             motorizado pone ahora (Lima); el mismo motorizado la
+             conserva, así cambiar solo la fecha de reparto o guardar
+             "Actualizar orden" no la sube al principio. (id_motorizado
+             a la derecha del = es el valor de antes del UPDATE.) */
+          asignada_en      = CASE
+                               WHEN @moto IS NULL THEN NULL
+                               WHEN id_motorizado = @moto THEN asignada_en
+                               ELSE CONVERT(datetime2(0), @ahora, 120)
+                             END
       WHERE id = @id${whereVersion}
     `);
     if (ifVersion && result.rowsAffected[0] === 0) {
@@ -1646,7 +1678,8 @@ router.patch('/:id/devolver', requireRol(...GESTORES), soloAdminSiAnulada, async
         SET devuelto = devuelto + 1,
             estado = 'en-proceso',
             id_motorizado = NULL,
-            fecha_asignacion = NULL
+            fecha_asignacion = NULL,
+            asignada_en = NULL
         WHERE id = @id
       `);
 

@@ -36,6 +36,24 @@ function _esSesionMotorizado() {
   try { return JSON.parse(raw).rol === 'motorizado'; } catch(e) { return false; }
 }
 
+/* Orden de las listas del motorizado ("Mis entregas de hoy" y "Órdenes
+   asignadas al motorizado" en Asignación; el historial ya viene así del
+   servidor): día de reparto más reciente arriba y, dentro del día, la
+   ÚLTIMA asignada arriba (asignada_en, hora de Lima 'YYYY-MM-DD
+   HH:mm:ss', se compara como texto). Las que no tienen hora van al
+   final del día; entre ellas, y en empate, la de id mayor primero. */
+function _compararPorAsignacion(a, b) {
+  var fa = a.fecha_reparto || '', fb = b.fecha_reparto || '';
+  if (fa !== fb) return fa < fb ? 1 : -1;
+  var ha = a.asignada_en || '', hb = b.asignada_en || '';
+  if (ha !== hb) {
+    if (!ha) return 1;
+    if (!hb) return -1;
+    return ha < hb ? 1 : -1;
+  }
+  return (Number(b.id) || 0) - (Number(a.id) || 0);
+}
+
 /* ════════════════════════════════════════════
    HELPERS
 ════════════════════════════════════════════ */

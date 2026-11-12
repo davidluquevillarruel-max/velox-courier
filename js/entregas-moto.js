@@ -109,22 +109,79 @@ async function _recargarEntregasHoy(inicial) {
   _pintarEntregasHoy();
 }
 
+/* ── Buscador ─────────────────────────────────────────────── */
+
+/* Minúsculas, sin tildes y sin espacios de más: "Jesús María" = "jesus maria" */
+function _normEnt(s) {
+  return String(s == null ? '' : s).toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/\s+/g, ' ').trim();
+}
+
+/* Cada palabra tiene que aparecer en cliente, distrito, tienda o código
+   (en cualquier orden): "miraflores juan" encuentra a Juan en Miraflores */
+function _coincideEnt(o, texto) {
+  var q = _normEnt(texto);
+  if (!q) return true;
+  var donde = _normEnt([o.dest_nombre, o.distrito, o.tienda, o.codigo].join(' '));
+  return q.split(' ').every(function(p) { return donde.indexOf(p.replace(/^#/, '')) !== -1; });
+}
+
+/* Se llama al escribir: pinta solo la lista, sin ir al servidor */
+window.filtrarEntregasHoy = function() {
+  _pintarEntregasHoy();
+};
+
+/* Arma una sola vez el título, el buscador y el lugar de la lista. El
+   refresco de 8 s repinta solo la cuenta y la lista: si repintara el
+   buscador, el motorizado perdería lo escrito y el teclado se cerraría. */
+function _esqueletoEntregasHoy(cont) {
+  if (document.getElementById('ent-hoy-lista')) return;
+  _entUltimoHtml = null; /* lista nueva y vacía: hay que pintarla sí o sí */
+  cont.innerHTML =
+    '<div class="entregas-hoy-head">' +
+      '<span class="entregas-hoy-titulo">Mis entregas de hoy</span>' +
+      '<span id="ent-hoy-cuenta"></span>' +
+    '</div>' +
+    '<div class="entregas-hoy-buscar" id="ent-hoy-buscar-wrap" style="display:none">' +
+      '<i class="ti ti-search"></i>' +
+      '<input type="search" id="ent-hoy-buscar" placeholder="Buscar cliente, distrito, tienda o código" ' +
+        'autocomplete="off" oninput="filtrarEntregasHoy()">' +
+    '</div>' +
+    '<div id="ent-hoy-lista"></div>';
+}
+
 /* Pinta la lista con lo que hay en _entPendientes, sin ir al servidor
    (así, al cerrar una orden, desaparece al instante aunque no haya señal) */
 function _pintarEntregasHoy() {
   var cont = document.getElementById('mis-entregas-hoy');
   if (!cont) return;
+  _esqueletoEntregasHoy(cont);
 
-  var html =
-    '<div class="entregas-hoy-head">' +
-      '<span class="entregas-hoy-titulo">Mis entregas de hoy</span>' +
-      (_entPendientes.length ? '<span class="entregas-hoy-cuenta">Quedan ' + _entPendientes.length + '</span>' : '') +
-    '</div>';
+  var inp = document.getElementById('ent-hoy-buscar');
+  var texto = inp ? inp.value : '';
+  var visibles = _entPendientes.filter(function(o) { return _coincideEnt(o, texto); });
+  var filtrando = !!_normEnt(texto);
 
+  /* La cuenta es siempre del total del día; buscando, "2 de 9" */
+  var cuenta = document.getElementById('ent-hoy-cuenta');
+  if (cuenta) {
+    cuenta.className = _entPendientes.length ? 'entregas-hoy-cuenta' : '';
+    cuenta.textContent = !_entPendientes.length ? ''
+      : filtrando ? visibles.length + ' de ' + _entPendientes.length
+      : 'Quedan ' + _entPendientes.length;
+  }
+  /* Sin órdenes no hay nada que buscar */
+  var wrap = document.getElementById('ent-hoy-buscar-wrap');
+  if (wrap) wrap.style.display = _entPendientes.length ? '' : 'none';
+
+  var html = '';
   if (!_entPendientes.length) {
     html += '<div class="entregas-hoy-vacio"><i class="ti ti-circle-check"></i> No tienes entregas pendientes para hoy.</div>';
+  } else if (!visibles.length) {
+    html += '<div class="entregas-hoy-sin-resultado">Ninguna orden coincide con «' + _escEnt(texto.trim()) + '».</div>';
   } else {
-    html += '<div class="entregas-hoy-lista">' + _entPendientes.map(function(o) {
+    html += '<div class="entregas-hoy-lista">' + visibles.map(function(o) {
       var cond = o.condicionEspecial ? ' <span class="badge ausente">' + _escEnt(_ENT_CONDICIONES[o.condicionEspecial] || o.condicionEspecial) + '</span>' : '';
       /* Con datos por completar no se muestra "Sin cobro · S/ 0": el
          monto todavía no se sabe (lo carga la oficina) */
@@ -164,7 +221,8 @@ function _pintarEntregasHoy() {
   /* Sin cambios no se repinta (la lista se refresca cada 8 s) */
   if (html === _entUltimoHtml) return;
   _entUltimoHtml = html;
-  cont.innerHTML = html;
+  var lista = document.getElementById('ent-hoy-lista');
+  if (lista) lista.innerHTML = html;
 }
 
 /* ── Pantalla sobrepuesta ─────────────────────────────────── */

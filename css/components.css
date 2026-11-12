@@ -632,6 +632,39 @@
   border-radius: 20px;
   padding: 3px 10px;
 }
+/* Buscador de "Mis entregas de hoy": 16 px para que el iPhone no haga
+   zoom al tocarlo */
+.entregas-hoy-buscar {
+  position: relative;
+  margin-bottom: 10px;
+}
+.entregas-hoy-buscar i {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--color-text-tertiary);
+  font-size: 18px;
+  pointer-events: none;
+}
+.entregas-hoy-buscar input {
+  width: 100%;
+  box-sizing: border-box;
+  font-size: 16px;
+  padding: 11px 12px 11px 38px;
+  border: 1px solid var(--color-border-secondary);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-primary);
+  color: var(--color-text-primary);
+}
+.entregas-hoy-sin-resultado {
+  text-align: center;
+  padding: 18px 16px;
+  color: var(--color-text-secondary);
+  background: var(--color-bg-secondary);
+  border-radius: var(--radius-lg);
+  font-size: 14px;
+}
 .entregas-hoy-lista {
   display: flex;
   flex-direction: column;

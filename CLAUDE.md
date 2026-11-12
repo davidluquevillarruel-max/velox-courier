@@ -10,8 +10,19 @@ Velox Courier — internal management system for a courier/delivery company in L
 
 ## Estado actual
 
-Última actualización: 10 de noviembre de 2026.
+Última actualización: 12 de noviembre de 2026.
 
+- **"Mis entregas de hoy": buscador (12 de noviembre de 2026, en local, falta que el usuario lo
+  pruebe).** Solo `js/entregas-moto.js` + `css/components.css` (`.entregas-hoy-buscar`,
+  `.entregas-hoy-sin-resultado`), sin servidor ni migración. Arriba de la lista (solo si hay
+  órdenes), filtra al escribir por cliente, distrito, tienda y código, sin tildes ni mayúsculas;
+  cada palabra puede estar en cualquiera de los campos ("moda juan"). La cuenta pasa a "N de M".
+  El buscador vive en un esqueleto que se arma una sola vez (`_esqueletoEntregasHoy`): el refresco
+  de 8 s repinta solo `#ent-hoy-lista` y la cuenta, así no se pierde lo escrito ni el teclado.
+  - **Orden por asignación: NO hecho, a la espera de decidir la señal.** No hay hora de
+    asignación: `fecha_asignacion` es `DATE` y `hora_asignacion`, pese al nombre, es la hora de
+    **creación** (la llena el `INSERT`; `/asignar` no la toca). Hoy la lista ordena por
+    `hora_asignacion` ascendente + id.
 - **Reporte del día de un MOTORIZADO como imagen (10 de noviembre de 2026, commits `c206fe7` y
   `3df4580`, probado por el usuario en local en Caja → Motorizados y subido a `origin/main`; FALTA
   EL DEPLOY: `git pull` + `pm2 restart velox`, sin migración, el mismo del de tienda; ampliación de

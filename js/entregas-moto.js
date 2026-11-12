@@ -187,7 +187,9 @@ function _pintarEntregasHoy() {
       var cobro = pendiente
         ? '<div class="assign-dato assign-falta"><i class="ti ti-cash"></i> Por cobrar: por completar' + cond + '</div>'
         : '<div class="assign-dato"><i class="ti ti-cash"></i> ' +
-            (o.metodo_pago === 'contraentrega' ? 'Por cobrar ' + _soles(o.monto_cobrado) : 'Sin cobro') + cond + '</div>';
+            (o.metodo_pago === 'contraentrega'
+              ? 'Por cobrar <span class="entrega-monto">' + _soles(o.monto_cobrado) + '</span>'
+              : 'Sin cobro') + cond + '</div>';
       var distrito = o.distrito === 'SIN DEFINIR'
         ? '<div class="assign-dato assign-falta"><i class="ti ti-map-pin"></i> Distrito por definir</div>'
         : '<div class="assign-dato"><i class="ti ti-map-pin"></i> ' + _escEnt(o.distrito) + '</div>';
@@ -203,15 +205,23 @@ function _pintarEntregasHoy() {
       var whatsapp = typeof _botonWhatsApp === 'function'
         ? '<div class="entrega-item-whatsapp">' + _botonWhatsApp(o.dest_telefono, o.dest_nombre, o.dest_telefono_2) + '</div>'
         : '';
-      /* Misma jerarquía que Asignación (_datosOrdenAsig en js/asignacion.js):
-         los datos grandes y en negrita, el código chico al final */
+      /* Foto del producto: la MISMA miniatura de Asignación
+         (_miniaturaFotoAsig en js/asignacion.js): lazy, toca para verla en
+         grande, ícono gris si no hay o no carga */
+      var foto = typeof _miniaturaFotoAsig === 'function'
+        ? '<div class="entrega-item-foto">' + _miniaturaFotoAsig(o) + '</div>'
+        : '';
+      /* Tres columnas: foto | datos (misma jerarquía que Asignación,
+         _datosOrdenAsig: grandes y en negrita, el código chico al final) |
+         WhatsApp arriba y EMPEZAR (o el aviso de datos faltantes) abajo */
       return '<div class="entrega-item">' +
+        foto +
         '<div class="entrega-item-datos assign-info">' +
           '<div class="assign-tienda">' + _escEnt(o.tienda) + '</div>' +
           distrito + cliente + cobro +
           '<div class="assign-code">#' + _escEnt(o.codigo) + '</div>' +
         '</div>' +
-        whatsapp + accion +
+        '<div class="entrega-item-acciones">' + whatsapp + accion + '</div>' +
       '</div>';
     }).join('') + '</div>';
   }

@@ -12,6 +12,16 @@ Velox Courier — internal management system for a courier/delivery company in L
 
 Última actualización: 12 de noviembre de 2026.
 
+- **"Mis entregas de hoy": tarjeta en tres columnas (12 de noviembre de 2026, en local, falta que el
+  usuario lo pruebe).** Solo `js/entregas-moto.js` + `css/components.css`, sin servidor ni
+  migración. Foto del producto a la izquierda | datos en el medio | WhatsApp arriba y EMPEZAR (o el
+  aviso "Faltan datos") abajo, a la derecha, del mismo ancho (`.entrega-item-acciones`, 128 px).
+  La foto es la **misma miniatura de Asignación** (`_miniaturaFotoAsig` de `js/asignacion.js`:
+  lazy, tocar la agranda con `verFotoProductoAsig`, ícono gris si no hay o no carga), a 88 px
+  (`.entrega-item-foto`); hasta 400 px de ancho, 64 px y columna de botones de 100 px. El monto
+  va en `.entrega-monto` (no se parte). El botón de WhatsApp tiene estilos inline
+  (`_botonWhatsApp`, color `#25D366` fijo): para estirarlo y darle alto se pisó el padding con
+  `!important` en `.entrega-item-whatsapp a`.
 - **Listas del motorizado: la última asignada arriba (12 de noviembre de 2026, en local, falta que
   el usuario lo pruebe; NECESITA MIGRACIÓN `velox_agregar_asignada_en.sql`, ya aplicada en local,
   ver "Migraciones pendientes").** **Toca el servidor:** hay que reiniciarlo. `server/routes/ordenes.js`,

@@ -679,13 +679,62 @@
   border-radius: var(--radius-lg);
   padding: 12px 14px;
 }
-/* Los textos usan las clases assign-* de Asignación */
+/* Foto del producto a la izquierda: la miniatura de Asignación
+   (.assign-thumb), más grande acá porque la tarjeta es más alta */
+.entrega-item-foto {
+  flex-shrink: 0;
+  align-self: center;
+}
+.entrega-item-foto .assign-thumb {
+  width: 88px;
+  height: 88px;
+}
+/* Los textos usan las clases assign-* de Asignación. min-width: 0
+   deja que un nombre largo se corte en vez de empujar los botones */
 .entrega-item-datos {
   flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
-/* WhatsApp al cliente, a la izquierda de EMPEZAR: no se encoge */
-.entrega-item-whatsapp {
+/* Columna derecha: WhatsApp arriba, EMPEZAR (o el aviso) abajo, los
+   dos del mismo ancho */
+.entrega-item-acciones {
   flex-shrink: 0;
+  width: 128px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+.entrega-item-acciones .btn-empezar,
+.entrega-item-acciones .entrega-item-espera {
+  width: 100%;
+  max-width: none;
+  box-sizing: border-box;
+}
+/* El botón de WhatsApp (_botonWhatsApp) estira al ancho de la columna */
+.entrega-item-whatsapp a {
+  width: 100%;
+  box-sizing: border-box;
+  justify-content: center;
+  padding-top: 8px !important;
+  padding-bottom: 8px !important;
+}
+.entrega-item-whatsapp > span {
+  display: block;
+  text-align: center;
+}
+/* El monto no se parte en dos líneas ("S/" arriba y el número abajo) */
+.entrega-monto {
+  white-space: nowrap;
+}
+/* Celular angosto: la foto al tamaño de Asignación y la columna de
+   botones más angosta, para dejarle lugar a los datos */
+@media (max-width: 400px) {
+  .entrega-item { gap: 8px; padding: 10px; }
+  .entrega-item-foto .assign-thumb { width: 64px; height: 64px; }
+  .entrega-item-acciones { width: 100px; }
+  .entrega-item-acciones .btn-empezar { padding: 12px 6px; font-size: 14px; }
 }
 /* Orden con datos por completar (la oficina los carga): en vez de
    EMPEZAR, el aviso */

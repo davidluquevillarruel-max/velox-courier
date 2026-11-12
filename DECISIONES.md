@@ -4,7 +4,7 @@
 > Sirve también como contexto de arranque para Claude Code: si se copia a `CLAUDE.md`
 > en la raíz del repo, la herramienta lo lee automáticamente al iniciar.
 >
-> Última actualización: 10 de noviembre de 2026
+> Última actualización: 12 de noviembre de 2026
 
 ---
 
@@ -679,6 +679,48 @@ de tienda: `git pull` + `pm2 restart velox`, sin migración.
 
 ---
 
+## D-018 · Las listas del motorizado, por hora de asignación (columna `ordenes.asignada_en`)
+
+**Estado:** probado por el usuario en local el 12 de noviembre de 2026 y subido a `origin/main`
+(commit `01b0f09`). **Falta el deploy, con migración:** primero `velox_agregar_asignada_en.sql` con
+`sa`, después `git pull` + `pm2 restart velox`. Ese mismo día se subieron, sin migración, el
+buscador de "Mis entregas de hoy" (`223635a`) y la tarjeta con foto y botones apilados (`063e0f4`).
+
+**Problema.** El motorizado quería ver arriba la última orden que le asignaron y abajo la primera,
+en todas sus listas. No había ningún dato que dijera a qué hora se asignó una orden:
+- `fecha_asignacion` es `DATE`: sirve para el día de reparto, no para ordenar dentro del día.
+- `hora_asignacion`, pese al nombre, es la hora de **creación**: la llena el `INSERT` y `/asignar`
+  no la toca.
+
+**Decisión.** Columna nueva `ordenes.asignada_en DATETIME2(0) NULL` (decidido por el usuario).
+- **Se descartó ordenar por id** (sin migración): ordena por creación y falla justo en los casos
+  que importan, como una reprogramada que vuelve, una orden que pasa de un moto a otro, o una creada
+  temprano y asignada tarde.
+- **Hora de Lima**, no la del servidor (en UTC): va como texto y se convierte en el SQL. Un `Date` de
+  JS la guardaría en UTC.
+- **Cuándo cambia:**
+  - Asignar o pasar a **otro** motorizado pone la hora actual.
+  - Volver a asignar al **mismo** motorizado la conserva. "Actualizar orden" llama a `/asignar` en
+    cada guardado; si la pisara, editar un teléfono subiría la orden arriba de todo.
+  - Desasignar y `/devolver` (vuelve a Asignación) la borran.
+  - Una orden creada ya con motorizado nace con la hora.
+- **Orden:** día de reparto más reciente primero; dentro del día, la última asignada arriba; las
+  sin hora, al final y por id. Se aplica en el historial del moto y en Asignación (servidor), y en
+  "Mis entregas de hoy" y "Órdenes asignadas al motorizado" (navegador), con una sola función de
+  orden compartida.
+- **La Caja no la usa:** es solo para ordenar, no cambia ningún monto ni ningún día.
+
+**Límites aceptados.**
+- Las órdenes asignadas antes de la migración y las importadas por Excel no tienen hora: van al
+  final de su día. Como la limpieza del 7/11 dejó producción sin órdenes, casi no hay.
+- **El deploy tiene orden obligatorio:** sin la columna, el código nuevo da 500 en asignar,
+  devolver, crear orden, Asignación y el historial del moto.
+- La migración se corre a mano. La primera versión del script decía "creada" aunque el `ALTER`
+  hubiera fallado: en local se corrió en `master` y no creó nada. Ahora hace `USE velox_courier` y
+  comprueba la columna antes de decir OK; conviene que las migraciones nuevas hagan lo mismo.
+
+---
+
 ## Costos de operación
 
 | Concepto | Mensual |
@@ -734,6 +776,11 @@ downtime). El dominio se traspasa aparte en Namecheap.
 - [ ] **Deploy de los reportes del día en imagen, de tienda y de motorizado** (D-017; probados
       por el usuario en local y ya en `origin/main`, commits `9e92546`, `c206fe7` y `3df4580`, sin
       migración): `git pull` + `pm2 restart velox`. El CORS del bucket ya está listo.
+- [ ] **Deploy de los cambios del 12/11/2026, CON migración** (D-018; probados por el usuario en
+      local y ya en `origin/main`, commits `223635a`, `01b0f09` y `063e0f4`): buscador de "Mis
+      entregas de hoy", listas del motorizado con la última asignada arriba y tarjeta con foto +
+      WhatsApp arriba de EMPEZAR. En este orden: `velox_agregar_asignada_en.sql` con `sa`, después
+      `git pull` + `pm2 restart velox`. El mismo `git pull` trae también los reportes de arriba.
 - [ ] **Fase 4:** rotar las 89 contraseñas de fórmula de las tiendas (con "Resetear
       contraseñas") y sacar el secreto de `server/db.js`. Ver D-007.
 - [ ] **Opcional:** cortar las sesiones abiertas al resetear una contraseña (necesita

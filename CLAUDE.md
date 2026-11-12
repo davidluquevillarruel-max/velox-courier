@@ -12,8 +12,14 @@ Velox Courier — internal management system for a courier/delivery company in L
 
 Última actualización: 12 de noviembre de 2026.
 
-- **"Mis entregas de hoy": tarjeta en tres columnas (12 de noviembre de 2026, en local, falta que el
-  usuario lo pruebe).** Solo `js/entregas-moto.js` + `css/components.css`, sin servidor ni
+- **Cambios del 12 de noviembre de 2026 (los 3 de abajo): probados por el usuario en local y
+  subidos a `origin/main` (commits `223635a`, `01b0f09`, `063e0f4`). FALTA EL DEPLOY, en este
+  orden:** (1) correr `velox_agregar_asignada_en.sql` en el servidor con `sa`; (2) `git pull`;
+  (3) `pm2 restart velox`. Si se hace el pull sin la migración, asignar, devolver, crear orden,
+  Asignación y el historial del moto dan 500. Los motorizados con la app abierta tienen que
+  recargarla. Ver D-018 en `DECISIONES.md`.
+- **"Mis entregas de hoy": tarjeta en tres columnas (12 de noviembre de 2026, commit `063e0f4`,
+  probado por el usuario).** Solo `js/entregas-moto.js` + `css/components.css`, sin servidor ni
   migración. Foto del producto a la izquierda | datos en el medio | WhatsApp arriba y EMPEZAR (o el
   aviso "Faltan datos") abajo, a la derecha, del mismo ancho (`.entrega-item-acciones`, 128 px).
   La foto es la **misma miniatura de Asignación** (`_miniaturaFotoAsig` de `js/asignacion.js`:
@@ -22,9 +28,9 @@ Velox Courier — internal management system for a courier/delivery company in L
   va en `.entrega-monto` (no se parte). El botón de WhatsApp tiene estilos inline
   (`_botonWhatsApp`, color `#25D366` fijo): para estirarlo y darle alto se pisó el padding con
   `!important` en `.entrega-item-whatsapp a`.
-- **Listas del motorizado: la última asignada arriba (12 de noviembre de 2026, en local, falta que
-  el usuario lo pruebe; NECESITA MIGRACIÓN `velox_agregar_asignada_en.sql`, ya aplicada en local,
-  ver "Migraciones pendientes").** **Toca el servidor:** hay que reiniciarlo. `server/routes/ordenes.js`,
+- **Listas del motorizado: la última asignada arriba (12 de noviembre de 2026, commit `01b0f09`,
+  probado por el usuario; NECESITA MIGRACIÓN `velox_agregar_asignada_en.sql`, aplicada en local,
+  falta en producción; ver "Migraciones pendientes" y D-018).** **Toca el servidor:** hay que reiniciarlo. `server/routes/ordenes.js`,
   `server/routes/motorizados.js`, `js/motorizados.js`, `js/entregas-moto.js`, `js/asignacion.js`.
   - **Columna nueva `ordenes.asignada_en DATETIME2(0) NULL`:** hora de LIMA en que se asignó la orden
     al motorizado actual. Hacía falta porque `fecha_asignacion` es `DATE` y `hora_asignacion`, **pese

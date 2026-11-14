@@ -331,7 +331,6 @@ function _pintarOverlayEnt() {
     ? '<div class="entrega-contacto">' +
         (o.dest_direccion ? '<i class="ti ti-map-pin"></i> ' + _escEnt(o.dest_direccion) + '<br>' : '') +
         tel + tel2 +
-        (o.observaciones ? '<br><i class="ti ti-note"></i> ' + _escEnt(o.observaciones) : '') +
       '</div>'
     : '';
 
@@ -353,6 +352,10 @@ function _pintarOverlayEnt() {
           _datoEnt('Condición especial', cond) +
         '</div>' +
         contacto +
+        /* Observaciones: abajo, arriba de COMPLETAR / OTROS / DETALLE y
+           también arriba del formulario que esos botones abren, así se
+           leen antes de "Completar entrega" */
+        '<div id="entrega-obs">' + _bloqueObsEnt(o, b) + '</div>' +
         '<div id="entrega-seccion">' + _seccionModoEnt(o, b) + '</div>' +
         '<div class="entrega-error" id="entrega-error"></div>' +
       '</div>' +
@@ -363,6 +366,72 @@ function _pintarOverlayEnt() {
       '</div>' +
     '</div>';
 }
+
+/* ── Observaciones ────────────────────────────────────────────
+   Con texto: recuadro ámbar para leer antes de completar. Vacías: solo
+   "+ Agregar observación". Nunca bloquean completar. El motorizado solo
+   AGREGA: POST /ordenes/:id/observaciones suma su nota firmada al final
+   (" // ALEX 14/11 15:20: …"); lo que ya estaba no se puede tocar. */
+function _bloqueObsEnt(o, b) {
+  var html = '';
+  if (o.observaciones) {
+    html += '<div class="entrega-obs-texto"><i class="ti ti-note"></i><div>' +
+      '<div class="entrega-obs-titulo">Observaciones</div>' + _escEnt(o.observaciones) + '</div></div>';
+  }
+  if (b.obsAbierta) {
+    html += '<div class="entrega-obs-agregar">' +
+      '<input id="entrega-obs-nueva" class="search-box" maxlength="300" placeholder="Escribí la observación" ' +
+        'value="' + _escEnt(b.obsNueva || '') + '" oninput="_borradorEnt(' + o.id + ').obsNueva = this.value" ' +
+        'onkeydown="if (event.key === \'Enter\') agregarObservacionEntrega()">' +
+      '<button type="button" class="btn btn-sm btn-primary" id="btn-entrega-obs" onclick="agregarObservacionEntrega()">Agregar</button>' +
+    '</div>';
+  } else {
+    html += '<button type="button" class="entrega-obs-link" onclick="abrirObservacionEntrega()">+ Agregar observación</button>';
+  }
+  return html;
+}
+
+function _repintarObsEnt() {
+  var cont = document.getElementById('entrega-obs');
+  if (cont && _entOrden) cont.innerHTML = _bloqueObsEnt(_entOrden, _borradorEnt(_entOrden.id));
+}
+
+window.abrirObservacionEntrega = function() {
+  if (!_entOrden) return;
+  _borradorEnt(_entOrden.id).obsAbierta = true;
+  _repintarObsEnt();
+  var inp = document.getElementById('entrega-obs-nueva');
+  if (inp) inp.focus();
+};
+
+window.agregarObservacionEntrega = async function() {
+  var o = _entOrden;
+  if (!o) return;
+  var b = _borradorEnt(o.id);
+  var texto = (b.obsNueva || '').trim();
+  if (!texto) { _mostrarErrorEnt('Escribí la observación antes de agregarla.'); return; }
+  var btn = document.getElementById('btn-entrega-obs');
+  if (btn) btn.disabled = true;
+  try {
+    var r = await fetch(API + '/ordenes/' + o.id + '/observaciones', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ texto: texto }),
+    });
+    var d = await r.json().catch(function() { return {}; });
+    if (!r.ok) throw new Error(d.error || 'No se pudo agregar la observación');
+    /* La orden de la lista también, así se ve igual al volver a abrirla */
+    o.observaciones = d.observaciones;
+    _entPendientes.forEach(function(x) { if (x.id == o.id) x.observaciones = d.observaciones; });
+    b.obsNueva = '';
+    b.obsAbierta = false;
+    _mostrarErrorEnt('');
+    _repintarObsEnt();
+  } catch (err) {
+    /* Sin señal: el texto queda escrito para reintentar */
+    _mostrarErrorEnt(err.message === 'Failed to fetch' ? 'Sin conexión: la observación no se agregó. Probá de nuevo.' : err.message);
+    if (btn) btn.disabled = false;
+  }
+};
 
 function _datoEnt(label, valor) {
   return '<div><div class="entrega-dato-label">' + label + '</div><div class="entrega-dato-valor">' + _escEnt(valor) + '</div></div>';

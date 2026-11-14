@@ -1225,7 +1225,7 @@ function _renderModalActualizarOrden(orden, tiendas, distritos, motorizados) {
 
         '<div>' +
           '<label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px">Observaciones</label>' +
-          '<input id="f-orden-obs-update" class="search-box" style="width:100%" maxlength="300" value="' + (orden.observaciones||'') + '" />' +
+          _campoObservacionesUpdate(orden.observaciones) +
         '</div>' +
 
         '<div id="orden-estado-error" style="display:none;color:#A32D2D;font-size:12px;padding:8px 12px;background:#FCEBEB;border-radius:var(--radius-md)"></div>' +
@@ -1494,6 +1494,23 @@ window.onTogglePrepagadoUpdate = function() {
    datos al abrir el modal. Cada bloque (data-fotos-seccion) tiene su
    propia vista previa (ver verFotoEnSeccion). */
 var _MAX_FOTOS_DEVOLUCION = 5;
+
+/* Observaciones en "Actualizar orden". Gestor: edita el texto completo.
+   Motorizado: lo que ya está, de solo lectura, y abajo un campo para
+   AGREGAR (se suma al guardar, firmado: " // ALEX 14/11 15:20: …").
+   El servidor (/completo) ignora el texto completo si viene de un moto. */
+function _campoObservacionesUpdate(texto) {
+  if (!_esSesionMotorizado()) {
+    return '<textarea id="f-orden-obs-update" class="search-box" rows="2" maxlength="4000" ' +
+      'style="width:100%;resize:vertical;font-family:inherit;padding:8px 12px;line-height:1.4">' + _escFoto(texto) + '</textarea>';
+  }
+  return (texto
+      ? '<div style="background:var(--color-bg-secondary);border-radius:var(--radius-md);padding:8px 10px;font-size:13px;' +
+          'white-space:pre-wrap;overflow-wrap:anywhere;margin-bottom:6px">' + _escFoto(texto) + '</div>'
+      : '<div style="font-size:12px;color:var(--color-text-secondary);margin-bottom:6px">Sin observaciones.</div>') +
+    '<input id="f-orden-obs-agregar-update" class="search-box" style="width:100%" maxlength="300" ' +
+      'placeholder="Agregar observación (se suma al guardar)" />';
+}
 
 function _escFoto(s) {
   return String(s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
@@ -1797,7 +1814,12 @@ window.guardarActualizarEstadoOrden = async function() {
   var producto    = document.getElementById('f-orden-producto-update').value;
   var pagoMoto    = document.getElementById('f-orden-pagomoto-update').value;
   var pagoMotoAd  = document.getElementById('f-orden-pagomotoad-update').value;
-  var obs         = document.getElementById('f-orden-obs-update').value.trim();
+  /* Gestor: el texto completo (f-orden-obs-update). Motorizado: solo su
+     nota nueva (f-orden-obs-agregar-update); el servidor la suma al final */
+  var obsEl       = document.getElementById('f-orden-obs-update');
+  var obs         = obsEl ? obsEl.value.trim() : '';
+  var obsAgregarEl = document.getElementById('f-orden-obs-agregar-update');
+  var obsAgregar  = obsAgregarEl ? obsAgregarEl.value.trim() : '';
   var errEl       = document.getElementById('orden-estado-error');
 
   /* Anular no pide ningún dato */
@@ -1820,7 +1842,8 @@ window.guardarActualizarEstadoOrden = async function() {
     validarTelefono(telefono),
     validarTelefono(telefono2),
     validarTexto(direccion, { min: 5, max: 200, nombreCampo: 'La dirección' }),
-    validarTexto(obs, { max: 300, nombreCampo: 'Las observaciones' }),
+    validarTexto(obs, { max: 4000, nombreCampo: 'Las observaciones' }),
+    validarTexto(obsAgregar, { max: 300, nombreCampo: 'La observación que agregás' }),
   ];
   if (!ejecutarValidaciones(validaciones, errEl)) return;
 
@@ -1858,7 +1881,7 @@ window.guardarActualizarEstadoOrden = async function() {
       delivery: delivery, montoAdicional: adicional, montoCobrado: cobrado, montoProducto: producto,
       pagoMotoBase: pagoMoto, pagoMotoAdic: pagoMotoAd,
       pagoVelox: prepagado, pagoVeloxMetodo: prepagadoMetodo,
-      obs: obs,
+      obs: obs, obsAgregar: obsAgregar,
     });
 
     await _patchOrdenConVersion(API + '/ordenes/' + _ordenActualizarId + '/estado', {

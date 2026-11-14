@@ -19,6 +19,45 @@ Velox Courier — internal management system for a courier/delivery company in L
   `asignada_en` (D-018), panel del moto con `caja-motor.js` (D-019) y notificaciones + reasignación
   (D-020). **Último commit en producción: `8a2cf5f`.**
 
+- **Observaciones visibles para el motorizado; el moto solo AGREGA (14 de noviembre de 2026, en local,
+  falta que el usuario lo pruebe; sin migración).** **Toca el servidor:** hay que reiniciarlo.
+  `server/routes/ordenes.js`, `js/entregas-moto.js`, `js/motorizados.js`, `css/components.css`.
+  - **Columna:** `ordenes.observaciones` ya es `NVARCHAR(MAX)` (local y los scripts base): no hizo
+    falta agrandarla. Los topes son del código: `MAX_NOTA_OBS = 300` por nota y `MAX_OBS_TOTAL =
+    4000` el texto completo (400 "llegaron al máximo: pedile a la oficina que las resuma"). El
+    `maxlength="300"` de "Actualizar orden" del gestor pasó a 4000 (si no, al sumar notas el admin
+    no podía guardar).
+  - **EMPEZAR:** `_bloqueObsEnt` arriba del formulario de COMPLETAR / OTROS / DETALLE (y de esos
+    botones): con texto, recuadro ámbar con ícono de nota (`.entrega-obs-texto`); vacías, solo
+    "+ Agregar observación". Nunca bloquea completar. Campo + "Agregar" (o Enter) →
+    **`POST /ordenes/:id/observaciones {texto}`** (nuevo; gestores o el moto dueño): suma al final
+    `" // ALEX 14/11 15:20: texto"` (`notaObservacion`, hora de Lima con `ahoraEnLima`) dentro del
+    mismo UPDATE (`SQL_OBS_MAS_NOTA`), así dos notas a la vez no se pisan. Sale de la línea de
+    dirección/teléfono, donde estaba antes. Repinta solo `#entrega-obs`; lo escrito queda en el
+    borrador (`obsNueva`) aunque se repinte la pantalla.
+  - **"Actualizar orden":** gestor = `<textarea>` con el texto completo (como siempre, `obs`).
+    Motorizado = lo que ya está de solo lectura + "Agregar observación (se suma al guardar)", que
+    va como `obsAgregar` a `/completo`. **En el servidor, `/completo` ignora `obs` si viene de un
+    motorizado** y solo suma `obsAgregar` al final: nunca reemplaza ni borra.
+  - **Ojo, `ordenes` tiene un trigger** (`trg_ordenes_update`, pone `actualizado_en`): un UPDATE con
+    `OUTPUT` sin `INTO` falla. Y `LEN()` de un `NVARCHAR(MAX)` es `BIGINT`, que `mssql` devuelve como
+    **texto**: sumarlo sin `Number()` concatena.
+  - **Probado el 14/11** (servidor en el 3001, TST-OB-*, borradas): 14 de 14 en la API (agrega con
+    firma y hora de Lima, sin " // " si estaba vacío, vacío / > 300 / otro moto rechazados, dos a la
+    vez, el moto que manda `obs` vacío o distinto no cambia nada, `obsAgregar` se suma, admin edita
+    todo y pasa de 300, tope de 4000). A 375 px: recuadro y link, agregar, lo escrito sobrevive al
+    repintar, modal del moto en solo lectura + agregar al guardar, admin edita y borra las notas,
+    comillas y `<b>` se ven como texto.
+- **BUG viejo encontrado (sin arreglar, decidir): el control de concurrencia (409) no funciona.**
+  `SELECT_ORDEN` y `conflictoDeVersion` hacen `CONVERT(varchar(20), o.row_version, 1)`, que con
+  `rowversion` devuelve los 8 bytes crudos, no `0x…` (el estilo 1 solo vale para `binary`). Así
+  `bufferDeVersion` descarta siempre la versión y ningún guardado con `ifVersion` da 409: el último
+  pisa. Viene de `f47d676` (14/10). Probado en local (SQL Server 2025); en producción (2022) no se
+  pudo mirar. Arreglo: `CONVERT(varchar(20), CAST(o.row_version AS binary(8)), 1)`. Al arreglarlo
+  empiezan a salir 409 reales en todos los guardados con versión (efecto buscado, pero hay que
+  probarlo entero). Hoy también significa que un "Actualizar orden" abierto antes de una nota del
+  moto la borra al guardar.
+
 - **Foto del pago: Yape y Efectivo motorizado ya no la piden (14 de noviembre de 2026, en local,
   falta que el usuario lo pruebe; sin migración ni cambios en el servidor).** Solo `js/entregas-moto.js`
   y `js/motorizados.js`. Con esos dos medios el moto tiene la plata y responde por ella: no hay foto.

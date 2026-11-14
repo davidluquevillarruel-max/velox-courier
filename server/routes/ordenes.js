@@ -145,6 +145,30 @@ function ahoraEnLima() {
   return `${p.year}-${p.month}-${p.day} ${p.hour}:${p.minute}:${p.second}`;
 }
 
+/* ── Observaciones: el motorizado solo AGREGA ────────────────
+   Admin y operador editan el texto completo ("Actualizar orden").
+   El motorizado nunca lo reemplaza: cada nota suya se suma al final,
+   separada por " // " y firmada con su nombre y la hora de Lima:
+     "Tocar timbre // ALEX 14/11 15:20: lo dejé con el portero"
+   La columna es NVARCHAR(MAX); los topes son de sentido común. */
+const MAX_NOTA_OBS  = 300;   /* cada nota que se agrega */
+const MAX_OBS_TOTAL = 4000;  /* el texto completo */
+const SEP_OBS = ' // ';
+
+/* Arma la nota firmada; null si el texto queda vacío */
+function notaObservacion(usuario, texto) {
+  const limpio = String(texto || '').replace(/\s+/g, ' ').trim();
+  if (!limpio) return null;
+  const [fecha, hora] = ahoraEnLima().split(' ');
+  const [, mes, dia] = fecha.split('-');
+  return `${usuario.nombre} ${dia}/${mes} ${hora.slice(0, 5)}: ${limpio}`;
+}
+
+/* Expresión SQL que suma @nota al final (o la deja sola si estaba vacío).
+   Va dentro del UPDATE: así dos notas a la vez no se pisan. */
+const SQL_OBS_MAS_NOTA = `CASE WHEN LTRIM(RTRIM(ISNULL(observaciones, N''))) = N'' THEN @nota
+                              ELSE observaciones + N'${SEP_OBS}' + @nota END`;
+
 /* 2601 / 2627 = clave duplicada; el mensaje trae el nombre del
    índice o restricción que chocó */
 function esDuplicado(err, nombreIndice) {
@@ -1171,6 +1195,48 @@ router.patch('/:id/contacto', soloAdminSiAnulada, async (req, res) => {
    las suyas, y los montos de "gestión" (delivery, adicionales,
    cobrado, pago al motorizado) se ignoran pase lo que pase en el
    body — se conserva lo que ya había en la base (ver más abajo). */
+/* ── POST /api/ordenes/:id/observaciones {texto} ──────────────
+   Suma una nota firmada al final de las observaciones (nunca
+   reemplaza). La usa la pantalla de EMPEZAR del motorizado
+   (js/entregas-moto.js). Gestores, o el motorizado dueño de la orden.
+   No pide ifVersion: agregar al final dentro del UPDATE no pisa a
+   nadie. Sí cambia row_version, así un "Actualizar orden" abierto en
+   otro lado con el texto viejo recibe 409 en vez de borrar la nota. */
+router.post('/:id/observaciones', soloAdminSiAnulada, async (req, res) => {
+  try {
+    const pool = await getPool();
+    if (!(await puedeTocarOrden(req.usuario, req.params.id, pool))) {
+      return res.status(403).json({ error: 'No puedes modificar esta orden' });
+    }
+    if (String(req.body.texto || '').length > MAX_NOTA_OBS) {
+      return res.status(400).json({ error: `La observación no puede pasar de ${MAX_NOTA_OBS} caracteres` });
+    }
+    const nota = notaObservacion(req.usuario, req.body.texto);
+    if (!nota) return res.status(400).json({ error: 'Escribí la observación' });
+
+    const r = await pool.request()
+      .input('id',   sql.BigInt,   req.params.id)
+      .input('nota', sql.NVarChar, nota)
+      .input('max',  sql.Int,      MAX_OBS_TOTAL)
+      .query(`
+        UPDATE ordenes
+        SET observaciones = ${SQL_OBS_MAS_NOTA}, actualizado_en = GETDATE()
+        WHERE id = @id
+          AND LEN(ISNULL(observaciones, N'')) + ${SEP_OBS.length} + LEN(@nota) <= @max;
+        /* OUTPUT no se puede usar: ordenes tiene un trigger (trg_ordenes_update) */
+        DECLARE @marcadas INT = @@ROWCOUNT;
+        SELECT observaciones FROM ordenes WHERE id = @id AND @marcadas > 0;
+      `);
+    if (!r.recordset.length) {
+      return res.status(400).json({ error: 'Las observaciones de esta orden llegaron al máximo: pedile a la oficina que las resuma.' });
+    }
+    res.json({ ok: true, observaciones: r.recordset[0].observaciones });
+  } catch (err) {
+    console.error('POST /ordenes/:id/observaciones:', err.message);
+    res.status(500).json({ error: 'Error al agregar la observación' });
+  }
+});
+
 router.patch('/:id/completo', soloAdminSiAnulada, async (req, res) => {
   try {
     const pool = await getPool();
@@ -1268,6 +1334,29 @@ router.patch('/:id/completo', soloAdminSiAnulada, async (req, res) => {
       .input('pago_velox_metodo', sql.NVarChar, pagoVeloxMetodo)
       .input('obs',          sql.NVarChar,      o.obs || '');
     let whereVersion = '';
+
+    /* Observaciones: el gestor manda el texto completo (o.obs, como
+       siempre). El motorizado NO: lo que mande en o.obs se ignora y solo
+       se suma su nota nueva (o.obsAgregar) al final. */
+    let setObs = 'observaciones = @obs,';
+    if (esMotorizado) {
+      setObs = '';
+      if (String(o.obsAgregar || '').length > MAX_NOTA_OBS) {
+        return res.status(400).json({ error: `La observación que agregás no puede pasar de ${MAX_NOTA_OBS} caracteres` });
+      }
+      const nota = notaObservacion(req.usuario, o.obsAgregar);
+      if (nota) {
+        const largo = await pool.request().input('id', sql.BigInt, req.params.id)
+          .query(`SELECT LEN(ISNULL(observaciones, N'')) AS largo FROM ordenes WHERE id = @id`);
+        if (Number(largo.recordset[0] ? largo.recordset[0].largo : 0) + SEP_OBS.length + nota.length > MAX_OBS_TOTAL) {
+          return res.status(400).json({ error: 'Las observaciones de esta orden llegaron al máximo: pedile a la oficina que las resuma.' });
+        }
+        request.input('nota', sql.NVarChar, nota);
+        setObs = `observaciones = ${SQL_OBS_MAS_NOTA},`;
+      }
+    } else if ((o.obs || '').length > MAX_OBS_TOTAL) {
+      return res.status(400).json({ error: `Las observaciones no pueden pasar de ${MAX_OBS_TOTAL} caracteres` });
+    }
     if (ifVersion) { request.input('ifVersion', sql.VarBinary(8), ifVersion); whereVersion = ' AND row_version = @ifVersion'; }
 
     const result = await request.query(`
@@ -1286,7 +1375,7 @@ router.patch('/:id/completo', soloAdminSiAnulada, async (req, res) => {
             pago_moto_adicional = @pago_moto_ad,
             pago_velox          = @pago_velox,
             pago_velox_metodo   = @pago_velox_metodo,
-            observaciones       = @obs,
+            ${setObs}
             actualizado_en      = GETDATE()
         WHERE id = @id${whereVersion}
       `);

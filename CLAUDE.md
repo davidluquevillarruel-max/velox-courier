@@ -19,8 +19,9 @@ Velox Courier — internal management system for a courier/delivery company in L
   `asignada_en` (D-018), panel del moto con `caja-motor.js` (D-019) y notificaciones + reasignación
   (D-020). **Último commit en producción: `8a2cf5f`.**
 
-- **Observaciones visibles para el motorizado; el moto solo AGREGA (14 de noviembre de 2026, en local,
-  falta que el usuario lo pruebe; sin migración).** **Toca el servidor:** hay que reiniciarlo.
+- **Observaciones visibles para el motorizado; el moto solo AGREGA (14 de noviembre de 2026, commit
+  `711a08d`, probado por el usuario; protección del gestor en local, falta que la pruebe; sin
+  migración).** **Toca el servidor:** hay que reiniciarlo.
   `server/routes/ordenes.js`, `js/entregas-moto.js`, `js/motorizados.js`, `css/components.css`.
   - **Columna:** `ordenes.observaciones` ya es `NVARCHAR(MAX)` (local y los scripts base): no hizo
     falta agrandarla. Los topes son del código: `MAX_NOTA_OBS = 300` por nota y `MAX_OBS_TOTAL =
@@ -39,6 +40,17 @@ Velox Courier — internal management system for a courier/delivery company in L
     Motorizado = lo que ya está de solo lectura + "Agregar observación (se suma al guardar)", que
     va como `obsAgregar` a `/completo`. **En el servidor, `/completo` ignora `obs` si viene de un
     motorizado** y solo suma `obsAgregar` al final: nunca reemplaza ni borra.
+  - **Protección de las notas cuando guarda un gestor** (segunda parte, sin tocar `ifVersion`, la
+    cola de fotos ni los otros PATCH): el modal guarda el texto al abrir
+    (`_ordenActualizarObsOriginal`) y lo manda como `obsOriginal` junto con `obs`. En `/completo`:
+    si `obs` = `obsOriginal` (sin contar espacios de los bordes) **no se toca la columna**, así
+    sobreviven las notas que el moto sumó con el modal abierto; si cambió, el UPDATE lleva
+    `AND ISNULL(observaciones, N'') = @obsOriginal` y, si la base ya tenía otro texto, **409
+    `obsConflicto`** con el texto actual y no se guarda nada de `/completo` ("El motorizado agregó
+    una nota mientras editabas"). El modal pone ese texto en el campo, muestra "Lo que habías
+    escrito: …" y el próximo Guardar compara contra el texto nuevo. Ojo: `/asignar` ya corrió antes
+    (como con cualquier error de `/completo`); al volver a guardar se manda igual. Sin `obsOriginal`
+    (pantalla vieja sin recargar) se escribe como antes.
   - **Ojo, `ordenes` tiene un trigger** (`trg_ordenes_update`, pone `actualizado_en`): un UPDATE con
     `OUTPUT` sin `INTO` falla. Y `LEN()` de un `NVARCHAR(MAX)` es `BIGINT`, que `mssql` devuelve como
     **texto**: sumarlo sin `Number()` concatena.
@@ -47,19 +59,23 @@ Velox Courier — internal management system for a courier/delivery company in L
     vez, el moto que manda `obs` vacío o distinto no cambia nada, `obsAgregar` se suma, admin edita
     todo y pasa de 300, tope de 4000). A 375 px: recuadro y link, agregar, lo escrito sobrevive al
     repintar, modal del moto en solo lectura + agregar al guardar, admin edita y borra las notas,
-    comillas y `<b>` se ven como texto.
-- **BUG viejo encontrado (sin arreglar, decidir): el control de concurrencia (409) no funciona.**
+    comillas y `<b>` se ven como texto. Protección: 20 de 20 en la API (sin cambio + nota del moto →
+    la nota sigue y el teléfono se guarda; cambio + nota → 409 sin pisar nada; revisado → se
+    escribe; espacios de más = sin cambio; pantalla vieja); a 375 px el caso del usuario (admin
+    abre, moto agrega, admin cambia el teléfono y guarda → la nota sigue) y el conflicto con su aviso.
+- **PENDIENTE (el usuario decidió NO arreglarlo por ahora, 14/11): el control de concurrencia (409)
+  no funciona.** Cambiaría todos los guardados y no se quiere arriesgar lo que anda (sobre todo la
+  cola de fotos). Las observaciones quedaron protegidas aparte (`obsOriginal`, arriba).
   `SELECT_ORDEN` y `conflictoDeVersion` hacen `CONVERT(varchar(20), o.row_version, 1)`, que con
   `rowversion` devuelve los 8 bytes crudos, no `0x…` (el estilo 1 solo vale para `binary`). Así
   `bufferDeVersion` descarta siempre la versión y ningún guardado con `ifVersion` da 409: el último
   pisa. Viene de `f47d676` (14/10). Probado en local (SQL Server 2025); en producción (2022) no se
   pudo mirar. Arreglo: `CONVERT(varchar(20), CAST(o.row_version AS binary(8)), 1)`. Al arreglarlo
   empiezan a salir 409 reales en todos los guardados con versión (efecto buscado, pero hay que
-  probarlo entero). Hoy también significa que un "Actualizar orden" abierto antes de una nota del
-  moto la borra al guardar.
+  probarlo entero, incluida la cola de fotos).
 
-- **Foto del pago: Yape y Efectivo motorizado ya no la piden (14 de noviembre de 2026, en local,
-  falta que el usuario lo pruebe; sin migración ni cambios en el servidor).** Solo `js/entregas-moto.js`
+- **Foto del pago: Yape y Efectivo motorizado ya no la piden (14 de noviembre de 2026, commit
+  `f00c168`, probado por el usuario; sin migración ni cambios en el servidor).** Solo `js/entregas-moto.js`
   y `js/motorizados.js`. Con esos dos medios el moto tiene la plata y responde por ella: no hay foto.
   Pago tienda y Pago Velox (`pago-tienda`, `pago-empresa`) la siguen pidiendo como siempre.
   - **EMPEZAR → COMPLETAR:** `_ENT_MEDIOS_CON_FOTO` quedó en `['pago-tienda', 'pago-empresa']`. El
@@ -911,6 +927,9 @@ Velox Courier — internal management system for a courier/delivery company in L
   quien llama es motorizado), no solo visual.
 
 **Pendiente:**
+- **Control de concurrencia (409) roto** desde el 14/10: `row_version` no llega en hex y ningún
+  `ifVersion` se compara (el último que guarda pisa). Decidido no arreglarlo por ahora (14/11);
+  detalle y arreglo en la nota de arriba.
 - **El cuadre de las cajas** se revisa con `node scripts/verificar-cuadre-cajas.js` (desde `server/`).
 - **Importador de Excel:** `server/scripts/importar-ordenes-excel.js` todavía arranca en 1000. Con la
   base vacía, sus órdenes saldrían desde C-1001, y las siguientes seguirían desde ahí. Cambiarlo antes

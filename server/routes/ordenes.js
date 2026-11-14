@@ -1339,6 +1339,7 @@ router.patch('/:id/completo', soloAdminSiAnulada, async (req, res) => {
        siempre). El motorizado NO: lo que mande en o.obs se ignora y solo
        se suma su nota nueva (o.obsAgregar) al final. */
     let setObs = 'observaciones = @obs,';
+    let whereObs = '';
     if (esMotorizado) {
       setObs = '';
       if (String(o.obsAgregar || '').length > MAX_NOTA_OBS) {
@@ -1356,6 +1357,20 @@ router.patch('/:id/completo', soloAdminSiAnulada, async (req, res) => {
       }
     } else if ((o.obs || '').length > MAX_OBS_TOTAL) {
       return res.status(400).json({ error: `Las observaciones no pueden pasar de ${MAX_OBS_TOTAL} caracteres` });
+    } else if (typeof o.obsOriginal === 'string') {
+      /* El gestor manda también el texto que tenía al abrir el modal.
+         - No lo cambió: no se toca la columna (así sobreviven las notas
+           que el moto sumó mientras tanto con POST /:id/observaciones).
+         - Lo cambió: se escribe SOLO si la base sigue con ese texto
+           original (condición en el WHERE, ver whereObs). Si no, alguien
+           agregó una nota en el medio: 409 obsConflicto, sin pisar.
+         Sin obsOriginal (pantalla vieja sin recargar): como antes. */
+      if ((o.obs || '').trim() === o.obsOriginal.trim()) {
+        setObs = '';
+      } else {
+        request.input('obsOriginal', sql.NVarChar, o.obsOriginal);
+        whereObs = ` AND ISNULL(observaciones, N'') = @obsOriginal`;
+      }
     }
     if (ifVersion) { request.input('ifVersion', sql.VarBinary(8), ifVersion); whereVersion = ' AND row_version = @ifVersion'; }
 
@@ -1377,8 +1392,22 @@ router.patch('/:id/completo', soloAdminSiAnulada, async (req, res) => {
             pago_velox_metodo   = @pago_velox_metodo,
             ${setObs}
             actualizado_en      = GETDATE()
-        WHERE id = @id${whereVersion}
+        WHERE id = @id${whereVersion}${whereObs}
       `);
+    if (whereObs && result.rowsAffected[0] === 0) {
+      const actual = await pool.request().input('id', sql.BigInt, req.params.id)
+        .query(`SELECT observaciones FROM ordenes WHERE id = @id`);
+      if (!actual.recordset[0]) return res.status(404).json({ error: 'Orden no encontrada' });
+      const obsActual = actual.recordset[0].observaciones || '';
+      /* Si el texto sigue igual, el 0 vino de otra condición (ifVersion) */
+      if (obsActual !== o.obsOriginal) {
+        return res.status(409).json({
+          error: 'El motorizado agregó una nota mientras editabas.',
+          obsConflicto: true,
+          observaciones: obsActual,
+        });
+      }
+    }
     if (ifVersion && result.rowsAffected[0] === 0) {
       const fresca = await conflictoDeVersion(pool, req.params.id);
       if (!fresca) return res.status(404).json({ error: 'Orden no encontrada' });

@@ -842,6 +842,7 @@ var _ordenActualizarBloqueaEnProceso = false; /* true si hace falta confirmar la
    exitoso, para encadenar los guardados de una misma sesión del
    modal — ver _patchOrdenConVersion(). */
 var _ordenActualizarVersion = null;
+var _ordenActualizarObsOriginal = '';
 /* Código visible de la orden abierta (ej. "C-1234"), para que el
    indicador de fotos diga de qué orden es cada evidencia en cola */
 var _ordenActualizarCodigo = '';
@@ -965,6 +966,9 @@ function _renderModalActualizarOrden(orden, tiendas, distritos, motorizados) {
   var vecesDevuelto = parseInt(orden.devuelto) || 0;
   _ordenActualizarBloqueaEnProceso = calificaDevolucion;
   _ordenActualizarVersion = orden.version || null;
+  /* Observaciones tal como estaban al abrir: el servidor solo las
+     reescribe si el gestor las cambió (ver obsOriginal en /completo) */
+  _ordenActualizarObsOriginal = orden.observaciones || '';
   _ordenActualizarCodigo  = orden.codigo || '';
 
   /* Contador siempre visible, sin importar si la orden está calificando
@@ -1774,6 +1778,14 @@ async function _patchOrdenConVersion(url, body) {
   });
   var data = await r.json().catch(function() { return {}; });
 
+  /* Observaciones: el moto sumó una nota mientras el gestor las editaba
+     (/completo no las pisó). Lleva el texto actual para mostrarlo. */
+  if (r.status === 409 && data.obsConflicto) {
+    var errObs = new Error(data.error || 'El motorizado agregó una nota mientras editabas.');
+    errObs.obsConflicto = true;
+    errObs.observaciones = data.observaciones || '';
+    throw errObs;
+  }
   if (r.status === 409) {
     var errConflicto = new Error(data.error || 'Esta orden fue modificada por otro usuario mientras la editabas.');
     errConflicto.conflicto = true;
@@ -1881,7 +1893,7 @@ window.guardarActualizarEstadoOrden = async function() {
       delivery: delivery, montoAdicional: adicional, montoCobrado: cobrado, montoProducto: producto,
       pagoMotoBase: pagoMoto, pagoMotoAdic: pagoMotoAd,
       pagoVelox: prepagado, pagoVeloxMetodo: prepagadoMetodo,
-      obs: obs, obsAgregar: obsAgregar,
+      obs: obs, obsOriginal: _ordenActualizarObsOriginal, obsAgregar: obsAgregar,
     });
 
     await _patchOrdenConVersion(API + '/ordenes/' + _ordenActualizarId + '/estado', {
@@ -1939,6 +1951,25 @@ function _refrescarTrasGuardarOrden() {
 }
 
 function _mostrarErrorGuardarOrden(err, errEl) {
+  /* Observaciones en conflicto: el campo pasa a mostrar el texto ACTUAL
+     (con la nota del moto) para revisarlo, y lo que había escrito el
+     gestor queda en el aviso para que lo vuelva a sumar si quiere.
+     Lo que se guarde ahora se compara contra este texto nuevo. */
+  if (err.obsConflicto) {
+    var campoObs = document.getElementById('f-orden-obs-update');
+    var escrito = campoObs ? campoObs.value : '';
+    _ordenActualizarObsOriginal = err.observaciones;
+    if (campoObs) {
+      campoObs.value = err.observaciones;
+      campoObs.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+    if (errEl) {
+      errEl.innerHTML = '<b>' + _escFoto(err.message) + '</b> Las observaciones ahora muestran el texto actual: revisalo y volvé a guardar.' +
+        (escrito ? '<br><span style="color:var(--color-text-secondary)">Lo que habías escrito:</span> ' + _escFoto(escrito) : '');
+      errEl.style.display = 'block';
+    }
+    return;
+  }
   /* Conflicto de edición simultánea: NINGUNO de los PATCH que todavía
      no corrieron se manda (el que falló cortó la cadena con el throw)
      — nada se guarda a medias. Se avisa en vez de pisar lo que el otro

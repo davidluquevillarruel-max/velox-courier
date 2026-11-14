@@ -134,6 +134,17 @@ router.delete('/:id/permanente', requireRol('admin'), async (req, res) => {
         error: `No se puede eliminar: este motorizado tiene ${checkOrdenes.recordset[0].total} orden(es) registrada(s). Usa la opción de desactivar en su lugar.`
       });
     }
+    /* Un moto que solo RECIBIÓ pedidos de reasignación (y los rechazó)
+       no tiene órdenes, pero las filas de reasignaciones lo referencian:
+       sin esto, el DELETE daría un 500 por la FK */
+    const checkReasig = await pool.request()
+      .input('id', sql.Int, req.params.id)
+      .query(`SELECT COUNT(*) AS total FROM reasignaciones WHERE id_motorizado_de = @id OR id_motorizado_para = @id`);
+    if (checkReasig.recordset[0].total > 0) {
+      return res.status(400).json({
+        error: `No se puede eliminar: este motorizado tiene ${checkReasig.recordset[0].total} pedido(s) de reasignación registrado(s). Usa la opción de desactivar en su lugar.`
+      });
+    }
     const checkUsuario = await pool.request()
       .input('id', sql.Int, req.params.id)
       .query(`SELECT COUNT(*) AS total FROM usuarios WHERE id_motorizado = @id`);

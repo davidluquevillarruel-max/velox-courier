@@ -42,6 +42,8 @@ app.use('/api/motorizados',  require('./routes/motorizados'));
 app.use('/api/tiendas',      require('./routes/tiendas'));
 app.use('/api/tarifas',      require('./routes/tarifas'));
 app.use('/api/caja',         require('./routes/caja'));
+app.use('/api/notificaciones', require('./routes/notificaciones'));
+app.use('/api/reasignaciones', require('./routes/reasignaciones'));
 
 /* ── Ruta de salud ── */
 app.get('/api/ping', (req, res) => {

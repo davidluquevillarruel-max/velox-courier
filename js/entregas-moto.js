@@ -79,6 +79,12 @@ window.initEntregasMoto = function() {
   _entTimer = iniciarRefrescoAutomatico('mis-entregas-hoy', function() { return _recargarEntregasHoy(false); });
 };
 
+/* Se mandó, aceptó, rechazó o canceló una reasignación: la lista se
+   vuelve a leer al toque (una aceptada aparece arriba de la lista) */
+window.addEventListener('velox:reasignaciones', function() {
+  if (document.getElementById('mis-entregas-hoy') && _esSesionMotorizado()) _recargarEntregasHoy(false);
+});
+
 async function _cargarPendientesHoy() {
   var r = await fetch(API + '/ordenes?fecha=' + _hoyEnt());
   if (!r.ok) throw new Error('No se pudieron cargar tus órdenes');
@@ -99,7 +105,13 @@ async function _recargarEntregasHoy(inicial) {
   if (inicial) cont.innerHTML = '<div class="entregas-hoy-vacio" style="color:var(--color-text-secondary);background:var(--color-bg-secondary)"><i class="ti ti-loader"></i> Cargando tus entregas...</div>';
 
   try {
-    _entPendientes = await _cargarPendientesHoy();
+    /* Junto con la lista: los pedidos de reasignación que recibió y los
+       que mandó (js/reasignaciones.js) */
+    var res = await Promise.all([
+      _cargarPendientesHoy(),
+      typeof cargarReasignacionesMias === 'function' ? cargarReasignacionesMias() : null,
+    ]);
+    _entPendientes = res[0];
   } catch (err) {
     if (inicial) cont.innerHTML = '<div class="entrega-error" style="display:block">' + _escEnt(err.message) + '</div>';
     return;
@@ -141,6 +153,8 @@ function _esqueletoEntregasHoy(cont) {
       '<span class="entregas-hoy-titulo">Mis entregas de hoy</span>' +
       '<span id="ent-hoy-cuenta"></span>' +
     '</div>' +
+    /* Pedidos de otro moto para pasarle una orden (campana + Sí / No) */
+    '<div id="ent-hoy-recibidas"></div>' +
     '<div class="entregas-hoy-buscar" id="ent-hoy-buscar-wrap" style="display:none">' +
       '<i class="ti ti-search"></i>' +
       '<input type="search" id="ent-hoy-buscar" placeholder="Buscar cliente, distrito, tienda o código" ' +
@@ -172,6 +186,12 @@ function _pintarEntregasHoy() {
   /* Sin órdenes no hay nada que buscar */
   var wrap = document.getElementById('ent-hoy-buscar-wrap');
   if (wrap) wrap.style.display = _entPendientes.length ? '' : 'none';
+
+  var recibidas = document.getElementById('ent-hoy-recibidas');
+  if (recibidas && typeof recibidasReasignacionHTML === 'function') {
+    var htmlRec = recibidasReasignacionHTML();
+    if (recibidas._ultimoHtml !== htmlRec) { recibidas._ultimoHtml = htmlRec; recibidas.innerHTML = htmlRec; }
+  }
 
   var html = '';
   if (!_entPendientes.length) {
@@ -214,14 +234,23 @@ function _pintarEntregasHoy() {
       /* Tres columnas: foto | datos (misma jerarquía que Asignación,
          _datosOrdenAsig: grandes y en negrita, el código chico al final) |
          WhatsApp arriba y EMPEZAR (o el aviso de datos faltantes) abajo */
-      return '<div class="entrega-item">' +
+      /* Reasignación (js/reasignaciones.js): mientras espera que otro la
+         acepte sigue siendo suya, con borde punteado ámbar y "Esperando
+         a …"; si no, el botón para pedirlo */
+      var rsg = typeof reasignacionDeOrden === 'function' ? reasignacionDeOrden(o.id) : {};
+      var franjaRsg = typeof estadoReasignacionTarjetaHTML === 'function' ? estadoReasignacionTarjetaHTML(o.id) : '';
+      var botonRsg = (rsg.enviada || typeof abrirPedirReasignacion !== 'function') ? ''
+        : '<button type="button" class="entrega-reasignar" onclick="abrirPedirReasignacion(' + o.id + ')">' +
+            '<i class="ti ti-arrows-exchange"></i> Reasignar</button>';
+      return '<div class="entrega-item' + (rsg.enviada ? ' entrega-item--esperando' : '') + '">' +
         foto +
         '<div class="entrega-item-datos assign-info">' +
           '<div class="assign-tienda">' + _escEnt(o.tienda) + '</div>' +
           distrito + cliente + cobro +
           '<div class="assign-code">#' + _escEnt(o.codigo) + '</div>' +
+          franjaRsg +
         '</div>' +
-        '<div class="entrega-item-acciones">' + whatsapp + accion + '</div>' +
+        '<div class="entrega-item-acciones">' + whatsapp + accion + botonRsg + '</div>' +
       '</div>';
     }).join('') + '</div>';
   }

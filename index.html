@@ -104,6 +104,12 @@
       <div class="nav-item" id="nav-usuarios" onclick="showPage('usuarios')">
         <i class="ti ti-users" aria-hidden="true"></i> Usuarios
       </div>
+      <!-- Avisos "Para revisar" de admin y operador (js/notificaciones.js).
+           No es una página: abre un panel. Oculto para los demás roles. -->
+      <div class="nav-item nav-notificaciones" id="nav-notificaciones" style="display:none" onclick="togglePanelNotificaciones()">
+        <i class="ti ti-bell" aria-hidden="true"></i> Notificaciones
+        <span class="nav-contador" id="nav-notif-contador" style="display:none"></span>
+      </div>
     </nav>
 
     <div class="sidebar-footer">
@@ -142,6 +148,10 @@
 <button type="button" class="indicador-fotos" id="indicador-fotos" style="display:none" onclick="togglePanelFotos()"></button>
 <div class="indicador-fotos-panel" id="indicador-fotos-panel" style="display:none"></div>
 
+<!-- Panel "Para revisar" (js/notificaciones.js) -->
+<div class="notif-capa" id="notif-capa" style="display:none" onclick="cerrarPanelNotificaciones()"></div>
+<div class="notif-panel" id="notif-panel" style="display:none" role="dialog" aria-label="Notificaciones"></div>
+
 <!-- ══════════════════════════════════════════
      SCRIPTS (orden importa)
      utils     → debe ir primero (showNotif, fecha)
@@ -160,6 +170,9 @@
      charts    → gráfico de barras
      accesos   → antes de usuarios y tiendas ("Crear accesos")
      tiendas   → catálogo de tiendas; después de pedidos (_cargarCatalogos)
+     reasignaciones → después de motorizados y asignacion (_miniaturaFotoAsig,
+                  MOTORIZADOS); pedir / aceptar pasar una orden entre motos
+     notificaciones → al final: abre la orden con showPage + abrirActualizarEstadoOrden
 ══════════════════════════════════════════ -->
 <script src="js/validators.js"></script>
 <script src="js/utils.js"></script>
@@ -186,6 +199,8 @@
 <script src="js/accesos.js"></script>
 <script src="js/usuarios.js"></script>
 <script src="js/tiendas.js"></script>
+<script src="js/reasignaciones.js"></script>
+<script src="js/notificaciones.js"></script>
 
 <script>
 function toggleSidebar() {

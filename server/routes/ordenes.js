@@ -11,6 +11,7 @@ const { sumaEnCajaTienda, sumaEnCajaMoto, ESTADO_ANULADO } = require('../caja-mo
 const { requireAuth, requireRol } = require('../middleware/auth');
 const { r2Habilitado, generarUrlSubidaEvidencia, esUrlDeOrden } = require('../r2');
 const { guardarFoto, rutaArchivo, existeFoto } = require('../almacenamiento-local');
+const { tipoAvisoDeOrden, registrarAvisoSiNace } = require('../avisos');
 
 /* Todas las rutas de este archivo exigen sesión */
 router.use(requireAuth);
@@ -1005,6 +1006,7 @@ router.patch('/:id/estado', soloAdminSiAnulada, async (req, res) => {
       condicionEspecial = actual.recordset[0].condicion_especial;
     }
 
+    const avisoAntes = await tipoAvisoDeOrden(pool, req.params.id);
     const ifVersion = bufferDeVersion(req.body.ifVersion);
     const request = pool.request()
       .input('id',        sql.BigInt,   req.params.id)
@@ -1022,6 +1024,9 @@ router.patch('/:id/estado', soloAdminSiAnulada, async (req, res) => {
       if (!fresca) return res.status(404).json({ error: 'Orden no encontrada' });
       return res.status(409).json({ error: 'Esta orden fue modificada por otro usuario mientras la editabas.', orden: fresca });
     }
+    /* Aviso "Para revisar" de los gestores si pasó a no entregado o a
+       entregado con Pago tienda (server/avisos.js) */
+    await registrarAvisoSiNace(pool, req.params.id, avisoAntes);
 
     res.json({ ok: true, version: await versionActualHex(pool, req.params.id) });
   } catch (err) {
@@ -1123,6 +1128,9 @@ router.patch('/:id/resolver', soloAdminSiAnulada, async (req, res) => {
       if (!fresca) return res.status(404).json({ error: 'Orden no encontrada' });
       return res.status(409).json({ error: 'Esta orden fue modificada por otro usuario mientras la llenabas.', orden: fresca });
     }
+    /* Estaba en reparto: no tenía aviso. Nace si quedó no entregado o
+       entregado con Pago tienda (server/avisos.js) */
+    await registrarAvisoSiNace(pool, ordenId, null);
 
     res.json({ ok: true, version: await versionActualHex(pool, ordenId) });
   } catch (err) {
@@ -1816,6 +1824,7 @@ router.patch('/:id/medio-pago', soloAdminSiAnulada, async (req, res) => {
       return res.status(400).json({ error: 'URL de evidencia no válida' });
     }
 
+    const avisoAntes = await tipoAvisoDeOrden(pool, ordenId);
     const ifVersion = bufferDeVersion(req.body.ifVersion);
     const request = pool.request()
       .input('id',    sql.BigInt,   ordenId)
@@ -1836,6 +1845,8 @@ router.patch('/:id/medio-pago', soloAdminSiAnulada, async (req, res) => {
         .input('url',      sql.NVarChar, evidenciaUrl)
         .query(`INSERT INTO ordenes_fotos (id_orden, tipo, url) VALUES (@id_orden, 'evidencia_medio_pago', @url)`);
     }
+    /* Entregada que pasó a Pago tienda: aviso para los gestores */
+    await registrarAvisoSiNace(pool, ordenId, avisoAntes);
 
     res.json({ ok: true, version: await versionActualHex(pool, ordenId) });
   } catch (err) {

@@ -12,6 +12,54 @@ Velox Courier — internal management system for a courier/delivery company in L
 
 Última actualización: 14 de noviembre de 2026.
 
+- **Notificaciones del admin + reasignar entre motorizados con aceptación (14 de noviembre de 2026,
+  en local, falta que el usuario lo pruebe; NECESITA MIGRACIÓN
+  `velox_agregar_notificaciones_reasignaciones.sql`, aplicada en local, falta en producción; ver
+  "Migraciones pendientes").** **Toca el servidor:** hay que reiniciarlo. Nuevos: `server/avisos.js`,
+  `server/routes/notificaciones.js`, `server/routes/reasignaciones.js`, `js/notificaciones.js`,
+  `js/reasignaciones.js`. Cambiados: `server/server.js`, `server/routes/ordenes.js`,
+  `server/routes/motorizados.js`, `js/motorizados.js`, `js/entregas-moto.js`, `index.html`,
+  `pages/detalle-motorizado.html`, `css/components.css`.
+  - **Tablas nuevas:** `reasignaciones` (orden, `id_motorizado_de`, `id_motorizado_para`, `estado`
+    pendiente / aceptada / rechazada / cancelada / vencida, `creada_en`, `vence_en`, `respondida_en`,
+    `vista_por_origen_en`; índice único filtrado = **una sola pendiente por orden**) y
+    `notificaciones` (`tipo` no_entregado / pago_tienda / reasignacion, orden, `id_reasignacion` solo en
+    las de reasignación, `creada_en`, `revisada_en`, `id_usuario_revisa`; una abierta por orden y tipo).
+    Horas de Lima (`ahoraLima()` de `server/avisos.js`, texto + `CONVERT(datetime2(0), …, 120)`).
+  - **Notificaciones (admin y operador):** botón al final del menú con contador rojo (cada 20 s; en el
+    celular, punto rojo en la hamburguesa) y panel "Para revisar": No entregado (✕ rojo), Pago tienda
+    (tienda ámbar), Reasignación aceptada (moto verde, "ALEX pasó #C-x a LUIS"). **Una fila compartida
+    por todos los gestores:** "Abrir" (`POST /notificaciones/:id/revisar`) la marca revisada para
+    todos y lleva a Todos los pedidos con "Actualizar orden" abierto (`showPage('pedidos')` +
+    `abrirActualizarEstadoOrden`). El aviso **nace al PASAR** a no entregado o a entregado con Pago
+    tienda: `/estado`, `/resolver` y `/medio-pago` leen el tipo antes (`tipoAvisoDeOrden`) y llaman
+    `registrarAvisoSiNace` después (nunca hace fallar el guardado). Guardar de nuevo sin cambiar no
+    crea otro. **Si la orden cambia antes de abrirlo, se esconde** (`SQL_AVISO_VIGENTE`, al listar; no
+    se borra). Un endpoint nuevo que cambie estado o medio de pago tiene que hacer lo mismo.
+  - **Reasignar (moto → moto):** el botón Reasignar de la tarjeta de "Mis entregas de hoy" y de la
+    tabla del panel de Motorizados (solo órdenes `en-proceso`; un gestor lo pide en nombre del moto)
+    abre la ventana con los motorizados activos → `POST /reasignaciones`. La orden **sigue con el que
+    la envía** (borde punteado ámbar, "Esperando a X", "Cancelar reasignación") y la puede seguir
+    trabajando. Al destino, arriba de su lista: campana con contador y "X te quiere pasar una orden"
+    con la foto grande, "No" / "Sí, la acepto". Aceptar (transacción) pasa la orden solo si sigue en
+    reparto y con el que la envió: `id_motorizado` nuevo, `asignada_en = ahora` (sale arriba),
+    `fecha_asignacion` sin cambiar (D-009), y crea el aviso para los gestores. Rechazar: el origen ve
+    "X no aceptó la orden" hasta tocar "Entendido". **Vence a medianoche de Lima** sin tarea
+    programada: `cerrarReasignacionesViejas()` marca vencidas y cancela las que ya no valen (orden
+    cerrada, pasada a otro, anulada) cada vez que se leen o antes de crear una.
+  - **Se fue el "Reasignar" directo del panel del motorizado:** abría la ventana de
+    `pages/detalle-motorizado.html`, que no está en la página Motorizados, y por eso no hacía nada. Se
+    borraron esa ventana y `abrirReasignarDetalle` / `confirmarReasignarDetalle`. La oficina sigue
+    pasando órdenes directo desde Asignación.
+  - Borrar un motorizado para siempre ahora revisa también `reasignaciones` (antes daría 500 por la FK).
+  - **Probado el 14/11** con el servidor en el puerto 3001 (el del usuario no se tocó; para el CORS del
+    3001 se lo levantó con un lanzador que agrega el origen solo en memoria, sin tocar `server.js`):
+    49 de 49 en la API con ALEX, ANDRE, DANIELA, el admin y un operador de prueba (enviar, aceptar,
+    rechazar, cancelar, vencer, orden cerrada mientras espera, avisos que nacen, "Abrir" que
+    desaparece para todos, aviso escondido al corregir la orden, borrado de moto). En el navegador, a
+    375 px: aceptar desde la tarjeta, enviar con la ventana, la espera, el rechazo, el panel del admin
+    y "Abrir" hasta la orden. Datos TST-RS-*, borrados.
+
 - **Panel del motorizado (página Motorizados) con la cuenta de la Caja (14 de noviembre de 2026, en
   local, falta que el usuario lo pruebe; sin migración).** **Toca el servidor:** hay que
   reiniciarlo. `server/routes/motorizados.js`, `js/motorizados.js`, `pages/motorizados.html`.
@@ -866,6 +914,12 @@ Roles: `admin`, `operador`, `visor`, `tienda`, `motorizado`. `GESTORES = ['admin
 
 ## Migraciones pendientes de aplicar en producción
 
+- `velox_agregar_notificaciones_reasignaciones.sql` (14 de noviembre de 2026): tablas
+  `reasignaciones` y `notificaciones` con sus índices (ver la nota del 14/11 arriba). **Aplicada en
+  local** el 14/11 (con `sqlcmd -E -C -I`, corrida dos veces sin errores; verificación propia al
+  final). **Falta en producción**, con `sa` y **antes** del `git pull` que la trae: sin las tablas,
+  cambiar estado o medio de pago sigue funcionando (el aviso falla solo y queda en el log), pero
+  Notificaciones y Reasignar dan 500.
 - `velox_agregar_asignada_en.sql` (12 de noviembre de 2026): columna `ordenes.asignada_en
   DATETIME2(0) NULL`, la hora de Lima en que se asignó la orden, para ordenar las listas del
   motorizado con la última asignada arriba. **Aplicada en local** el 12/11 (con `sqlcmd -E -C`,

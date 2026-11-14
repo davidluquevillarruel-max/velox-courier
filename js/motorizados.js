@@ -364,7 +364,7 @@ function _refrescarPanelDetalleSiAbierto() {
 /* ════════════════════════════════════════════
    DETALLE HISTORIAL INLINE
 ════════════════════════════════════════════ */
-window.abrirDetalleMotoHistorial = async function(motoId) {
+window.abrirDetalleMotoHistorial = async function(motoId, sinScroll) {
   var m = MOTORIZADOS.find(function(x){ return x.id == motoId; });
   if (!m) return;
 
@@ -375,7 +375,14 @@ window.abrirDetalleMotoHistorial = async function(motoId) {
   panel.innerHTML = '<div style="padding:20px;text-align:center;color:var(--color-text-secondary)"><i class="ti ti-loader" style="font-size:24px"></i> Cargando...</div>';
   panel.style.display = 'block';
 
-  var s = await _calcularStatsMoto(motoId, _filtroFechaMoto);
+  var resultados = await Promise.all([
+    _calcularStatsMoto(motoId, _filtroFechaMoto),
+    /* Qué órdenes de este moto esperan que otro las acepte
+       (js/reasignaciones.js): la tabla muestra "Esperando a …" */
+    typeof cargarReasignacionesPanel === 'function' ? cargarReasignacionesPanel(motoId) : null,
+  ]);
+  var s = resultados[0];
+  if (_motoDetalleAbiertoId != motoId) return; /* se abrió otro mientras cargaba */
 
   if (!s) {
     panel.innerHTML = '<div style="padding:20px;text-align:center;color:var(--color-text-tertiary)">' +
@@ -434,7 +441,7 @@ window.abrirDetalleMotoHistorial = async function(motoId) {
     '</div>';
 
   panel.innerHTML = html;
-  setTimeout(function(){ panel.scrollIntoView({ behavior:'smooth', block:'start' }); }, 50);
+  if (!sinScroll) setTimeout(function(){ panel.scrollIntoView({ behavior:'smooth', block:'start' }); }, 50);
 };
 
 function _kpiCard(label, valor, color, icon) {
@@ -480,11 +487,7 @@ function _botonWhatsApp(telefono, nombreDest, telefono2) {
   return html;
 }
 
-/* Órdenes en estos estados ya están cerradas: no tiene sentido reasignarlas */
-var _ESTADOS_NO_REASIGNABLES = ['entregado', 'cancelado', 'devolucion'];
-
 function _renderTablaOrdenesDetalle(ordenes) {
-  var esMoto = _esSesionMotorizado(); /* un motorizado no puede reasignar (el backend tampoco lo permite) */
   var badgeMap = {
     'entregado':    '<span class="badge entregado">Entregado</span>',
     'no-entregado': '<span class="badge no-entregado">No entregado</span>',
@@ -544,105 +547,29 @@ function _renderTablaOrdenesDetalle(ordenes) {
         '<td style="padding:8px 12px;font-size:11px;color:var(--color-text-secondary);white-space:nowrap">' + _celdaFechaTrabajoM(o) + '</td>' +
         '<td style="padding:8px 12px"><div style="display:flex;gap:4px;flex-wrap:wrap">' +
           '<button class="btn btn-sm" onclick="abrirActualizarEstadoOrden(' + o.id + ')"><i class="ti ti-refresh"></i> Actualizar</button>' +
-          (!esMoto && !_ESTADOS_NO_REASIGNABLES.includes(o.estado)
-            ? '<button class="btn btn-sm" style="color:var(--color-amber-text);border-color:#fcd34d" ' +
-              'onclick="abrirReasignarDetalle(' + o.id + ')" title="Reasignar a otro motorizado">' +
-              '<i class="ti ti-arrows-exchange"></i> Reasignar</button>'
-            : '') +
+          /* Pedir a otro moto que la tome, con aceptación (js/reasignaciones.js):
+             solo en reparto; el moto, las suyas; un gestor, en nombre del moto */
+          (typeof celdaReasignarPanelHTML === 'function' ? celdaReasignarPanelHTML(o) : '') +
         '</div></td>' +
       '</tr>';
     }).join('') +
     '</tbody></table></div>';
 }
 
-/* ════════════════════════════════════════════
-   MODAL — REASIGNAR ORDEN A OTRO MOTORIZADO
-   Se abre desde el botón "Reasignar" del historial
-   de un motorizado. Hace el mismo PATCH que usa la
-   página "Asignación" (PATCH /ordenes/:id/asignar).
-════════════════════════════════════════════ */
-var _reasignandoOrdenIdDet = null;
+/* El viejo "Reasignar" directo de este panel (PATCH /asignar, con la
+   ventana de pages/detalle-motorizado.html, que no estaba en esta
+   página y por eso el botón no hacía nada) se reemplazó por el pedido
+   con aceptación de js/reasignaciones.js. La oficina sigue pudiendo
+   pasar una orden directo desde Asignación. */
 
-window.abrirReasignarDetalle = async function(ordenId) {
-  _reasignandoOrdenIdDet = ordenId;
-
-  var overlay = document.getElementById('modal-reasignar-det');
-  var lista   = document.getElementById('reasignar-det-lista');
-  var info    = document.getElementById('reasignar-det-info');
-  if (!overlay || !lista || !info) return;
-
-  info.textContent = 'Cargando...';
-  lista.innerHTML = '';
-  overlay.style.display = 'flex';
-
-  try {
-    var r = await fetch(API + '/ordenes/' + ordenId);
-    var orden = await r.json();
-    if (!r.ok) throw new Error(orden.error || 'No se pudo cargar la orden');
-
-    info.textContent = '#' + orden.codigo + ' · ' + orden.tienda + ' → ' + orden.distrito;
-
-    var activos = MOTORIZADOS.filter(function(m) {
-      return m.activo && m.id != _motoDetalleAbiertoId;
-    });
-
-    if (activos.length === 0) {
-      lista.innerHTML = '<div style="padding:12px;text-align:center;color:var(--color-text-tertiary);font-size:13px">' +
-        'No hay otros motorizados activos</div>';
-      return;
-    }
-
-    lista.innerHTML = activos.map(function(m) {
-      return '<div style="display:flex;align-items:center;justify-content:space-between;' +
-        'padding:10px 12px;border-radius:var(--radius-md);border:1px solid var(--color-border-tertiary);margin-bottom:6px">' +
-        '<div style="display:flex;align-items:center;gap:10px">' +
-          '<div class="avatar ' + m.color_avatar + '" style="width:32px;height:32px;font-size:12px">' + m.iniciales + '</div>' +
-          '<div style="font-size:13px;font-weight:600">' + m.nombre +
-            (m.zona ? ' <span style="font-weight:400;color:var(--color-text-secondary)">· ' + m.zona + '</span>' : '') +
-          '</div>' +
-        '</div>' +
-        '<button class="btn btn-primary btn-sm" onclick="confirmarReasignarDetalle(\'' + m.nombre.replace(/'/g, "\\'") + '\')">' +
-          '<i class="ti ti-check"></i> Seleccionar</button>' +
-      '</div>';
-    }).join('');
-  } catch (err) {
-    info.textContent = '';
-    lista.innerHTML = '<div style="padding:12px;text-align:center;color:#A32D2D;font-size:13px">Error al cargar la orden</div>';
+/* Se envió, aceptó, rechazó o canceló un pedido de reasignación: el
+   panel abierto se vuelve a pintar con lo nuevo */
+window.addEventListener('velox:reasignaciones', function() {
+  var panel = document.getElementById('panel-detalle-moto');
+  if (_motoDetalleAbiertoId && panel && panel.style.display !== 'none') {
+    abrirDetalleMotoHistorial(_motoDetalleAbiertoId, true);
   }
-};
-
-window.cerrarModalReasignarDetalle = function() {
-  var overlay = document.getElementById('modal-reasignar-det');
-  if (overlay) overlay.style.display = 'none';
-  _reasignandoOrdenIdDet = null;
-};
-
-window.confirmarReasignarDetalle = async function(nuevoMotoNombre) {
-  if (!_reasignandoOrdenIdDet) return;
-
-  try {
-    var r = await fetch(API + '/ordenes/' + _reasignandoOrdenIdDet + '/asignar', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      /* Sin fecha: conserva su día de reparto (ver PATCH /asignar) */
-      body: JSON.stringify({ motorizado: nuevoMotoNombre }),
-    });
-    if (!r.ok) {
-      var dataErr = await r.json().catch(function() { return {}; });
-      throw new Error(dataErr.error || 'Error al reasignar el pedido');
-    }
-
-    var motoOrigen = _motoDetalleAbiertoId;
-    cerrarModalReasignarDetalle();
-    if (typeof showNotif === 'function') showNotif('Orden reasignada a ' + nuevoMotoNombre);
-
-    /* La orden ya no es de este motorizado: refrescar su historial y el resumen */
-    if (motoOrigen) abrirDetalleMotoHistorial(motoOrigen);
-    if (typeof _renderTablaResumen === 'function') _renderTablaResumen();
-  } catch (err) {
-    if (typeof showNotif === 'function') showNotif(err.message || 'Error al reasignar el pedido', 5000);
-  }
-};
+});
 
 window.cerrarDetalleMotoHistorial = function() {
   var panel = document.getElementById('panel-detalle-moto');

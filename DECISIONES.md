@@ -4,7 +4,7 @@
 > Sirve también como contexto de arranque para Claude Code: si se copia a `CLAUDE.md`
 > en la raíz del repo, la herramienta lo lee automáticamente al iniciar.
 >
-> Última actualización: 12 de noviembre de 2026
+> Última actualización: 14 de noviembre de 2026
 
 ---
 
@@ -721,6 +721,81 @@ en todas sus listas. No había ningún dato que dijera a qué hora se asignó un
 
 ---
 
+## D-019 · El panel del motorizado lee la plata del motor de la Caja (`caja-motor.js`)
+
+**Estado:** probado por el usuario en local el 14 de noviembre de 2026 (commit `486b6c3`), sin
+migración. Sube a producción con el deploy del 14/11 (ver "Pendientes varios").
+
+**Problema.** El panel del moto de la página Motorizados sumaba en el navegador el "por cobrar"
+(`monto_cobrado`) de toda orden entregada o ausente, sin mirar el medio de pago, como si el moto lo
+hubiera cobrado. Caso real en producción: #C-1310 (13/11), ausente, mostraba "Cobrado S/ 175.50" y
+"Total moto S/ 170.50". Lo mismo pasaba con Pago tienda y Pago Velox, y no le pagaba la devolución.
+La cuenta estaba repetida en 4 lugares del frontend y no coincidía con Caja → Motorizados (D-012).
+
+**Decisión.**
+- **El navegador no decide qué cobra el moto.** `GET /motorizados/:id/ordenes` devuelve en cada orden
+  `caja`, calculada con `calcularOrdenCaja()`, la misma función de las 3 cajas. El navegador solo suma
+  (en céntimos) y pinta.
+- **"Deuda moto" reemplaza a "Total moto":** en mano (efectivo + Yape) − su pago, con los mismos
+  colores que la Caja (verde = debe a Velox, ámbar = Velox le debe). "Cobrado" muestra solo lo que
+  pasó por sus manos, con su tag; Pago tienda / Pago Velox dicen que no pasó por el moto. Columna
+  nueva "Medio de pago" ("Por definir" solo si falta).
+- Se descartó corregir la suma en el navegador: hubiera sido una quinta copia de la regla de D-012,
+  que se desalinea con el próximo cambio.
+
+**Límite aceptado.** En un día ya liquidado, la Caja muestra el saldo guardado y este panel el que
+dan hoy los pedidos (si alguien editó una orden después, la Caja dice "Difiere").
+
+---
+
+## D-020 · Notificaciones compartidas y reasignación entre motorizados con aceptación
+
+**Estado:** probado por el usuario en local el 14 de noviembre de 2026 (commits `46f46f8` y
+`935020f`). **Necesita migración** `velox_agregar_notificaciones_reasignaciones.sql` (tablas
+`notificaciones` y `reasignaciones`), con `sa` y antes del `git pull`.
+
+**Problema.**
+- La oficina no se enteraba a tiempo de un "no entregado" ni de un "Pago tienda" (hay que revisar la
+  evidencia): tenía que buscarlos en la tabla.
+- Un moto que no llegaba a una entrega no tenía cómo pasársela a un compañero: lo hacía la oficina a
+  mano. El botón "Reasignar" del panel del moto no hacía nada (su ventana estaba en otra página).
+
+**Decisión: notificaciones (admin y operador).**
+- **Una fila por aviso, compartida por todos los gestores.** El primero que toca "Abrir" la marca
+  revisada para todos (`revisada_en`, `id_usuario_revisa`) y va a "Actualizar orden" de esa orden.
+  Se descartó un aviso por usuario: dos personas revisarían lo mismo y nadie sabría si ya se vio.
+- **El aviso nace al PASAR** a no entregado o a entregado con Pago tienda (`/estado`, `/resolver` y
+  `/medio-pago` leen el tipo antes y lo comparan después). Guardar de nuevo sin cambios no crea otro.
+  Un endpoint nuevo que cambie estado o medio de pago tiene que hacer lo mismo.
+- **Si la orden cambia antes de abrirlo, se esconde** (filtro al listar), no se borra.
+- **Crear el aviso nunca hace fallar el guardado de la orden** (try/catch, queda en el log).
+
+**Decisión: reasignación moto → moto.**
+- **Con aceptación:** la orden sigue con el que la envía (y la puede seguir trabajando) hasta que el
+  otro acepta. Se descartó pasarla directo: el destino podía no enterarse o no poder llevarla.
+- **Una sola pendiente por orden** (índice único filtrado en la base, no solo en el código).
+- **Aceptar es una transacción** que pasa la orden solo si sigue en reparto y con el que la envió;
+  pone `asignada_en` = ahora (sale arriba, D-018) y **no cambia `fecha_asignacion`** (D-009: no mueve
+  la Caja de día). Avisa a los gestores con un aviso informativo.
+- **Vence a medianoche de Lima, sin tarea programada:** cada vez que se leen o antes de crear una,
+  se marcan vencidas y se cancelan las que ya no valen (orden cerrada, pasada a otro, anulada). Así
+  no hace falta un cron en el servidor.
+- Un gestor puede pedirla en nombre del moto; la oficina sigue pasando órdenes directo desde
+  Asignación.
+
+**Decisión: el botón también para el motorizado.** El mismo "Notificaciones" del menú, **siempre
+visible** (aunque esté en 0) para que lo encuentre, con sus pedidos para aceptar y las respuestas a lo
+que mandó ("X aceptó" / "X no aceptó", con "Entendido"). Sale de las mismas rutas de reasignaciones,
+sin migración extra (usa `vista_por_origen_en`).
+
+**Límites aceptados.**
+- Los avisos se ven por sondeo (cada 20 s), no en tiempo real.
+- Borrar un motorizado para siempre se frena si tiene reasignaciones (FK).
+- **Orden del deploy:** sin las tablas, cambiar estado o medio de pago sigue funcionando (el aviso
+  falla solo), pero Notificaciones y Reasignar dan 500.
+
+---
+
 ## Costos de operación
 
 | Concepto | Mensual |
@@ -781,6 +856,11 @@ downtime). El dominio se traspasa aparte en Namecheap.
       entregas de hoy", listas del motorizado con la última asignada arriba y tarjeta con foto +
       WhatsApp arriba de EMPEZAR. En este orden: `velox_agregar_asignada_en.sql` con `sa`, después
       `git pull` + `pm2 restart velox`. El mismo `git pull` trae también los reportes de arriba.
+- [ ] **Deploy de los cambios del 14/11/2026, CON migración** (D-019 y D-020; probados por el
+      usuario en local, commits `486b6c3`, `46f46f8` y `935020f`). Va en el mismo deploy que el del
+      12/11. Orden: (1) `velox_agregar_asignada_en.sql` con `sa`; (2)
+      `velox_agregar_notificaciones_reasignaciones.sql` con `sa`; (3) `git pull` + `pm2 restart
+      velox`. Los motorizados con la app abierta tienen que recargarla.
 - [ ] **Fase 4:** rotar las 89 contraseñas de fórmula de las tiendas (con "Resetear
       contraseñas") y sacar el secreto de `server/db.js`. Ver D-007.
 - [ ] **Opcional:** cortar las sesiones abiertas al resetear una contraseña (necesita

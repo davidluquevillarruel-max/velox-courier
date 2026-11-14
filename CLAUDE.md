@@ -19,8 +19,14 @@ Velox Courier — internal management system for a courier/delivery company in L
   `asignada_en` (D-018), panel del moto con `caja-motor.js` (D-019) y notificaciones + reasignación
   (D-020). **Último commit en producción: `8a2cf5f`.**
 
+- **Cambios del 14/11 por la tarde: pusheados, FALTA el deploy** (`git pull` + `pm2 restart velox`,
+  **sin migración**; los motorizados y los gestores recargan la app). Commits `b6967bf` (aviso que
+  se cierra al guardar, D-020), `f00c168` (foto del pago solo con Pago Velox / Pago tienda, D-021),
+  `711a08d` y `69b5b1e` (observaciones para el moto y su protección, D-022). Todos probados por el
+  usuario en local. El detalle de cada uno, abajo.
+
 - **Observaciones visibles para el motorizado; el moto solo AGREGA (14 de noviembre de 2026, commit
-  `711a08d`, probado por el usuario; protección del gestor en local, falta que la pruebe; sin
+  `711a08d` y protección del gestor en `69b5b1e`, los dos probados por el usuario; D-022; sin
   migración).** **Toca el servidor:** hay que reiniciarlo.
   `server/routes/ordenes.js`, `js/entregas-moto.js`, `js/motorizados.js`, `css/components.css`.
   - **Columna:** `ordenes.observaciones` ya es `NVARCHAR(MAX)` (local y los scripts base): no hizo
@@ -75,7 +81,7 @@ Velox Courier — internal management system for a courier/delivery company in L
   probarlo entero, incluida la cola de fotos).
 
 - **Foto del pago: Yape y Efectivo motorizado ya no la piden (14 de noviembre de 2026, commit
-  `f00c168`, probado por el usuario; sin migración ni cambios en el servidor).** Solo `js/entregas-moto.js`
+  `f00c168`, probado por el usuario; D-021; sin migración ni cambios en el servidor).** Solo `js/entregas-moto.js`
   y `js/motorizados.js`. Con esos dos medios el moto tiene la plata y responde por ella: no hay foto.
   Pago tienda y Pago Velox (`pago-tienda`, `pago-empresa`) la siguen pidiendo como siempre.
   - **EMPEZAR → COMPLETAR:** `_ENT_MEDIOS_CON_FOTO` quedó en `['pago-tienda', 'pago-empresa']`. El
@@ -116,8 +122,7 @@ Velox Courier — internal management system for a courier/delivery company in L
     operador, "ya revisó" con el nombre, quién quedó guardado). En el navegador a 375 px: abrir y
     cerrar con la X y con Cancelar → sigue; guardar sin cambios → desaparece y el contador baja;
     guardar desde la tabla → desaparece. Datos TST-RS-*, borrados.
-  - **D-020 en `DECISIONES.md` todavía dice que "Abrir" marca el aviso:** se actualiza cuando el
-    usuario lo pida.
+  - D-020 en `DECISIONES.md` ya está actualizado con esta regla.
 
 - **Notificaciones del admin + reasignar entre motorizados con aceptación (14 de noviembre de 2026,
   commits `46f46f8` y `935020f`; D-020; HECHO en producción, con la migración

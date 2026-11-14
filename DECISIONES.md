@@ -761,9 +761,15 @@ aplicada con `sa` antes del `git pull`, después de la de `asignada_en`.
   mano. El botón "Reasignar" del panel del moto no hacía nada (su ventana estaba en otra página).
 
 **Decisión: notificaciones (admin y operador).**
-- **Una fila por aviso, compartida por todos los gestores.** El primero que toca "Abrir" la marca
-  revisada para todos (`revisada_en`, `id_usuario_revisa`) y va a "Actualizar orden" de esa orden.
-  Se descartó un aviso por usuario: dos personas revisarían lo mismo y nadie sabría si ya se vio.
+- **Una fila por aviso, compartida por todos los gestores.** Se descartó un aviso por usuario: dos
+  personas revisarían lo mismo y nadie sabría si ya se vio.
+- **Se cierra al GUARDAR la orden, no al abrirla** (cambio del 14/11, commit `b6967bf`, probado por
+  el usuario; sin migración). "Abrir" solo lleva a "Actualizar orden" de esa orden: si se cierra sin
+  guardar, el aviso sigue. Guardar (aunque no cambie nada, y venga de donde venga el modal: el aviso,
+  la tabla, la Caja) marca revisados todos los avisos abiertos de esa orden para todos los gestores
+  (`revisada_en`, `id_usuario_revisa`), sin que la pantalla espere esa llamada. Motivo: abrir no
+  significa haber revisado; guardar sí. Si otro ya la guardó, sale "<nombre> ya revisó este aviso".
+  El `POST /notificaciones/:id/revisar` viejo quedó por compatibilidad y ya no marca.
 - **El aviso nace al PASAR** a no entregado o a entregado con Pago tienda (`/estado`, `/resolver` y
   `/medio-pago` leen el tipo antes y lo comparan después). Guardar de nuevo sin cambios no crea otro.
   Un endpoint nuevo que cambie estado o medio de pago tiene que hacer lo mismo.
@@ -793,6 +799,64 @@ sin migración extra (usa `vista_por_origen_en`).
 - Borrar un motorizado para siempre se frena si tiene reasignaciones (FK).
 - **Orden del deploy:** sin las tablas, cambiar estado o medio de pago sigue funcionando (el aviso
   falla solo), pero Notificaciones y Reasignar dan 500.
+
+---
+
+## D-021 · La foto del pago solo con Pago Velox y Pago tienda
+
+**Estado:** commit `f00c168` (14 de noviembre de 2026), probado por el usuario. Sin migración ni
+cambios en el servidor. Va en el deploy del 14/11 por la tarde (ver Pendientes varios).
+
+**Problema.** En EMPEZAR → COMPLETAR se pedía foto del pago con los 4 medios, también con Yape y
+Efectivo motorizado. "Actualizar orden" y el servidor ya la pedían solo con Pago tienda y Pago Velox:
+las dos pantallas no coincidían.
+
+**Decisión.**
+- Con **Yape motorizado** o **Efectivo motorizado** no hay foto del pago ni se pide: la plata la tiene
+  el moto y se hace responsable (la Caja ya se la cuenta como deuda, D-012).
+- **Pago tienda** y **Pago Velox** (`pago-empresa`) la siguen pidiendo, como siempre (sigue
+  pudiendo llegar después por la cola: `evidencia_pendiente`, D-008).
+- La foto aparece y desaparece al cambiar el medio, en las dos pantallas. Una foto elegida con Pago
+  tienda que después se pasa a Yape no se sube.
+- Las fotos de pago ya subidas no se borran: se siguen viendo en "Fotos de la orden".
+
+**Ojo:** la regla está escrita en 4 lugares (`_ENT_MEDIOS_CON_FOTO` en `js/entregas-moto.js`,
+`_MEDIOS_PAGO[].evidencia` en `js/motorizados.js` y el `CASE` de `evidencia_pendiente` en
+`server/routes/ordenes.js` y `motorizados.js`). Un medio nuevo se suma en los cuatro.
+
+---
+
+## D-022 · Observaciones para el motorizado: el moto solo agrega, el gestor no pisa sus notas
+
+**Estado:** commits `711a08d` y `69b5b1e` (14 de noviembre de 2026), probado por el usuario. Sin
+migración: `ordenes.observaciones` ya es `NVARCHAR(MAX)`. Va en el deploy del 14/11 por la tarde.
+
+**Problema.** El moto veía las observaciones en una línea chica, junto al teléfono, y no tenía cómo
+dejar una nota para la oficina sin poder borrar lo que ya estaba.
+
+**Decisión.**
+- **Se ven en EMPEZAR** en un recuadro ámbar arriba de COMPLETAR / OTROS / DETALLE (y del formulario
+  que abren, así se leen antes de "Completar entrega"). Vacías: solo "+ Agregar observación". Nunca
+  bloquean completar.
+- **El moto solo AGREGA, y lo controla el servidor.** `POST /ordenes/:id/observaciones` suma al final
+  `" // ALEX 14/11 15:20: texto"` (nombre + hora de Lima) dentro del mismo UPDATE, así dos notas a la
+  vez no se pisan. En "Actualizar orden" el moto ve lo que ya está en solo lectura y agrega
+  (`obsAgregar`); `/completo` ignora el texto completo si viene de un motorizado.
+- **Admin y operador editan el texto completo**, como antes (ahora hasta 4000 caracteres; antes la
+  pantalla cortaba en 300 y con las notas no habrían podido guardar). Topes: 300 por nota, 4000 en
+  total.
+- **El gestor no pisa una nota que llegó con el modal abierto.** El modal manda también el texto que
+  tenía al abrir (`obsOriginal`). Si no lo cambió, `/completo` no toca la columna. Si lo cambió y la
+  base ya tiene otro texto, responde 409 "El motorizado agregó una nota mientras editabas", no guarda
+  y muestra el texto actual para revisarlo.
+- **Por qué esta protección y no el 409 general:** el control de versión de "Actualizar orden" no
+  funciona (ver Pendientes varios). Arreglarlo cambia todos los guardados, y se decidió no arriesgar
+  lo que anda (sobre todo la cola de fotos). Esta protección es la misma idea, pero solo sobre las
+  observaciones.
+
+**Límite aceptado:** si el aviso corta el guardado, el cambio de motorizado o de fecha (`/asignar`, que
+va antes en la cadena) ya quedó guardado, como con cualquier error de `/completo`. Al volver a
+guardar se manda igual.
 
 ---
 
@@ -857,6 +921,18 @@ downtime). El dominio se traspasa aparte en Namecheap.
         la tarjeta con foto.
       - Panel del motorizado con la cuenta de la Caja (D-019).
       - Notificaciones y reasignación entre motorizados (D-020).
+- [ ] **Deploy de los cambios del 14/11 por la tarde** (commits `b6967bf`, `f00c168`, `711a08d`,
+      `69b5b1e`, ya pusheados): `git pull` + `pm2 restart velox`, **sin migración**. Los
+      motorizados y los gestores tienen que recargar la app. Entran el aviso que se cierra al
+      guardar (D-020), la foto del pago solo con Pago Velox / Pago tienda (D-021) y las
+      observaciones para el moto con su protección (D-022).
+- [ ] **Control de concurrencia (409) roto desde el 14/10** (commit `f47d676`). `SELECT_ORDEN`
+      devuelve la versión con `CONVERT(varchar(20), o.row_version, 1)`, que con `rowversion` da los
+      bytes crudos y no `0x…`; `bufferDeVersion` la descarta y ningún guardado con `ifVersion` da
+      409: el último que guarda pisa. Arreglo de una línea (`CAST(o.row_version AS binary(8))`),
+      pero empezarían a salir 409 reales en todos los guardados. **Decidido no arreglarlo por ahora**
+      (14/11) para no arriesgar lo que anda, sobre todo la cola de fotos. Las observaciones ya
+      tienen su propia protección (D-022). Visto en local (SQL Server 2025); en producción, sin mirar.
 - [ ] **Fase 4:** rotar las 89 contraseñas de fórmula de las tiendas (con "Resetear
       contraseñas") y sacar el secreto de `server/db.js`. Ver D-007.
 - [ ] **Opcional:** cortar las sesiones abiertas al resetear una contraseña (necesita

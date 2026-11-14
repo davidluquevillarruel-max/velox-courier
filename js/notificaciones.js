@@ -4,8 +4,11 @@
    · No entregado                  → ícono ✕ en rojo
    · Entregado con Pago tienda     → ícono de tienda en ámbar
    · Reasignación aceptada (info)  → ícono de moto en verde
-   "Abrir" marca el aviso revisado PARA TODOS (POST /revisar) y lleva a
-   Todos los pedidos con esa orden abierta en "Actualizar orden".
+   "Abrir" lleva a Todos los pedidos con esa orden abierta en
+   "Actualizar orden", sin marcar nada. El aviso queda revisado PARA
+   TODOS recién cuando alguien GUARDA esa orden en "Actualizar orden"
+   (desde el aviso o desde cualquier otro lado); cerrar sin guardar lo
+   deja en la campana.
    El servidor esconde solo los que ya no aplican (la orden cambió).
    Contador: cada 20 s mientras la pestaña está a la vista.
 
@@ -59,8 +62,10 @@ function _pintarContadorAvisos(total) {
   if (h) h.classList.toggle('con-avisos', total > 0);
 }
 
-async function _refrescarContadorAvisos() {
-  if (document.hidden) return;
+/* forzar: después de una acción del usuario (guardar), aunque la
+   pestaña figure escondida; el sondeo de 20 s no lee si no se ve */
+async function _refrescarContadorAvisos(forzar) {
+  if (document.hidden && forzar !== true) return;
   if (_avisosEsMoto()) {
     /* Al terminar dispara velox:reasignaciones-leidas → _pintarAvisosMoto */
     if (typeof cargarReasignacionesMias === 'function') cargarReasignacionesMias();
@@ -192,24 +197,47 @@ function _pintarPanelAvisos(lista) {
   panel.innerHTML = html;
 }
 
-/* "Abrir": revisado para todos, y a la orden */
+/* "Abrir": solo lleva a la orden. El aviso NO se marca acá: sigue en la
+   campana hasta que alguien guarda "Actualizar orden" de esa orden
+   (marcarAvisosOrdenRevisados, abajo). Cerrar sin guardar lo deja. */
 window.abrirAviso = async function(idAviso) {
   try {
-    var r = await fetch(API + '/notificaciones/' + idAviso + '/revisar', { method: 'POST' });
+    var r = await fetch(API + '/notificaciones/' + idAviso);
     var d = await r.json().catch(function() { return {}; });
     if (!r.ok) throw new Error(d.error || 'No se pudo abrir el aviso');
 
-    _avisosLista = _avisosLista.filter(function(a) { return a.id !== idAviso; });
-    _pintarContadorAvisos(_avisosLista.length);
-    _pintarPanelAvisos(_avisosLista);
     cerrarPanelNotificaciones();
-    if (d.yaRevisada && typeof showNotif === 'function') showNotif('Otro usuario ya había abierto este aviso');
+    if (d.yaRevisada) {
+      /* El panel tenía hasta 20 s de atraso: otro ya guardó la orden */
+      _avisosLista = _avisosLista.filter(function(a) { return a.id !== idAviso; });
+      _pintarContadorAvisos(_avisosLista.length);
+      _pintarPanelAvisos(_avisosLista);
+      if (typeof showNotif === 'function') {
+        showNotif((d.revisadaPor ? d.revisadaPor : 'Otro usuario') + ' ya revisó este aviso', 4000);
+      }
+    }
 
     showPage('pedidos');
     if (typeof abrirActualizarEstadoOrden === 'function') abrirActualizarEstadoOrden(d.id_orden);
   } catch (err) {
     if (typeof showNotif === 'function') showNotif(err.message, 5000);
   }
+};
+
+/* Lo llama guardarActualizarEstadoOrden (js/motorizados.js) cuando los
+   PATCH salieron bien, venga de donde venga el modal: guardar = revisada.
+   Sin await del lado de quien guarda: si falla (sin señal), la orden ya
+   quedó guardada y el aviso sigue en la campana para la próxima. */
+window.marcarAvisosOrdenRevisados = async function(idOrden) {
+  if (!idOrden || !_avisosEsGestor()) return;
+  try {
+    var r = await fetch(API + '/notificaciones/orden/' + idOrden + '/revisar', { method: 'POST' });
+    if (!r.ok) return;
+    var d = await r.json().catch(function() { return {}; });
+    if (!d.marcadas) return;
+    _avisosLista = _avisosLista.filter(function(a) { return String(a.id_orden) !== String(idOrden); });
+    _refrescarContadorAvisos(true);
+  } catch (e) { /* sin señal: el aviso queda, se revisa al guardar de nuevo */ }
 };
 
 /* ── Arranque ─────────────────────────────────────────────── */

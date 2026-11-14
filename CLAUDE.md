@@ -19,6 +19,33 @@ Velox Courier — internal management system for a courier/delivery company in L
   `asignada_en` (D-018), panel del moto con `caja-motor.js` (D-019) y notificaciones + reasignación
   (D-020). **Último commit en producción: `8a2cf5f`.**
 
+- **Notificaciones del admin: el aviso se cierra al GUARDAR la orden, no al abrirla (14 de noviembre
+  de 2026, en local, falta que el usuario lo pruebe; sin migración).** **Toca el servidor:** hay que
+  reiniciarlo. `server/routes/notificaciones.js`, `js/notificaciones.js`, `js/motorizados.js`.
+  - **"Abrir"** (`GET /notificaciones/:id`) solo lleva a Todos los pedidos con "Actualizar orden"
+    abierto: **no marca nada**. Cerrar sin guardar (Cancelar o la X) deja el aviso en la campana.
+    Si otro gestor ya la guardó (el panel tiene hasta 20 s de atraso), avisa "<nombre> ya revisó
+    este aviso" y abre la orden igual.
+  - **Guardar** (`guardarActualizarEstadoOrden`, después de que salieron bien los PATCH, aunque no
+    haya cambiado nada) llama a `marcarAvisosOrdenRevisados(idOrden)` sin `await` →
+    `POST /notificaciones/orden/:idOrden/revisar`: pone `revisada_en` + `id_usuario_revisa` en
+    **todos** los avisos abiertos de esa orden (también los escondidos), para todos los gestores.
+    Cuenta igual si el modal se abrió desde el aviso, desde la tabla o desde la Caja. Si esa llamada
+    falla, la orden ya quedó guardada y el aviso sigue para la próxima. Solo gestores (el moto
+    también guarda "Actualizar orden", pero no marca: 403 en el servidor y ni lo intenta).
+  - Si el guardado no sale (validación, 409), no se marca: p. ej. Pago tienda sin foto de evidencia.
+  - Un gestor que cambia la orden a no entregado o Pago tienda desde el modal crea el aviso y, al
+    terminar ese mismo guardado, queda revisado: solo quedan en la campana los que causó otro.
+  - **Compatibilidad:** el `POST /notificaciones/:id/revisar` viejo (una pantalla sin recargar)
+    responde igual que el GET y **ya no marca**.
+  - **Probado el 14/11** (servidor en el 3001, el del usuario no se tocó): 55 de 55 en la API
+    (abrir no marca, el POST viejo no marca, el moto 403, guardar marca y desaparece para el
+    operador, "ya revisó" con el nombre, quién quedó guardado). En el navegador a 375 px: abrir y
+    cerrar con la X y con Cancelar → sigue; guardar sin cambios → desaparece y el contador baja;
+    guardar desde la tabla → desaparece. Datos TST-RS-*, borrados.
+  - **D-020 en `DECISIONES.md` todavía dice que "Abrir" marca el aviso:** se actualiza cuando el
+    usuario lo pida.
+
 - **Notificaciones del admin + reasignar entre motorizados con aceptación (14 de noviembre de 2026,
   commits `46f46f8` y `935020f`; D-020; HECHO en producción, con la migración
   `velox_agregar_notificaciones_reasignaciones.sql`).** **Toca el servidor:** hay que reiniciarlo. Nuevos: `server/avisos.js`,
@@ -35,9 +62,9 @@ Velox Courier — internal management system for a courier/delivery company in L
   - **Notificaciones (admin y operador; el moto tiene las suyas, ver abajo):** botón al final del menú con contador rojo (cada 20 s; en el
     celular, punto rojo en la hamburguesa) y panel "Para revisar": No entregado (✕ rojo), Pago tienda
     (tienda ámbar), Reasignación aceptada (moto verde, "ALEX pasó #C-x a LUIS"). **Una fila compartida
-    por todos los gestores:** "Abrir" (`POST /notificaciones/:id/revisar`) la marca revisada para
-    todos y lleva a Todos los pedidos con "Actualizar orden" abierto (`showPage('pedidos')` +
-    `abrirActualizarEstadoOrden`). El aviso **nace al PASAR** a no entregado o a entregado con Pago
+    por todos los gestores:** "Abrir" lleva a Todos los pedidos con "Actualizar orden" abierto
+    (`showPage('pedidos')` + `abrirActualizarEstadoOrden`); desde el 14/11 (segunda parte, arriba)
+    el aviso se marca revisado para todos recién al **guardar** esa orden. El aviso **nace al PASAR** a no entregado o a entregado con Pago
     tienda: `/estado`, `/resolver` y `/medio-pago` leen el tipo antes (`tipoAvisoDeOrden`) y llaman
     `registrarAvisoSiNace` después (nunca hace fallar el guardado). Guardar de nuevo sin cambiar no
     crea otro. **Si la orden cambia antes de abrirlo, se esconde** (`SQL_AVISO_VIGENTE`, al listar; no

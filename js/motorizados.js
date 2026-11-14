@@ -1885,6 +1885,12 @@ window.guardarActualizarEstadoOrden = async function() {
       }
     }
 
+    /* Guardar = revisada: los avisos de "Notificaciones" de esta orden se
+       cierran para todos los gestores (js/notificaciones.js). Sin await:
+       la orden ya está guardada y no espera a esto. Antes de cerrar el
+       modal, que borra _ordenActualizarId. */
+    if (typeof marcarAvisosOrdenRevisados === 'function') marcarAvisosOrdenRevisados(_ordenActualizarId);
+
     cerrarActualizarEstadoOrden();
     if (typeof showNotif === 'function') showNotif('Orden actualizada correctamente' + avisoEvidencia, avisoEvidencia ? 5000 : 2500);
 

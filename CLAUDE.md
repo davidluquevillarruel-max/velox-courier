@@ -10,7 +10,36 @@ Velox Courier — internal management system for a courier/delivery company in L
 
 ## Estado actual
 
-Última actualización: 12 de noviembre de 2026.
+Última actualización: 14 de noviembre de 2026.
+
+- **Panel del motorizado (página Motorizados) con la cuenta de la Caja (14 de noviembre de 2026, en
+  local, falta que el usuario lo pruebe; sin migración).** **Toca el servidor:** hay que
+  reiniciarlo. `server/routes/motorizados.js`, `js/motorizados.js`, `pages/motorizados.html`.
+  - **El bug:** el navegador sumaba el "por cobrar" (`monto_cobrado`) de toda orden entregada o
+    **ausente**, sin mirar el medio, como si el moto lo hubiera cobrado. Ej. real en producción:
+    #C-1310 (Luis Palacios, 13/11), ausente, salía Cobrado S/ 175.50 y Total moto S/ 170.50; lo mismo
+    con Pago tienda y Pago Velox. Además no le pagaba la devolución. Estaba repetido en 4 lugares:
+    `_calcularStatsMoto` (cuadros + resumen del panel y la tabla general de motos),
+    `_renderTablaOrdenesDetalle` y el historial por día a página completa.
+  - **Ahora:** `GET /motorizados/:id/ordenes` devuelve en cada orden `caja` (en soles), calculada
+    con `calcularOrdenCaja()`: `en_mano_efectivo`, `en_mano_yape`, `en_mano`, `directo_velox`,
+    `pago_moto`, `saldo_moto`, `delivery`, `cobrable`, `medio_por_definir`. El navegador solo suma
+    (`_totalesCajaMoto`, en céntimos) y pinta: **no decide qué cobra**. Tabla: columna nueva "Medio
+    de pago" (`_medioPagoMotoHTML`: "Por definir" solo si `medio_por_definir`, si no "—"),
+    "Cobrado" = en mano con tag Efectivo / Yape (`_cobradoMotoHTML`; Pago tienda / Velox dicen
+    "no pasó por el moto") y "Deuda moto" = en mano − su pago en vez de "Total moto"
+    (`_deudaMotoHTML`: verde = debe a Velox, ámbar = Velox le debe, como la Caja). Cuadros: "Total
+    cobrado" = efectivo + Yape, "Deuda moto" en vez de "Total moto"; el resumen dice "Debe a
+    Velox / Velox le debe" con el desglose. La tabla general de motos también: su columna pasó a
+    "Deuda moto".
+  - **Probado el 14/11** con el servidor en el puerto 3001 (el del usuario, en el 3000, no se tocó)
+    y el JS real cargado en Node: un 13/11 de prueba para Luis Palacios (órdenes TST-LP-*,
+    borradas) que reproduce el caso, con ausente de S/ 175.50, Pago tienda, Pago Velox, efectivo,
+    Yape, sin cobro, reprogramado y devolución, da efectivo 80 · Yape 50 · pago 49 · deuda 81, **igual
+    a Caja → Motorizados** (antes daba "total moto" 501.50). Con los datos reales del 20/10:
+    572 / 133 / 439, igual a la Caja. La #C-1310 real está solo en producción.
+  - Diferencia que queda a propósito: en un día **ya liquidado**, la Caja muestra el saldo guardado
+    y este panel el de los pedidos de hoy (si alguien editó la orden después, "Difiere").
 
 - **Cambios del 12 de noviembre de 2026 (los 3 de abajo): probados por el usuario en local y
   subidos a `origin/main` (commits `223635a`, `01b0f09`, `063e0f4`). FALTA EL DEPLOY, en este

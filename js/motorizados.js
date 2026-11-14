@@ -102,6 +102,86 @@ async function _cargarMotorizados() {
 }
 
 /* ════════════════════════════════════════════
+   PLATA DEL MOTORIZADO — misma cuenta que Caja → Motorizados
+   Cada orden de GET /motorizados/:id/ordenes trae o.caja, calculada en
+   el servidor con calcularOrdenCaja() (server/caja-motor.js). Acá solo
+   se suma y se pinta: no se decide qué cobra y qué no.
+     en mano  = efectivo + Yape que pasaron por sus manos (entregado +
+                contraentrega + efectivo/Yape moto). Ausente, Pago tienda,
+                Pago Velox, Sin cobro y medio por definir: 0.
+     pago     = su delivery (entregado / ausente / devolución)
+     deuda    = en mano − pago: > 0 le debe a Velox, < 0 Velox le debe
+════════════════════════════════════════════ */
+var _MEDIO_PAGO_MOTO = {
+  'yape-motorizado': 'Yape moto', 'efectivo-motorizado': 'Efectivo moto',
+  'pago-tienda': 'Pago tienda', 'pago-empresa': 'Pago Velox',
+};
+
+/* Se suma en céntimos para no arrastrar errores de coma flotante */
+function _totalesCajaMoto(ordenes) {
+  var c = function(v) { return Math.round((parseFloat(v) || 0) * 100); };
+  var t = { efectivo: 0, yape: 0, pago: 0, delivery: 0 };
+  ordenes.forEach(function(o) {
+    var k = o.caja || {};
+    t.efectivo += c(k.en_mano_efectivo);
+    t.yape     += c(k.en_mano_yape);
+    t.pago     += c(k.pago_moto);
+    t.delivery += c(k.delivery);
+  });
+  return {
+    efectivo: t.efectivo / 100, yape: t.yape / 100,
+    enMano: (t.efectivo + t.yape) / 100,
+    pago: t.pago / 100, delivery: t.delivery / 100,
+    deuda: (t.efectivo + t.yape - t.pago) / 100,
+  };
+}
+
+/* Color y texto de la deuda, con el mismo sentido que la Caja de motos:
+   verde = le debe a Velox, ámbar = Velox le debe */
+function _colorDeudaMoto(v) {
+  return v > 0 ? 'var(--color-green)' : v < 0 ? 'var(--color-amber-text)' : 'var(--color-text-secondary)';
+}
+function _textoDeudaMoto(v) {
+  return v > 0 ? 'Debe a Velox: S/ ' + v.toFixed(2)
+       : v < 0 ? 'Velox le debe: S/ ' + Math.abs(v).toFixed(2)
+       : 'Saldo en cero';
+}
+function _deudaMotoHTML(v) {
+  v = parseFloat(v) || 0;
+  return '<span style="font-weight:700;color:' + _colorDeudaMoto(v) + ';white-space:nowrap">' +
+    (v < 0 ? '− ' : '') + 'S/ ' + Math.abs(v).toFixed(2) + '</span>';
+}
+
+/* Medio de pago: cómo entró la plata. Explica por qué una orden suma o no */
+function _medioPagoMotoHTML(o) {
+  if (o.metodo_pago !== 'contraentrega') return '<span style="color:var(--color-text-tertiary)">Sin cobro</span>';
+  if (o.medio_pago) return _MEDIO_PAGO_MOTO[o.medio_pago] || o.medio_pago;
+  /* "Por definir" solo cuando falta de verdad (entregada en contraentrega
+     sin medio, igual que la Caja); un ausente o un reprogramado no cobra */
+  return (o.caja && o.caja.medio_por_definir)
+    ? '<span style="color:var(--color-amber-text);font-weight:600">Por definir</span>'
+    : '<span style="color:var(--color-text-tertiary)">—</span>';
+}
+
+/* Cobrado = lo que tuvo EN MANO, con su tag. Si el cliente pagó pero la
+   plata no pasó por el moto (Pago tienda / Pago Velox), lo aclara abajo */
+function _cobradoMotoHTML(o) {
+  var k = o.caja || {};
+  var cero = '<span style="color:var(--color-text-tertiary)">S/ 0.00</span>';
+  if (k.en_mano > 0) {
+    var yape = k.en_mano_yape > 0;
+    return '<span style="font-weight:600;white-space:nowrap">S/ ' + k.en_mano.toFixed(2) + '</span> ' +
+      '<span style="font-size:10px;font-weight:600;padding:1px 6px;border-radius:8px;white-space:nowrap;' +
+        (yape ? 'color:var(--color-purple-text);background:var(--color-purple-bg)">Yape'
+              : 'color:var(--color-green-text);background:var(--color-green-bg)">Efectivo') + '</span>';
+  }
+  if (k.directo_velox > 0 || (o.estado === 'entregado' && o.medio_pago === 'pago-tienda' && o.metodo_pago === 'contraentrega')) {
+    return cero + '<div style="font-size:10px;color:var(--color-text-tertiary);white-space:nowrap">no pasó por el moto</div>';
+  }
+  return cero;
+}
+
+/* ════════════════════════════════════════════
    CALCULAR STATS DESDE LA API
 ════════════════════════════════════════════ */
 async function _calcularStatsMoto(idMotorizado, fecha) {
@@ -118,17 +198,14 @@ async function _calcularStatsMoto(idMotorizado, fecha) {
     var reprogramados = ordenes.filter(function(o){ return o.estado==='reprogramado'; }).length;
     var cobrable      = entregados + noEntregados;
     var tasa          = cobrable > 0 ? Math.round((entregados/cobrable)*100) : 0;
-    var estadosConCobro = ['entregado', 'ausente'];
-    var pagoTotal = ordenes.reduce(function(s,o){
-      return s + (estadosConCobro.includes(o.estado) ? (parseFloat(o.pago_moto_total)||0) : 0);
-    }, 0);
-    var cobrado = ordenes.reduce(function(s,o){
-      return s + (estadosConCobro.includes(o.estado) ? (parseFloat(o.monto_cobrado)||0) : 0);
-    }, 0);
+    /* Plata: del motor de la Caja (o.caja), no del "por cobrar" de la orden */
+    var t = _totalesCajaMoto(ordenes);
 
     return {
       total: ordenes.length, entregados, noEntregados, ausentes, reprogramados,
-      tasa: tasa + '%', tasaNum: tasa, pagoTotal, cobrado, ordenes,
+      tasa: tasa + '%', tasaNum: tasa,
+      pagoTotal: t.pago, cobrado: t.enMano, efectivo: t.efectivo, yape: t.yape, deuda: t.deuda,
+      ordenes,
     };
   } catch(err) { return null; }
 }
@@ -208,8 +285,6 @@ async function _renderTablaResumen() {
       '</tr>';
     }
     var tc = s.tasaNum >= 75 ? 'var(--color-green)' : s.tasaNum >= 50 ? 'var(--color-amber)' : 'var(--color-red-text)';
-    var totalMoto = s.cobrado - s.pagoTotal;
-    var tmColor   = totalMoto > 0 ? 'var(--color-green)' : totalMoto < 0 ? 'var(--color-red-text)' : 'var(--color-text-secondary)';
     return '<tr>' +
       '<td><div style="display:flex;align-items:center;gap:8px">' +
         '<div class="avatar ' + m.color_avatar + '" style="width:30px;height:30px;font-size:11px">' + m.iniciales + '</div>' +
@@ -223,7 +298,7 @@ async function _renderTablaResumen() {
       '<td><span style="color:' + tc + ';font-weight:700">' + s.tasa + '</span></td>' +
       '<td style="font-weight:600">S/ ' + s.pagoTotal.toFixed(2) + '</td>' +
       '<td class="col-cobrado-fijo" style="font-weight:600;color:var(--color-blue-text)">S/ ' + s.cobrado.toFixed(2) + '</td>' +
-      '<td class="col-totalmoto-fijo" style="font-weight:700;color:' + tmColor + '">S/ ' + totalMoto.toFixed(2) + '</td>' +
+      '<td class="col-totalmoto-fijo">' + _deudaMotoHTML(s.deuda) + '</td>' +
       '<td class="col-accion-moto-fijo"><button class="btn btn-primary btn-sm" onclick="abrirDetalleMotoHistorial(' + m.id + ')">' +
         '<i class="ti ti-eye"></i> Ver detalle</button></td>' +
     '</tr>';
@@ -309,13 +384,9 @@ window.abrirDetalleMotoHistorial = async function(motoId) {
     return;
   }
 
-  var saldoMoto  = s.cobrado - s.pagoTotal;
-  var saldoColor = saldoMoto > 0 ? 'var(--color-green)' : saldoMoto < 0 ? 'var(--color-red-text)' : 'var(--color-text-secondary)';
-  var saldoMsg   = saldoMoto > 0
-    ? 'En resumen debe a Velox: S/ ' + saldoMoto.toFixed(2)
-    : saldoMoto < 0
-    ? 'En resumen se le debe al motorizado: S/ ' + Math.abs(saldoMoto).toFixed(2)
-    : 'Saldo en cero';
+  /* Misma cuenta que Caja → Motorizados: en mano − su pago */
+  var saldoColor = _colorDeudaMoto(s.deuda);
+  var saldoMsg   = s.deuda ? 'En resumen: ' + _textoDeudaMoto(s.deuda) : 'Saldo en cero';
 
   var tc = s.tasaNum >= 75 ? 'green' : s.tasaNum >= 50 ? 'amber' : 'red';
 
@@ -340,8 +411,10 @@ window.abrirDetalleMotoHistorial = async function(motoId) {
     '</div>' +
     '<div class="moto-kpis">' +
       _kpiCard('Pago a motorizado', 'S/ ' + s.pagoTotal.toFixed(2), 'amber', 'ti-wallet') +
+      /* Solo lo que tuvo en la mano: efectivo + Yape */
       _kpiCard('Total cobrado', 'S/ ' + s.cobrado.toFixed(2), 'blue', 'ti-cash') +
-      _kpiCard('Total moto', 'S/ ' + (s.cobrado - s.pagoTotal).toFixed(2), (s.cobrado - s.pagoTotal) >= 0 ? 'green' : 'red', 'ti-calculator') +
+      _kpiCard('Deuda moto', (s.deuda < 0 ? '− ' : '') + 'S/ ' + Math.abs(s.deuda).toFixed(2),
+        s.deuda > 0 ? 'green' : s.deuda < 0 ? 'amber' : 'blue', 'ti-calculator') +
       _kpiCard('Reprogramados', s.reprogramados, 'amber', 'ti-refresh') +
     '</div>' +
     '<div style="background:var(--color-bg-secondary);border-radius:var(--radius-lg);padding:18px 22px;' +
@@ -352,6 +425,9 @@ window.abrirDetalleMotoHistorial = async function(motoId) {
       '<div>' +
         '<div style="font-size:11px;color:var(--color-text-secondary);font-weight:500;margin-bottom:2px">RESUMEN DEL PERÍODO</div>' +
         '<div style="font-size:16px;font-weight:700;color:' + saldoColor + '">' + saldoMsg + '</div>' +
+        '<div style="font-size:12px;color:var(--color-text-secondary);margin-top:2px">' +
+          'En mano: <strong>S/ ' + s.cobrado.toFixed(2) + '</strong> (efectivo S/ ' + s.efectivo.toFixed(2) +
+          ' · Yape S/ ' + s.yape.toFixed(2) + ') &nbsp;·&nbsp; Su pago: <strong>S/ ' + s.pagoTotal.toFixed(2) + '</strong></div>' +
       '</div>' +
     '</div>' +
     _renderTablaOrdenesDetalle(s.ordenes) +
@@ -426,11 +502,10 @@ function _renderTablaOrdenesDetalle(ordenes) {
     'contraentrega':'Contraentrega'
   };
 
-  /* Estados que SÍ generan cobro */
-  var estadosConCobro = ['entregado', 'ausente'];
-
-  var cols = ['Código','Tienda','Destinatario','','Distrito','Estado','Método',
-              'Delivery','Cobrado','Pago moto','Total moto','Especial','Fecha',''];
+  /* La plata de cada fila sale de o.caja (motor de la Caja, en el
+     servidor): Cobrado = en mano, Deuda moto = en mano − su pago */
+  var cols = ['Código','Tienda','Destinatario','','Distrito','Estado','Método','Medio de pago',
+              'Delivery','Cobrado','Pago moto','Deuda moto','Especial','Fecha',''];
 
   return '<div class="tabla-moto-aviso"><i class="ti ti-arrows-horizontal"></i> Desliza la tabla a los lados para ver todas las columnas</div>' +
     '<div class="table-wrap tabla-moto-wrap"><table id="tabla-ordenes-moto-detalle" style="width:100%;border-collapse:collapse;font-size:12px">' +
@@ -442,27 +517,11 @@ function _renderTablaOrdenesDetalle(ordenes) {
     }).join('') +
     '</tr></thead><tbody>' +
     ordenes.map(function(o) {
-      var tieneCobro = estadosConCobro.includes(o.estado);
-
-      /* Delivery: solo si tiene cobro */
-      var delivery   = tieneCobro ? parseFloat(o.delivery_total||0) : 0;
-      /* Cobrado: solo si tiene cobro */
-      var cobrado    = tieneCobro ? parseFloat(o.monto_cobrado||0)  : 0;
-      /* Pago moto: solo si tiene cobro */
-      var pagoMoto   = tieneCobro ? parseFloat(o.pago_moto_total||0): 0;
-      /* Total moto = cobrado - pago moto */
-      var totalMoto  = cobrado - pagoMoto;
-
-      var deliveryStr  = tieneCobro ? 'S/ ' + delivery.toFixed(2)  : '<span style="color:var(--color-text-tertiary)">S/ 0.00</span>';
-      var cobradoStr   = tieneCobro ? 'S/ ' + cobrado.toFixed(2)   : '<span style="color:var(--color-text-tertiary)">S/ 0.00</span>';
-      var pagoMotoStr  = tieneCobro ? 'S/ ' + pagoMoto.toFixed(2)  : '<span style="color:var(--color-text-tertiary)">S/ 0.00</span>';
-
-      var totalMotoColor = totalMoto > 0 ? 'var(--color-green)' :
-                           totalMoto < 0 ? 'var(--color-red-text)' :
-                           'var(--color-text-secondary)';
-      var totalMotoStr = tieneCobro
-        ? '<span style="font-weight:700;color:' + totalMotoColor + '">S/ ' + totalMoto.toFixed(2) + '</span>'
-        : '<span style="color:var(--color-text-tertiary)">S/ 0.00</span>';
+      var k = o.caja || {};
+      var cero = '<span style="color:var(--color-text-tertiary)">S/ 0.00</span>';
+      var deliveryStr = k.cobrable ? 'S/ ' + (k.delivery || 0).toFixed(2) : cero;
+      var pagoMotoStr = k.pago_moto ? 'S/ ' + k.pago_moto.toFixed(2) : cero;
+      var deudaStr    = k.cobrable ? _deudaMotoHTML(k.saldo_moto) : cero;
 
       var especial = o.producto_especial
         ? '<span style="color:var(--color-amber-text);font-weight:600">+S/ ' + parseFloat(o.monto_adicional||0).toFixed(2) + '</span>'
@@ -476,10 +535,11 @@ function _renderTablaOrdenesDetalle(ordenes) {
         '<td style="padding:8px 12px">' + o.distrito + '</td>' +
         '<td style="padding:8px 12px">' + (badgeMap[o.estado]||o.estado) + '</td>' +
         '<td style="padding:8px 12px;font-size:11px">' + (metodoLabel[o.metodo_pago]||o.metodo_pago||'—') + '</td>' +
+        '<td style="padding:8px 12px;font-size:11px;white-space:nowrap">' + _medioPagoMotoHTML(o) + '</td>' +
         '<td style="padding:8px 12px;font-weight:500">' + deliveryStr + '</td>' +
-        '<td style="padding:8px 12px;font-weight:500">' + cobradoStr + '</td>' +
+        '<td style="padding:8px 12px">' + _cobradoMotoHTML(o) + '</td>' +
         '<td style="padding:8px 12px;color:var(--color-amber-text);font-weight:600">' + pagoMotoStr + '</td>' +
-        '<td style="padding:8px 12px">' + totalMotoStr + '</td>' +
+        '<td style="padding:8px 12px">' + deudaStr + '</td>' +
         '<td style="padding:8px 12px">' + especial + '</td>' +
         '<td style="padding:8px 12px;font-size:11px;color:var(--color-text-secondary);white-space:nowrap">' + _celdaFechaTrabajoM(o) + '</td>' +
         '<td style="padding:8px 12px"><div style="display:flex;gap:4px;flex-wrap:wrap">' +
@@ -652,15 +712,12 @@ window.renderDetalleMoto = async function(motoId) {
     var entregados   = ords.filter(function(o){ return o.estado==='entregado'; }).length;
     var noEntregados = ords.filter(function(o){ return o.estado==='no-entregado'; }).length;
     var reprog       = ords.filter(function(o){ return o.estado==='reprogramado'; }).length;
-    var _estadosCobro = ['entregado','ausente'];
-    var pagoTotal = ords.reduce(function(s,o){
-      return s + (_estadosCobro.includes(o.estado) ? (parseFloat(o.pago_moto_total)||0) : 0);
-    }, 0);
-    var cobrado = ords.reduce(function(s,o){
-      return s + (_estadosCobro.includes(o.estado) ? (parseFloat(o.monto_cobrado)||0) : 0);
-    }, 0);
-    var saldo = cobrado - pagoTotal;
-    var saldoColor   = saldo > 0 ? 'var(--color-green)' : saldo < 0 ? 'var(--color-red-text)' : 'var(--color-text-secondary)';
+    /* Plata del día: misma cuenta que Caja → Motorizados (o.caja) */
+    var tDia = _totalesCajaMoto(ords);
+    var pagoTotal = tDia.pago;
+    var cobrado = tDia.enMano;
+    var saldo = tDia.deuda;
+    var saldoColor   = _colorDeudaMoto(saldo);
 
     html += '<div class="tabla-dia' + (i===0?' active':'') + '">';
     html += '<div class="resumen-dia">' +
@@ -671,11 +728,7 @@ window.renderDetalleMoto = async function(motoId) {
       '<div class="resumen-item"><div class="resumen-label">Pago motorizado</div><div class="resumen-val amber">S/ ' + pagoTotal.toFixed(2) + '</div></div>' +
     '</div>';
 
-        var saldoMsgFull = saldo > 0
-      ? 'En resumen debe a Velox: S/ ' + saldo.toFixed(2)
-      : saldo < 0
-      ? 'En resumen se le debe al motorizado: S/ ' + Math.abs(saldo).toFixed(2)
-      : 'Saldo en cero';
+    var saldoMsgFull = saldo ? 'En resumen: ' + _textoDeudaMoto(saldo) : 'Saldo en cero';
     html += '<div style="background:var(--color-bg-secondary);border-radius:var(--radius-lg);padding:16px 20px;' +
       'margin-bottom:14px;border-left:5px solid ' + saldoColor + ';display:flex;align-items:center;gap:14px">' +
         '<div style="background:' + saldoColor + ';border-radius:50%;width:38px;height:38px;display:flex;align-items:center;justify-content:center;flex-shrink:0">' +
@@ -684,7 +737,8 @@ window.renderDetalleMoto = async function(motoId) {
         '<div>' +
           '<div style="font-size:11px;color:var(--color-text-secondary);font-weight:500;margin-bottom:2px">RESUMEN DEL DÍA</div>' +
           '<div style="font-size:15px;font-weight:700;color:' + saldoColor + '">' + saldoMsgFull + '</div>' +
-          '<div style="font-size:12px;color:var(--color-text-secondary);margin-top:2px">Cobrado: <strong>S/ ' + cobrado.toFixed(2) + '</strong> &nbsp;·&nbsp; Pago moto: <strong>S/ ' + pagoTotal.toFixed(2) + '</strong></div>' +
+          '<div style="font-size:12px;color:var(--color-text-secondary);margin-top:2px">En mano: <strong>S/ ' + cobrado.toFixed(2) + '</strong> (efectivo S/ ' + tDia.efectivo.toFixed(2) +
+            ' · Yape S/ ' + tDia.yape.toFixed(2) + ') &nbsp;·&nbsp; Su pago: <strong>S/ ' + pagoTotal.toFixed(2) + '</strong></div>' +
         '</div>' +
       '</div>';
 

@@ -7,6 +7,7 @@ const express = require('express');
 const router  = express.Router();
 const { getPool, sql } = require('../db');
 const { requireAuth, requireRol } = require('../middleware/auth');
+const { calcularOrdenCaja, aSoles } = require('../caja-motor');
 
 router.use(requireAuth);
 const GESTORES = ['admin', 'operador'];
@@ -170,6 +171,7 @@ router.get('/:id/ordenes', async (req, res) => {
              CONVERT(varchar, o.fecha_reparto, 23) AS fecha_trabajo,
              t.nombre AS tienda, d.nombre AS distrito,
              o.dest_nombre, o.dest_telefono, o.dest_telefono_2, o.estado, o.metodo_pago,
+             o.medio_pago, o.pago_velox, o.pago_velox_metodo, o.id_motorizado,
              o.delivery_total, o.monto_cobrado, o.monto_producto,
              o.pago_moto_total, o.monto_adicional, o.producto_especial,
              /* Mismo cálculo que SELECT_ORDEN en routes/ordenes.js */
@@ -189,7 +191,31 @@ router.get('/:id/ordenes', async (req, res) => {
     const request = pool.request().input('id', sql.Int, req.params.id);
     if (fecha) request.input('fecha', sql.Date, fecha);
     const result = await request.query(query);
-    res.json(result.recordset);
+    /* La plata de cada orden sale del motor de la Caja (calcularOrdenCaja),
+       la misma cuenta que Caja → Motorizados. Antes el navegador tomaba el
+       "por cobrar" de toda orden entregada o ausente como si el moto lo
+       hubiera cobrado (también un ausente, un Pago tienda o un Pago Velox).
+       caja.* va en soles:
+         en_mano (efectivo + yape) = lo que el moto tuvo en la mano
+         pago_moto = su delivery (entregado / ausente / devolución)
+         saldo_moto = en_mano − pago_moto: > 0 le debe a Velox, < 0 Velox le debe */
+    res.json(result.recordset.map(o => {
+      const c = calcularOrdenCaja(o);
+      return {
+        ...o,
+        caja: {
+          cobrable: c.cobrable,
+          delivery: aSoles(c.delivery),
+          en_mano_efectivo: aSoles(c.en_mano_efectivo),
+          en_mano_yape: aSoles(c.en_mano_yape),
+          en_mano: aSoles(c.en_mano_moto),
+          directo_velox: aSoles(c.directo_velox),
+          pago_moto: aSoles(c.pago_moto),
+          saldo_moto: aSoles(c.saldo_moto),
+          medio_por_definir: c.medio_por_definir,
+        },
+      };
+    }));
   } catch (err) {
     console.error('GET /motorizados/:id/ordenes:', err.message);
     res.status(500).json({ error: 'Error al listar las órdenes del motorizado' });

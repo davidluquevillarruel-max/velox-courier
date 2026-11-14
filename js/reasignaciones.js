@@ -16,7 +16,7 @@
    ============================================================ */
 
 /* Lo del motorizado de la sesión (GET /reasignaciones/mias) */
-var _rsgMias = { recibidas: [], enviadas: [], rechazadas: [] };
+var _rsgMias = { recibidas: [], enviadas: [], rechazadas: [], aceptadas: [] };
 /* Lo enviado por el moto abierto en el panel de Motorizados, por orden */
 var _rsgPanelPorOrden = {};
 var _rsgOrdenPedido = null;   /* orden de la ventana "Reasignar" */
@@ -38,9 +38,19 @@ function _montoRsg(o) {
 window.cargarReasignacionesMias = async function() {
   try {
     var r = await fetch(API + '/reasignaciones/mias');
-    if (r.ok) _rsgMias = await r.json();
+    if (r.ok) {
+      _rsgMias = await r.json();
+      /* El botón Notificaciones del moto (js/notificaciones.js) repinta
+         su contador y su panel con esto, sin volver a pedirlo */
+      window.dispatchEvent(new CustomEvent('velox:reasignaciones-leidas'));
+    }
   } catch (e) { /* sin señal: queda lo último que se leyó */ }
   return _rsgMias;
+};
+
+/* Para el contador del moto: pedidos por responder + respuestas sin ver */
+window.totalNotificacionesMoto = function() {
+  return (_rsgMias.recibidas || []).length + (_rsgMias.rechazadas || []).length + (_rsgMias.aceptadas || []).length;
 };
 
 window.cargarReasignacionesPanel = async function(idMoto) {
@@ -204,8 +214,12 @@ window.rechazarReasignacion = function(id, boton) {
   _postRsg(id + '/rechazar', 'Rechazaste la orden: sigue con el otro motorizado');
 };
 
-window.vistoRechazoReasignacion = function(id) {
-  _rsgMias.rechazadas = _rsgMias.rechazadas.filter(function(x) { return x.id !== id; });
+/* "Entendido" en un "no aceptó" o un "aceptó": deja de mostrarse */
+window.vistoRespuestaReasignacion = function(id) {
+  var fuera = function(x) { return x.id !== id; };
+  _rsgMias.rechazadas = (_rsgMias.rechazadas || []).filter(fuera);
+  _rsgMias.aceptadas  = (_rsgMias.aceptadas || []).filter(fuera);
+  window.dispatchEvent(new CustomEvent('velox:reasignaciones-leidas'));
   _postRsg(id + '/visto', null);
 };
 
@@ -219,7 +233,13 @@ window.recibidasReasignacionHTML = function() {
     '<div class="rsg-recibidas-head"><span class="rsg-campana"><i class="ti ti-bell-ringing"></i>' +
       '<span class="nav-contador">' + rec.length + '</span></span>' +
       (rec.length === 1 ? 'Te quieren pasar una orden' : 'Te quieren pasar ' + rec.length + ' órdenes') + '</div>' +
-    rec.map(function(x) {
+    rec.map(_tarjetaRecibidaRsg).join('') +
+  '</div>';
+};
+
+/* Un pedido recibido: quién la manda, foto grande, datos y No / Sí.
+   La usan la lista ("Mis entregas de hoy") y el panel Notificaciones. */
+function _tarjetaRecibidaRsg(x) {
       var foto = x.foto_producto_url
         ? '<img class="rsg-foto" src="' + _escRsg(x.foto_producto_url) + '" alt="Foto del producto" ' +
             'onerror="this.outerHTML=\'<div class=&quot;rsg-foto rsg-foto-vacia&quot;><i class=&quot;ti ti-photo-off&quot;></i></div>\'">'
@@ -241,9 +261,50 @@ window.recibidasReasignacionHTML = function() {
           '<button type="button" class="rsg-si" onclick="aceptarReasignacion(' + x.id + ', this)"><i class="ti ti-check"></i> Sí, la acepto</button>' +
         '</div>' +
       '</div>';
-    }).join('') +
-  '</div>';
+}
+
+/* Panel del botón Notificaciones del moto (js/notificaciones.js):
+   pedidos por responder (la misma tarjeta de arriba de la lista) y las
+   respuestas a lo que él mandó, cada una con "Entendido" */
+window.panelNotificacionesMotoHTML = function() {
+  var rec = _rsgMias.recibidas || [];
+  var resp = (_rsgMias.rechazadas || []).map(function(x) { return { x: x, acepto: false }; })
+    .concat((_rsgMias.aceptadas || []).map(function(x) { return { x: x, acepto: true }; }))
+    .sort(function(a, b) { return String(b.x.respondida_en || '').localeCompare(String(a.x.respondida_en || '')); });
+  if (!rec.length && !resp.length) {
+    return '<div class="aviso-vacio"><i class="ti ti-bell-off"></i> No tenés notificaciones.</div>';
+  }
+  var html = '';
+  if (rec.length) {
+    html += '<div class="rsg-panel-seccion">Para aceptar</div>' +
+      '<div class="rsg-recibidas rsg-recibidas-panel">' + rec.map(_tarjetaRecibidaRsg).join('') + '</div>';
+  }
+  if (resp.length) {
+    html += '<div class="rsg-panel-seccion">Respuestas a lo que mandaste</div>' +
+      resp.map(function(r) {
+        var x = r.x;
+        var texto = r.acepto
+          ? '<strong>' + _escRsg(x.moto_para) + '</strong> aceptó la orden'
+          : '<strong>' + _escRsg(x.moto_para) + '</strong> no aceptó la orden: sigue contigo';
+        return '<div class="aviso-item aviso-item-fijo">' +
+          '<span class="aviso-icono ' + (r.acepto ? 'aviso-verde' : 'aviso-rojo') + '"><i class="ti ' + (r.acepto ? 'ti-check' : 'ti-x') + '"></i></span>' +
+          '<span class="aviso-texto">' +
+            '<span class="aviso-principal">' + texto + '</span>' +
+            '<span class="aviso-detalle">#' + _escRsg(x.codigo) + (x.dest_nombre ? ' · ' + _escRsg(x.dest_nombre) : '') +
+              (x.respondida_en ? ' · <span class="aviso-nowrap">' + _fechaRsg(x.respondida_en) + '</span>' : '') + '</span>' +
+          '</span>' +
+          '<button type="button" class="rsg-link" onclick="vistoRespuestaReasignacion(' + x.id + ')">Entendido</button>' +
+        '</div>';
+      }).join('');
+  }
+  return html;
 };
+
+/* 'YYYY-MM-DD HH:mm:ss' → 'dd/mm HH:mm' */
+function _fechaRsg(s) {
+  var m = String(s).match(/^\d{4}-(\d{2})-(\d{2}) (\d{2}):(\d{2})/);
+  return m ? m[2] + '/' + m[1] + ' ' + m[3] + ':' + m[4] : s;
+}
 
 /* Franja dentro de la tarjeta del que envía: esperando o rechazada */
 window.estadoReasignacionTarjetaHTML = function(idOrden) {
@@ -254,7 +315,7 @@ window.estadoReasignacionTarjetaHTML = function(idOrden) {
   }
   if (e.rechazada) {
     return '<div class="rsg-rechazo"><i class="ti ti-x"></i> <strong>' + _escRsg(e.rechazada.moto_para) + '</strong> no aceptó la orden: sigue contigo' +
-      '<button type="button" class="rsg-link" onclick="vistoRechazoReasignacion(' + e.rechazada.id + ')">Entendido</button></div>';
+      '<button type="button" class="rsg-link" onclick="vistoRespuestaReasignacion(' + e.rechazada.id + ')">Entendido</button></div>';
   }
   return '';
 };

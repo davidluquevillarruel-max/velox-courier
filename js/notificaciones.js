@@ -8,6 +8,14 @@
    Todos los pedidos con esa orden abierta en "Actualizar orden".
    El servidor esconde solo los que ya no aplican (la orden cambió).
    Contador: cada 20 s mientras la pestaña está a la vista.
+
+   El MOTORIZADO tiene el mismo botón, siempre visible (aunque esté en
+   0), con SUS avisos, que salen de GET /reasignaciones/mias
+   (js/reasignaciones.js, panelNotificacionesMotoHTML): pedidos que le
+   llegaron para aceptar (No / Sí, la acepto) y las respuestas a lo que
+   él mandó ("X aceptó" / "X no aceptó", con "Entendido"). El contador
+   se repinta cada vez que se leen (también con el refresco de 8 s de
+   "Mis entregas de hoy", evento velox:reasignaciones-leidas).
    ============================================================ */
 
 var _AVISOS_REFRESCO_MS = 20000;
@@ -18,6 +26,11 @@ var _avisosTotal = 0;
 function _avisosEsGestor() {
   var s = typeof _obtenerSesion === 'function' ? _obtenerSesion() : null;
   return !!s && (s.rol === 'admin' || s.rol === 'operador');
+}
+
+function _avisosEsMoto() {
+  var s = typeof _obtenerSesion === 'function' ? _obtenerSesion() : null;
+  return !!s && s.rol === 'motorizado';
 }
 
 function _escAvisos(s) {
@@ -48,6 +61,11 @@ function _pintarContadorAvisos(total) {
 
 async function _refrescarContadorAvisos() {
   if (document.hidden) return;
+  if (_avisosEsMoto()) {
+    /* Al terminar dispara velox:reasignaciones-leidas → _pintarAvisosMoto */
+    if (typeof cargarReasignacionesMias === 'function') cargarReasignacionesMias();
+    return;
+  }
   try {
     var r = await fetch(API + '/notificaciones/total');
     if (!r.ok) return;
@@ -68,8 +86,36 @@ window.togglePanelNotificaciones = function() {
   panel.style.display = 'flex';
   document.getElementById('notif-capa').style.display = 'block';
   document.addEventListener('keydown', _escPanelAvisos);
+  if (_avisosEsMoto()) {
+    _pintarAvisosMoto();          /* lo último que se leyó, al instante */
+    _refrescarContadorAvisos();   /* y lo fresco cuando llegue */
+    return;
+  }
   _cargarAvisos(true);
 };
+
+/* Contador y (si está abierto) panel del moto, con lo que ya leyó
+   js/reasignaciones.js: no va al servidor */
+function _pintarAvisosMoto() {
+  if (typeof totalNotificacionesMoto !== 'function') return;
+  _pintarContadorAvisos(totalNotificacionesMoto());
+  var panel = document.getElementById('notif-panel');
+  if (!panel || panel.style.display === 'none') return;
+  var html = _cabezaPanelAvisos('Notificaciones', totalNotificacionesMoto()) +
+    '<div class="notif-panel-lista">' + panelNotificacionesMotoHTML() + '</div>';
+  if (panel._ultimoHtml === html) return;
+  panel._ultimoHtml = html;
+  panel.innerHTML = html;
+}
+
+function _cabezaPanelAvisos(titulo, n) {
+  return '<div class="notif-panel-head">' +
+      '<span><i class="ti ti-bell"></i> ' + titulo +
+        (n ? ' <span class="nav-contador">' + n + '</span>' : '') +
+      '</span>' +
+      '<button type="button" class="btn btn-sm" onclick="cerrarPanelNotificaciones()" aria-label="Cerrar"><i class="ti ti-x"></i></button>' +
+    '</div>';
+}
 
 window.cerrarPanelNotificaciones = function() {
   var panel = document.getElementById('notif-panel');
@@ -138,13 +184,7 @@ function _pintarPanelAvisos(lista) {
   else if (!lista.length) cuerpo = '<div class="aviso-vacio"><i class="ti ti-circle-check"></i> No hay nada para revisar.</div>';
   else cuerpo = lista.map(_avisoHTML).join('');
 
-  var html =
-    '<div class="notif-panel-head">' +
-      '<span><i class="ti ti-bell"></i> Para revisar' +
-        (Array.isArray(lista) && lista.length ? ' <span class="nav-contador">' + lista.length + '</span>' : '') +
-      '</span>' +
-      '<button type="button" class="btn btn-sm" onclick="cerrarPanelNotificaciones()" aria-label="Cerrar"><i class="ti ti-x"></i></button>' +
-    '</div>' +
+  var html = _cabezaPanelAvisos('Para revisar', Array.isArray(lista) ? lista.length : 0) +
     '<div class="notif-panel-lista">' + cuerpo + '</div>';
   /* El refresco no repinta si nada cambió (no se pierde el scroll) */
   if (panel._ultimoHtml === html) return;
@@ -174,7 +214,14 @@ window.abrirAviso = async function(idAviso) {
 
 /* ── Arranque ─────────────────────────────────────────────── */
 document.addEventListener('DOMContentLoaded', function() {
-  if (!_avisosEsGestor()) return;
+  if (!_avisosEsGestor() && !_avisosEsMoto()) return;
+  if (_avisosEsMoto()) {
+    /* Cada lectura de /reasignaciones/mias (este botón, o el refresco de
+       "Mis entregas de hoy") repinta contador y panel */
+    window.addEventListener('velox:reasignaciones-leidas', _pintarAvisosMoto);
+    /* Aceptó, rechazó, canceló o mandó algo: leer de nuevo */
+    window.addEventListener('velox:reasignaciones', _refrescarContadorAvisos);
+  }
   var nav = document.getElementById('nav-notificaciones');
   if (nav) nav.style.display = '';
   _refrescarContadorAvisos();

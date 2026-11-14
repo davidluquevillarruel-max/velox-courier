@@ -26,7 +26,7 @@ Velox Courier — internal management system for a courier/delivery company in L
     `notificaciones` (`tipo` no_entregado / pago_tienda / reasignacion, orden, `id_reasignacion` solo en
     las de reasignación, `creada_en`, `revisada_en`, `id_usuario_revisa`; una abierta por orden y tipo).
     Horas de Lima (`ahoraLima()` de `server/avisos.js`, texto + `CONVERT(datetime2(0), …, 120)`).
-  - **Notificaciones (admin y operador):** botón al final del menú con contador rojo (cada 20 s; en el
+  - **Notificaciones (admin y operador; el moto tiene las suyas, ver abajo):** botón al final del menú con contador rojo (cada 20 s; en el
     celular, punto rojo en la hamburguesa) y panel "Para revisar": No entregado (✕ rojo), Pago tienda
     (tienda ámbar), Reasignación aceptada (moto verde, "ALEX pasó #C-x a LUIS"). **Una fila compartida
     por todos los gestores:** "Abrir" (`POST /notificaciones/:id/revisar`) la marca revisada para
@@ -47,6 +47,19 @@ Velox Courier — internal management system for a courier/delivery company in L
     "X no aceptó la orden" hasta tocar "Entendido". **Vence a medianoche de Lima** sin tarea
     programada: `cerrarReasignacionesViejas()` marca vencidas y cancela las que ya no valen (orden
     cerrada, pasada a otro, anulada) cada vez que se leen o antes de crear una.
+  - **Notificaciones del MOTORIZADO (corrección del 14/11, sin migración):** el mismo botón del menú
+    (debajo de Usuarios), **siempre visible** aunque esté en 0, con contador y punto rojo en la
+    hamburguesa. Su panel sale de `GET /reasignaciones/mias` (`panelNotificacionesMotoHTML` en
+    `js/reasignaciones.js`): "Para aceptar" (la misma tarjeta de arriba de la lista,
+    `_tarjetaRecibidaRsg`, con No / Sí) y "Respuestas a lo que mandaste" ("X no aceptó la orden: sigue
+    contigo" / "X aceptó la orden", cada una con "Entendido" → `POST /:id/visto`). Vacío: "No tenés
+    notificaciones". `enviadasDe` ahora devuelve también `aceptadas` (las aceptadas sin
+    `vista_por_origen_en`, que antes solo se usaba para las rechazadas) con código y cliente. El
+    contador se repinta con cada lectura de `/mias` (evento `velox:reasignaciones-leidas`, también
+    desde el refresco de 8 s de "Mis entregas de hoy") y lee de nuevo cada 20 s. El aviso de arriba
+    de "Mis entregas de hoy" sigue. Probado a 375 px: ALEX con 2 respuestas → "Entendido" baja a 1;
+    ANDRE rechaza desde el panel → "No tenés notificaciones", se va el punto rojo y el botón queda
+    visible; el admin sin cambios. 49 de 49 en la API otra vez.
   - **Se fue el "Reasignar" directo del panel del motorizado:** abría la ventana de
     `pages/detalle-motorizado.html`, que no está en la página Motorizados, y por eso no hacía nada. Se
     borraron esa ventana y `abrirReasignarDetalle` / `confirmarReasignarDetalle`. La oficina sigue

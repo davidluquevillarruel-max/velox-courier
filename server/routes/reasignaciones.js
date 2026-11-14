@@ -11,7 +11,8 @@
                              lista) y los gestores reciben un aviso.
    · POST /:id/rechazar    → solo el destino: no pasa nada.
    · POST /:id/cancelar    → el que la envió (o un gestor).
-   · POST /:id/visto       → el que la envió ya vio el "rechazada".
+   · POST /:id/visto       → el que la envió ya vio la respuesta ("no
+                             aceptó" o "aceptó"): deja de mostrarse.
    · GET  /mias            → lo del motorizado de la sesión.
    · GET  /motorizado/:id  → lo enviado por un moto (panel de Motorizados).
 
@@ -39,24 +40,29 @@ function miMoto(req) {
   return req.usuario.rol === 'motorizado' ? (req.usuario.id_motorizado || null) : null;
 }
 
-/* Lo que el moto de origen necesita para pintar sus tarjetas:
-   pendientes (esperando) y rechazadas que todavía no vio. */
+/* Lo que el moto de origen necesita para pintar sus tarjetas y sus
+   Notificaciones: pendientes (esperando) y las respuestas que todavía
+   no vio ("X no aceptó" / "X aceptó"; vista_por_origen_en vacío). */
 async function enviadasDe(pool, idMoto) {
   const r = await pool.request()
     .input('m', sql.Int, idMoto)
     .query(`
       SELECT r.id, r.id_orden, r.estado, r.id_motorizado_para,
-             mp.nombre AS moto_para,
-             CONVERT(varchar(19), r.creada_en, 120) AS creada_en
+             mp.nombre AS moto_para, o.codigo, o.dest_nombre,
+             CONVERT(varchar(19), r.creada_en, 120) AS creada_en,
+             CONVERT(varchar(19), r.respondida_en, 120) AS respondida_en
       FROM reasignaciones r
       JOIN motorizados mp ON mp.id = r.id_motorizado_para
+      JOIN ordenes o      ON o.id = r.id_orden
       WHERE r.id_motorizado_de = @m
-        AND (r.estado = 'pendiente' OR (r.estado = 'rechazada' AND r.vista_por_origen_en IS NULL))
+        AND (r.estado = 'pendiente'
+             OR (r.estado IN ('rechazada', 'aceptada') AND r.vista_por_origen_en IS NULL))
       ORDER BY r.id DESC
     `);
   return {
     enviadas:   r.recordset.filter(x => x.estado === 'pendiente'),
     rechazadas: r.recordset.filter(x => x.estado === 'rechazada'),
+    aceptadas:  r.recordset.filter(x => x.estado === 'aceptada'),
   };
 }
 
@@ -64,7 +70,7 @@ async function enviadasDe(pool, idMoto) {
 router.get('/mias', async (req, res) => {
   try {
     const yo = miMoto(req);
-    if (!yo) return res.json({ recibidas: [], enviadas: [], rechazadas: [] });
+    if (!yo) return res.json({ recibidas: [], enviadas: [], rechazadas: [], aceptadas: [] });
     const pool = await getPool();
     await cerrarReasignacionesViejas(pool);
 
@@ -313,8 +319,9 @@ router.post('/:id/cancelar', (req, res) =>
   cerrarSinMover(req, res, 'cancelada', ra =>
     GESTORES.includes(req.usuario.rol) || ra.id_motorizado_de === miMoto(req)));
 
-/* POST /api/reasignaciones/:id/visto — el que la envió ya vio que se la
-   rechazaron (deja de mostrarse en su tarjeta) */
+/* POST /api/reasignaciones/:id/visto — el que la envió ya vio la
+   respuesta (rechazada o aceptada): deja de mostrarse en su tarjeta y
+   en sus Notificaciones */
 router.post('/:id/visto', async (req, res) => {
   try {
     const id = idValido(req.params.id);

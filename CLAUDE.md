@@ -19,8 +19,26 @@ Velox Courier — internal management system for a courier/delivery company in L
   `asignada_en` (D-018), panel del moto con `caja-motor.js` (D-019) y notificaciones + reasignación
   (D-020). **Último commit en producción: `8a2cf5f`.**
 
+- **Foto del pago: Yape y Efectivo motorizado ya no la piden (14 de noviembre de 2026, en local,
+  falta que el usuario lo pruebe; sin migración ni cambios en el servidor).** Solo `js/entregas-moto.js`
+  y `js/motorizados.js`. Con esos dos medios el moto tiene la plata y responde por ella: no hay foto.
+  Pago tienda y Pago Velox (`pago-tienda`, `pago-empresa`) la siguen pidiendo como siempre.
+  - **EMPEZAR → COMPLETAR:** `_ENT_MEDIOS_CON_FOTO` quedó en `['pago-tienda', 'pago-empresa']`. El
+    lugar de la foto del pago aparece y desaparece según el medio elegido; con Yape / Efectivo no
+    falta para completar y no se encola (aunque se hubiera tomado antes con otro medio).
+  - **"Actualizar orden":** ya la pedía solo con esos dos (`_MEDIOS_PAGO[].evidencia`). Se cerró un
+    hueco: si se elegía una foto con Pago tienda y después se pasaba a Yape / Efectivo, la foto se
+    encolaba igual; ahora se descarta al guardar.
+  - **Servidor:** ya no la exigía (`/resolver` y `/medio-pago` no piden foto; `evidencia_pendiente`
+    solo es 1 con Pago tienda / Pago Velox). No se tocó. Las fotos de pago ya subidas no se borran:
+    siguen en "Fotos de la orden".
+  - **Probado el 14/11** (servidor en el 3001, órdenes TST-EV-*, borradas): 13 de 13 en la API y, a
+    375 px como ALEX, la foto del pago aparece y desaparece al cambiar el medio en EMPEZAR y en
+    "Actualizar orden"; completar con Yape sin foto del pago → entregado, sin evidencia pendiente y
+    en la cola solo la foto de la entrega; foto de Pago tienda y cambio a Yape → no se encola.
+
 - **Notificaciones del admin: el aviso se cierra al GUARDAR la orden, no al abrirla (14 de noviembre
-  de 2026, en local, falta que el usuario lo pruebe; sin migración).** **Toca el servidor:** hay que
+  de 2026, probado por el usuario; sin migración).** **Toca el servidor:** hay que
   reiniciarlo. `server/routes/notificaciones.js`, `js/notificaciones.js`, `js/motorizados.js`.
   - **"Abrir"** (`GET /notificaciones/:id`) solo lleva a Todos los pedidos con "Actualizar orden"
     abierto: **no marca nada**. Cerrar sin guardar (Cancelar o la X) deja el aviso en la campana.
@@ -595,9 +613,9 @@ Velox Courier — internal management system for a courier/delivery company in L
     cerrar); lo llenado queda en memoria por orden mientras no se cierre.
   - **COMPLETAR** (entregado): foto de entrega siempre; foto del cambio si la orden tiene
     condición especial (reemplaza "Recibido": con esa foto, "Actualizar orden" ya no lo pide); en
-    contraentrega, cómo se cobró y foto del pago con cualquier medio, efectivo incluido
-    (`_ENT_MEDIOS_CON_FOTO`; en "Actualizar orden" sigue pidiéndose solo con Pago tienda / Pago
-    Velox).
+    contraentrega, cómo se cobró y foto del pago **solo con Pago tienda / Pago Velox**
+    (`_ENT_MEDIOS_CON_FOTO`; desde el 14/11, igual que "Actualizar orden": ver la nota de esa fecha
+    arriba. Hasta entonces la pedía con los 4 medios, efectivo incluido).
     **OTROS**: reprogramado / ausente / cancelado, cada uno con su foto y un comentario opcional.
     **DETALLE** (no entregado): motivo de una lista (no contesta, dirección errada, cliente no
     tenía el dinero, rechazó el producto, otro + texto) y de 1 a 3 fotos.

@@ -1873,6 +1873,9 @@ window.guardarActualizarEstadoOrden = async function() {
        queda subida una foto de un medio de pago que no se guardó. La
        cola la guarda en el teléfono y la sube con reintentos. */
     var avisoEvidencia = '';
+    /* Solo si el medio guardado la pide: si se eligió una foto con Pago
+       tienda y después se pasó a Yape / Efectivo motorizado, se descarta */
+    if (_medioPagoEvidenciaBlob && !medioRequiereEvidencia) _medioPagoEvidenciaBlob = null;
     if (_medioPagoEvidenciaBlob) {
       try {
         var enCola = await encolarFoto(_ordenActualizarId, 'evidencia_medio_pago', _medioPagoEvidenciaBlob, _ordenActualizarCodigo);

@@ -26,9 +26,11 @@
 
 var _ENT_MAX_FOTOS_DETALLE = 3;
 
-/* Medios de pago que piden foto en esta vista: todos (en "Actualizar
-   orden" solo la piden Pago tienda y Pago Velox: ver _MEDIOS_PAGO) */
-var _ENT_MEDIOS_CON_FOTO = ['yape-motorizado', 'efectivo-motorizado', 'pago-tienda', 'pago-empresa'];
+/* Medios de pago que piden foto del pago: solo Pago tienda y Pago Velox,
+   igual que "Actualizar orden" (_MEDIOS_PAGO) y el servidor
+   (MEDIOS_PAGO_CON_EVIDENCIA). Con Yape o Efectivo motorizado la plata
+   la tiene el moto y se hace responsable: no hay foto ni se pide. */
+var _ENT_MEDIOS_CON_FOTO = ['pago-tienda', 'pago-empresa'];
 
 var _ENT_OTROS = [
   { value: 'reprogramado', label: 'Reprogramado', foto: 'foto_reprogramado' },

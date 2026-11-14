@@ -12,17 +12,16 @@ Velox Courier — internal management system for a courier/delivery company in L
 
 Última actualización: 14 de noviembre de 2026.
 
-- **DEPLOY PENDIENTE (todo lo del 10, 12 y 14 de noviembre, ya en `origin/main`).** Probado por el
-  usuario en local y subido el 14/11. En el servidor, en este orden y con `sa` para las migraciones:
-  (1) `velox_agregar_asignada_en.sql`; (2) `velox_agregar_notificaciones_reasignaciones.sql`;
-  (3) `git pull`; (4) `pm2 restart velox`. Los motorizados con la app abierta tienen que recargarla.
-  Decisiones: D-017 (reportes), D-018 (`asignada_en`), D-019 (panel del moto con `caja-motor.js`) y
-  D-020 (notificaciones y reasignación) en `DECISIONES.md`.
+- **Deploy del 14 de noviembre de 2026: HECHO en producción** (confirmado por el usuario: las dos
+  migraciones OK con `sa`, `velox_agregar_asignada_en.sql` y después
+  `velox_agregar_notificaciones_reasignaciones.sql`; `git pull` a `8a2cf5f`; `pm2 restart velox`;
+  todo verificado). Entró todo lo del 10, 12 y 14 de noviembre: reportes en imagen (D-017),
+  `asignada_en` (D-018), panel del moto con `caja-motor.js` (D-019) y notificaciones + reasignación
+  (D-020). **Último commit en producción: `8a2cf5f`.**
 
 - **Notificaciones del admin + reasignar entre motorizados con aceptación (14 de noviembre de 2026,
-  commits `46f46f8` y `935020f`, probado por el usuario y subido a `origin/main`; D-020; NECESITA
-  MIGRACIÓN `velox_agregar_notificaciones_reasignaciones.sql`, aplicada en local, falta en
-  producción; ver "Migraciones pendientes").** **Toca el servidor:** hay que reiniciarlo. Nuevos: `server/avisos.js`,
+  commits `46f46f8` y `935020f`; D-020; HECHO en producción, con la migración
+  `velox_agregar_notificaciones_reasignaciones.sql`).** **Toca el servidor:** hay que reiniciarlo. Nuevos: `server/avisos.js`,
   `server/routes/notificaciones.js`, `server/routes/reasignaciones.js`, `js/notificaciones.js`,
   `js/reasignaciones.js`. Cambiados: `server/server.js`, `server/routes/ordenes.js`,
   `server/routes/motorizados.js`, `js/motorizados.js`, `js/entregas-moto.js`, `index.html`,
@@ -81,7 +80,7 @@ Velox Courier — internal management system for a courier/delivery company in L
     y "Abrir" hasta la orden. Datos TST-RS-*, borrados.
 
 - **Panel del motorizado (página Motorizados) con la cuenta de la Caja (14 de noviembre de 2026,
-  commit `486b6c3`, probado por el usuario y subido a `origin/main`; D-019; sin migración).** **Toca el servidor:** hay que
+  commit `486b6c3`; D-019; sin migración; HECHO en producción).** **Toca el servidor:** hay que
   reiniciarlo. `server/routes/motorizados.js`, `js/motorizados.js`, `pages/motorizados.html`.
   - **El bug:** el navegador sumaba el "por cobrar" (`monto_cobrado`) de toda orden entregada o
     **ausente**, sin mirar el medio, como si el moto lo hubiera cobrado. Ej. real en producción:
@@ -109,12 +108,9 @@ Velox Courier — internal management system for a courier/delivery company in L
   - Diferencia que queda a propósito: en un día **ya liquidado**, la Caja muestra el saldo guardado
     y este panel el de los pedidos de hoy (si alguien editó la orden después, "Difiere").
 
-- **Cambios del 12 de noviembre de 2026 (los 3 de abajo): probados por el usuario en local y
-  subidos a `origin/main` (commits `223635a`, `01b0f09`, `063e0f4`). FALTA EL DEPLOY, en este
-  orden:** (1) correr `velox_agregar_asignada_en.sql` en el servidor con `sa`; (2) `git pull`;
-  (3) `pm2 restart velox`. Si se hace el pull sin la migración, asignar, devolver, crear orden,
-  Asignación y el historial del moto dan 500. Los motorizados con la app abierta tienen que
-  recargarla. Ver D-018 en `DECISIONES.md`.
+- **Cambios del 12 de noviembre de 2026 (los 3 de abajo): HECHO en producción** en el deploy del
+  14/11 (commits `223635a`, `01b0f09`, `063e0f4`; migración `velox_agregar_asignada_en.sql`
+  aplicada antes del pull). Ver D-018 en `DECISIONES.md`.
 - **"Mis entregas de hoy": tarjeta en tres columnas (12 de noviembre de 2026, commit `063e0f4`,
   probado por el usuario).** Solo `js/entregas-moto.js` + `css/components.css`, sin servidor ni
   migración. Foto del producto a la izquierda | datos en el medio | WhatsApp arriba y EMPEZAR (o el
@@ -126,8 +122,8 @@ Velox Courier — internal management system for a courier/delivery company in L
   (`_botonWhatsApp`, color `#25D366` fijo): para estirarlo y darle alto se pisó el padding con
   `!important` en `.entrega-item-whatsapp a`.
 - **Listas del motorizado: la última asignada arriba (12 de noviembre de 2026, commit `01b0f09`,
-  probado por el usuario; NECESITA MIGRACIÓN `velox_agregar_asignada_en.sql`, aplicada en local,
-  falta en producción; ver "Migraciones pendientes" y D-018).** **Toca el servidor:** hay que reiniciarlo. `server/routes/ordenes.js`,
+  probado por el usuario; HECHO en producción el 14/11, con la migración
+  `velox_agregar_asignada_en.sql`; D-018).** **Toca el servidor:** hay que reiniciarlo. `server/routes/ordenes.js`,
   `server/routes/motorizados.js`, `js/motorizados.js`, `js/entregas-moto.js`, `js/asignacion.js`.
   - **Columna nueva `ordenes.asignada_en DATETIME2(0) NULL`:** hora de LIMA en que se asignó la orden
     al motorizado actual. Hacía falta porque `fecha_asignacion` es `DATE` y `hora_asignacion`, **pese
@@ -153,9 +149,8 @@ Velox Courier — internal management system for a courier/delivery company in L
   El buscador vive en un esqueleto que se arma una sola vez (`_esqueletoEntregasHoy`): el refresco
   de 8 s repinta solo `#ent-hoy-lista` y la cuenta, así no se pierde lo escrito ni el teclado.
 - **Reporte del día de un MOTORIZADO como imagen (10 de noviembre de 2026, commits `c206fe7` y
-  `3df4580`, probado por el usuario en local en Caja → Motorizados y subido a `origin/main`; FALTA
-  EL DEPLOY: `git pull` + `pm2 restart velox`, sin migración, el mismo del de tienda; ampliación de
-  D-017 en `DECISIONES.md`).** El mismo mecanismo que el de tienda (abajo). **Toca el
+  `3df4580`, probado por el usuario en local en Caja → Motorizados; HECHO en producción el 14/11,
+  sin migración; ampliación de D-017 en `DECISIONES.md`).** El mismo mecanismo que el de tienda (abajo). **Toca el
   servidor:** hay que reiniciarlo. `js/reporte-moto.js` (nuevo, `<script>` después de
   `reporte-tienda.js`), `js/reporte-tienda.js`, `js/caja.js`, `index.html`,
   `server/routes/caja.js`, `server/r2.js`.
@@ -188,8 +183,8 @@ Velox Courier — internal management system for a courier/delivery company in L
   - Quedó un PNG de prueba de 1×1 en `reportes-moto/1046-2026-10-01-…png` (el moto "PRUEBA CAJA" de
     local); se pisa al generar ese reporte.
 - **Reporte del día de una tienda como IMAGEN (10 de noviembre de 2026, commit `9e92546`, probado por
-  el usuario en local y subido a `origin/main`; FALTA EL DEPLOY: `git pull` + `pm2 restart velox`,
-  sin migración; ver D-017 en `DECISIONES.md`).** El CORS del bucket ya permite `cache-control`
+  el usuario en local; HECHO en producción el 14/11, sin migración; ver D-017 en
+  `DECISIONES.md`).** El CORS del bucket ya permite `cache-control`
   (hecho por el usuario el 10/11). En el detalle de "Clientes / Tiendas", **solo admin**: "Generar
   reporte dd/mm" (el día de la primera pestaña, el mismo de "Enviar resumen", que no cambió) y, ya
   generado, "Ver imagen (hh:mm)" + "Copiar" (copia la URL). `js/reporte-tienda.js` (nuevo, `<script>`
@@ -934,21 +929,14 @@ Roles: `admin`, `operador`, `visor`, `tienda`, `motorizado`. `GESTORES = ['admin
 
 ## Migraciones pendientes de aplicar en producción
 
-Correrlas **en este orden**, con `sa` y **antes** del `git pull`:
+Ninguna por ahora.
 
-1. `velox_agregar_asignada_en.sql` (12 de noviembre de 2026): columna `ordenes.asignada_en
-   DATETIME2(0) NULL`, la hora de Lima en que se asignó la orden, para ordenar las listas del
-   motorizado con la última asignada arriba (D-018). **Aplicada en local** el 12/11 (con `sqlcmd -E
-   -C`, verificada en `sys.columns`). **Falta en producción**: sin la columna, el código nuevo da 500
-   en asignar, devolver, crear orden, Asignación y el historial del moto. El script hace `USE
-   velox_courier` y comprueba la columna antes de decir OK: la primera versión imprimía "creada"
-   aunque el `ALTER` hubiera fallado (pasó en local, corrida en `master`).
-2. `velox_agregar_notificaciones_reasignaciones.sql` (14 de noviembre de 2026): tablas
-   `reasignaciones` y `notificaciones` con sus índices (D-020, ver la nota del 14/11 arriba).
-   **Aplicada en local** el 14/11 (con `sqlcmd -E -C -I`, corrida dos veces sin errores;
-   verificación propia al final). **Falta en producción**: sin las tablas, cambiar estado o medio de
-   pago sigue funcionando (el aviso falla solo y queda en el log), pero Notificaciones y Reasignar
-   dan 500.
+`velox_agregar_asignada_en.sql` (columna `ordenes.asignada_en DATETIME2(0) NULL`, D-018) y
+`velox_agregar_notificaciones_reasignaciones.sql` (tablas `reasignaciones` y `notificaciones`, D-020)
+se aplicaron en local el 12 y el 14 de noviembre de 2026, y en producción el 14/11, en ese orden, con
+`sa` y antes del `git pull` a `8a2cf5f` (confirmado por el usuario). Los dos scripts hacen `USE
+velox_courier` y comprueban lo creado antes de decir OK (la primera versión de `asignada_en` imprimía
+"creada" aunque el `ALTER` hubiera fallado, corrida en `master`): las migraciones nuevas, igual.
 
 `velox_agregar_estado_anulado.sql` (agrega `anulado` a `chk_ordenes_estado`, D-014) se aplicó en local
 el 6 de noviembre de 2026 y en producción antes del `git pull` a `c0f1312` (confirmado por el usuario).

@@ -620,10 +620,9 @@ devolución.
 
 ## D-017 · Reporte del día de una tienda como imagen: canvas en el navegador, URL fija con HMAC, sin tabla
 
-**Estado:** probado por el usuario en local el 10 de noviembre de 2026 y subido a `origin/main`
-(commit `9e92546`). **Falta el deploy:** `git pull` + `pm2 restart velox` (rutas nuevas en el
-servidor), sin migración. El CORS del bucket ya permite `cache-control` (lo cambió el usuario el
-10/11).
+**Estado:** HECHO en producción el 14 de noviembre de 2026 (confirmado por el usuario; commit
+`9e92546`, y el del motorizado en `c206fe7` / `3df4580`; último commit `8a2cf5f`), sin migración.
+El CORS del bucket permite `cache-control` (lo cambió el usuario el 10/11).
 
 **Problema.** El resumen por WhatsApp de "Clientes / Tiendas" es solo texto. Hacía falta un reporte
 del día prolijo, en imagen, con una URL para mandarle a la tienda.
@@ -681,10 +680,10 @@ de tienda: `git pull` + `pm2 restart velox`, sin migración.
 
 ## D-018 · Las listas del motorizado, por hora de asignación (columna `ordenes.asignada_en`)
 
-**Estado:** probado por el usuario en local el 12 de noviembre de 2026 y subido a `origin/main`
-(commit `01b0f09`). **Falta el deploy, con migración:** primero `velox_agregar_asignada_en.sql` con
-`sa`, después `git pull` + `pm2 restart velox`. Ese mismo día se subieron, sin migración, el
-buscador de "Mis entregas de hoy" (`223635a`) y la tarjeta con foto y botones apilados (`063e0f4`).
+**Estado:** HECHO en producción el 14 de noviembre de 2026 (confirmado por el usuario; commit
+`01b0f09`, último commit `8a2cf5f`). Migración `velox_agregar_asignada_en.sql` aplicada con `sa`
+antes del `git pull`. En el mismo deploy entraron el buscador de "Mis entregas de hoy" (`223635a`)
+y la tarjeta con foto y botones apilados (`063e0f4`).
 
 **Problema.** El motorizado quería ver arriba la última orden que le asignaron y abajo la primera,
 en todas sus listas. No había ningún dato que dijera a qué hora se asignó una orden:
@@ -723,8 +722,8 @@ en todas sus listas. No había ningún dato que dijera a qué hora se asignó un
 
 ## D-019 · El panel del motorizado lee la plata del motor de la Caja (`caja-motor.js`)
 
-**Estado:** probado por el usuario en local el 14 de noviembre de 2026 (commit `486b6c3`), sin
-migración. Sube a producción con el deploy del 14/11 (ver "Pendientes varios").
+**Estado:** HECHO en producción el 14 de noviembre de 2026 (confirmado por el usuario; commit
+`486b6c3`, último commit `8a2cf5f`), sin migración.
 
 **Problema.** El panel del moto de la página Motorizados sumaba en el navegador el "por cobrar"
 (`monto_cobrado`) de toda orden entregada o ausente, sin mirar el medio de pago, como si el moto lo
@@ -750,9 +749,10 @@ dan hoy los pedidos (si alguien editó una orden después, la Caja dice "Difiere
 
 ## D-020 · Notificaciones compartidas y reasignación entre motorizados con aceptación
 
-**Estado:** probado por el usuario en local el 14 de noviembre de 2026 (commits `46f46f8` y
-`935020f`). **Necesita migración** `velox_agregar_notificaciones_reasignaciones.sql` (tablas
-`notificaciones` y `reasignaciones`), con `sa` y antes del `git pull`.
+**Estado:** HECHO en producción el 14 de noviembre de 2026 (confirmado por el usuario; commits
+`46f46f8` y `935020f`, último commit `8a2cf5f`). Migración
+`velox_agregar_notificaciones_reasignaciones.sql` (tablas `notificaciones` y `reasignaciones`)
+aplicada con `sa` antes del `git pull`, después de la de `asignada_en`.
 
 **Problema.**
 - La oficina no se enteraba a tiempo de un "no entregado" ni de un "Pago tienda" (hay que revisar la
@@ -848,19 +848,15 @@ downtime). El dominio se traspasa aparte en Namecheap.
       - URLs de las fotos en el Excel / CSV, con descarga a prueba de fallos (D-016).
 
       Los motorizados con la app abierta tienen que recargarla.
-- [ ] **Deploy de los reportes del día en imagen, de tienda y de motorizado** (D-017; probados
-      por el usuario en local y ya en `origin/main`, commits `9e92546`, `c206fe7` y `3df4580`, sin
-      migración): `git pull` + `pm2 restart velox`. El CORS del bucket ya está listo.
-- [ ] **Deploy de los cambios del 12/11/2026, CON migración** (D-018; probados por el usuario en
-      local y ya en `origin/main`, commits `223635a`, `01b0f09` y `063e0f4`): buscador de "Mis
-      entregas de hoy", listas del motorizado con la última asignada arriba y tarjeta con foto +
-      WhatsApp arriba de EMPEZAR. En este orden: `velox_agregar_asignada_en.sql` con `sa`, después
-      `git pull` + `pm2 restart velox`. El mismo `git pull` trae también los reportes de arriba.
-- [ ] **Deploy de los cambios del 14/11/2026, CON migración** (D-019 y D-020; probados por el
-      usuario en local, commits `486b6c3`, `46f46f8` y `935020f`). Va en el mismo deploy que el del
-      12/11. Orden: (1) `velox_agregar_asignada_en.sql` con `sa`; (2)
-      `velox_agregar_notificaciones_reasignaciones.sql` con `sa`; (3) `git pull` + `pm2 restart
-      velox`. Los motorizados con la app abierta tienen que recargarla.
+- [x] **Deploy del 14/11/2026: HECHO en producción** (confirmado por el usuario; las dos
+      migraciones con `sa`, `velox_agregar_asignada_en.sql` y después
+      `velox_agregar_notificaciones_reasignaciones.sql`; `git pull` a `8a2cf5f`; `pm2 restart
+      velox`; verificado). Entró todo lo pendiente:
+      - Reportes del día en imagen, de tienda y de motorizado (D-017).
+      - Cambios del 12/11: buscador de "Mis entregas de hoy", la última asignada arriba (D-018) y
+        la tarjeta con foto.
+      - Panel del motorizado con la cuenta de la Caja (D-019).
+      - Notificaciones y reasignación entre motorizados (D-020).
 - [ ] **Fase 4:** rotar las 89 contraseñas de fórmula de las tiendas (con "Resetear
       contraseñas") y sacar el secreto de `server/db.js`. Ver D-007.
 - [ ] **Opcional:** cortar las sesiones abiertas al resetear una contraseña (necesita

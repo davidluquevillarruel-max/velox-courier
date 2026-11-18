@@ -19,14 +19,16 @@ Velox Courier — internal management system for a courier/delivery company in L
   `asignada_en` (D-018), panel del moto con `caja-motor.js` (D-019) y notificaciones + reasignación
   (D-020). **Último commit en producción: `8a2cf5f`.**
 
-- **Cambios del 14/11 por la tarde: pusheados, FALTA el deploy** (`git pull` + `pm2 restart velox`,
-  **sin migración**; los motorizados y los gestores recargan la app). Commits `b6967bf` (aviso que
-  se cierra al guardar, D-020), `f00c168` (foto del pago solo con Pago Velox / Pago tienda, D-021),
-  `711a08d` y `69b5b1e` (observaciones para el moto y su protección, D-022). Todos probados por el
-  usuario en local. El detalle de cada uno, abajo.
+- **Cambios del 14/11 por la tarde y del 18/11: pusheados, FALTA el deploy, CON MIGRACIÓN.**
+  Primero `velox_agregar_aviso_observacion.sql` con `sa` (ver "Migraciones pendientes"), después
+  `git pull` + `pm2 restart velox`; los motorizados y los gestores recargan la app. Commits
+  `b6967bf` (aviso que se cierra al guardar, D-020), `f00c168` (foto del pago solo con Pago Velox /
+  Pago tienda, D-021), `711a08d` y `69b5b1e` (observaciones para el moto y su protección, D-022) y
+  `48270a4` (aviso "X agregó una observación" + botón ✓, D-023). Todos probados por el usuario en
+  local. El detalle de cada uno, abajo.
 
-- **Aviso "ALEX agregó una observación" para los gestores + botón ✓ (18 de noviembre de 2026, en
-  local, falta que el usuario lo pruebe). CON MIGRACIÓN `velox_agregar_aviso_observacion.sql`
+- **Aviso "ALEX agregó una observación" para los gestores + botón ✓ (18 de noviembre de 2026, commit
+  `48270a4`, probado por el usuario; D-023). CON MIGRACIÓN `velox_agregar_aviso_observacion.sql`
   (aplicada en local el 18/11; en producción va ANTES del `git pull`, ver "Migraciones
   pendientes").** **Toca el servidor:** hay que reiniciarlo. `server/avisos.js`,
   `server/routes/ordenes.js`, `server/routes/notificaciones.js`, `js/notificaciones.js`,

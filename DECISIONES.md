@@ -4,7 +4,7 @@
 > Sirve también como contexto de arranque para Claude Code: si se copia a `CLAUDE.md`
 > en la raíz del repo, la herramienta lo lee automáticamente al iniciar.
 >
-> Última actualización: 14 de noviembre de 2026
+> Última actualización: 18 de noviembre de 2026
 
 ---
 
@@ -860,6 +860,38 @@ guardar se manda igual.
 
 ---
 
+## D-023 · Aviso a los gestores cuando el motorizado agrega una observación
+
+**Estado:** commit `48270a4` (18 de noviembre de 2026), probado por el usuario. **Con migración**
+`velox_agregar_aviso_observacion.sql`: aplicada en local el 18/11; en producción va antes del
+`git pull` (ver Pendientes varios).
+
+**Problema.** Con D-022 el moto ya podía dejar notas, pero la oficina no se enteraba: había que abrir
+la orden para verlas.
+
+**Decisión.**
+- **Un aviso nuevo en Notificaciones, tipo `observacion`** (ícono de mensaje azul): "ALEX agregó una
+  observación · #C-1095 · cliente" y debajo un extracto de la nota. Lo genera solo la nota de un
+  **motorizado** (desde EMPEZAR o desde su "Actualizar orden"); las de un gestor no.
+- **Uno por orden.** Si el moto agrega varias notas antes de que alguien revise, se actualiza el mismo
+  aviso con la última (y su hora, así sube arriba). Lo garantiza el índice único que ya existía (una
+  abierta por orden y tipo), no solo el código; si dos notas llegan a la vez, el servidor reintenta
+  actualizando.
+- **Se cierra como los demás (D-020):** "Abrir" no lo marca; guardar la orden lo marca para todos.
+  A diferencia de "no entregado" y "Pago tienda", no se esconde si la orden cambia: una observación
+  sigue valiendo igual.
+- **Quién y qué dijo se guardan en el aviso** (`notificaciones.autor` y `detalle`), aunque los otros
+  avisos leen todo de la orden en vivo: el texto de `ordenes.observaciones` lo puede reescribir un
+  gestor (D-022) y la nota podría ya no estar, o no ser la última.
+- **Crear el aviso nunca hace fallar la nota** (queda en el log, como en D-020).
+- En EMPEZAR, la nota se confirma con un botón ✓ grande (Enter también).
+
+**Migración:** `chk_notif_tipo` acepta `observacion` y dos columnas NULL nuevas, `autor
+NVARCHAR(100)` y `detalle NVARCHAR(300)`. **Orden del deploy:** sin la migración, la nota del moto se
+guarda igual, pero no llega ningún aviso.
+
+---
+
 ## Costos de operación
 
 | Concepto | Mensual |
@@ -921,11 +953,14 @@ downtime). El dominio se traspasa aparte en Namecheap.
         la tarjeta con foto.
       - Panel del motorizado con la cuenta de la Caja (D-019).
       - Notificaciones y reasignación entre motorizados (D-020).
-- [ ] **Deploy de los cambios del 14/11 por la tarde** (commits `b6967bf`, `f00c168`, `711a08d`,
-      `69b5b1e`, ya pusheados): `git pull` + `pm2 restart velox`, **sin migración**. Los
-      motorizados y los gestores tienen que recargar la app. Entran el aviso que se cierra al
-      guardar (D-020), la foto del pago solo con Pago Velox / Pago tienda (D-021) y las
-      observaciones para el moto con su protección (D-022).
+- [ ] **Deploy pendiente (cambios del 14/11 por la tarde y del 18/11, ya pusheados). CON
+      MIGRACIÓN:** primero `velox_agregar_aviso_observacion.sql` con `sa` y `sqlcmd -I`, después
+      `git pull` + `pm2 restart velox`. Los motorizados y los gestores tienen que recargar la app.
+      Entran:
+      - El aviso que se cierra al guardar (D-020, `b6967bf`).
+      - La foto del pago solo con Pago Velox / Pago tienda (D-021, `f00c168`).
+      - Las observaciones para el moto con su protección (D-022, `711a08d`, `69b5b1e`).
+      - El aviso "X agregó una observación" y el botón ✓ (D-023, `48270a4`).
 - [ ] **Control de concurrencia (409) roto desde el 14/10** (commit `f47d676`). `SELECT_ORDEN`
       devuelve la versión con `CONVERT(varchar(20), o.row_version, 1)`, que con `rowversion` da los
       bytes crudos y no `0x…`; `bufferDeVersion` la descarta y ningún guardado con `ifVersion` da

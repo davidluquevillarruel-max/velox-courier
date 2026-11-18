@@ -752,7 +752,9 @@ dan hoy los pedidos (si alguien editó una orden después, la Caja dice "Difiere
 **Estado:** HECHO en producción el 14 de noviembre de 2026 (confirmado por el usuario; commits
 `46f46f8` y `935020f`, último commit `8a2cf5f`). Migración
 `velox_agregar_notificaciones_reasignaciones.sql` (tablas `notificaciones` y `reasignaciones`)
-aplicada con `sa` antes del `git pull`, después de la de `asignada_en`.
+aplicada con `sa` antes del `git pull`, después de la de `asignada_en`. El ajuste "el aviso se
+cierra al guardar, no al abrir" (`b6967bf`, sin migración) entró en el deploy del 18 de noviembre
+de 2026 (último commit `bc30158`, confirmado por el usuario).
 
 **Problema.**
 - La oficina no se enteraba a tiempo de un "no entregado" ni de un "Pago tienda" (hay que revisar la
@@ -804,8 +806,8 @@ sin migración extra (usa `vista_por_origen_en`).
 
 ## D-021 · La foto del pago solo con Pago Velox y Pago tienda
 
-**Estado:** commit `f00c168` (14 de noviembre de 2026), probado por el usuario. Sin migración ni
-cambios en el servidor. Va en el deploy del 14/11 por la tarde (ver Pendientes varios).
+**Estado:** HECHO en producción el 18 de noviembre de 2026 (confirmado por el usuario; commit
+`f00c168` del 14/11, último commit `bc30158`). Sin migración ni cambios en el servidor.
 
 **Problema.** En EMPEZAR → COMPLETAR se pedía foto del pago con los 4 medios, también con Yape y
 Efectivo motorizado. "Actualizar orden" y el servidor ya la pedían solo con Pago tienda y Pago Velox:
@@ -828,8 +830,9 @@ las dos pantallas no coincidían.
 
 ## D-022 · Observaciones para el motorizado: el moto solo agrega, el gestor no pisa sus notas
 
-**Estado:** commits `711a08d` y `69b5b1e` (14 de noviembre de 2026), probado por el usuario. Sin
-migración: `ordenes.observaciones` ya es `NVARCHAR(MAX)`. Va en el deploy del 14/11 por la tarde.
+**Estado:** HECHO en producción el 18 de noviembre de 2026 (confirmado por el usuario; commits
+`711a08d` y `69b5b1e` del 14/11, último commit `bc30158`). Sin migración: `ordenes.observaciones`
+ya es `NVARCHAR(MAX)`.
 
 **Problema.** El moto veía las observaciones en una línea chica, junto al teléfono, y no tenía cómo
 dejar una nota para la oficina sin poder borrar lo que ya estaba.
@@ -862,9 +865,9 @@ guardar se manda igual.
 
 ## D-023 · Aviso a los gestores cuando el motorizado agrega una observación
 
-**Estado:** commit `48270a4` (18 de noviembre de 2026), probado por el usuario. **Con migración**
-`velox_agregar_aviso_observacion.sql`: aplicada en local el 18/11; en producción va antes del
-`git pull` (ver Pendientes varios).
+**Estado:** HECHO en producción el 18 de noviembre de 2026 (confirmado por el usuario; commit
+`48270a4`, último commit `bc30158`). Migración `velox_agregar_aviso_observacion.sql` aplicada con
+`sa` en local y en producción (terminó en OK), antes del `git pull`.
 
 **Problema.** Con D-022 el moto ya podía dejar notas, pero la oficina no se enteraba: había que abrir
 la orden para verlas.
@@ -953,10 +956,9 @@ downtime). El dominio se traspasa aparte en Namecheap.
         la tarjeta con foto.
       - Panel del motorizado con la cuenta de la Caja (D-019).
       - Notificaciones y reasignación entre motorizados (D-020).
-- [ ] **Deploy pendiente (cambios del 14/11 por la tarde y del 18/11, ya pusheados). CON
-      MIGRACIÓN:** primero `velox_agregar_aviso_observacion.sql` con `sa` y `sqlcmd -I`, después
-      `git pull` + `pm2 restart velox`. Los motorizados y los gestores tienen que recargar la app.
-      Entran:
+- [x] **Deploy del 18/11/2026: HECHO en producción** (confirmado por el usuario;
+      `velox_agregar_aviso_observacion.sql` con `sa`, terminó en OK; `git pull` a `bc30158`; `pm2
+      restart velox`; logs limpios y verificado). Entró lo del 14/11 por la tarde y del 18/11:
       - El aviso que se cierra al guardar (D-020, `b6967bf`).
       - La foto del pago solo con Pago Velox / Pago tienda (D-021, `f00c168`).
       - Las observaciones para el moto con su protección (D-022, `711a08d`, `69b5b1e`).

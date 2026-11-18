@@ -17,20 +17,20 @@ Velox Courier — internal management system for a courier/delivery company in L
   `velox_agregar_notificaciones_reasignaciones.sql`; `git pull` a `8a2cf5f`; `pm2 restart velox`;
   todo verificado). Entró todo lo del 10, 12 y 14 de noviembre: reportes en imagen (D-017),
   `asignada_en` (D-018), panel del moto con `caja-motor.js` (D-019) y notificaciones + reasignación
-  (D-020). **Último commit en producción: `8a2cf5f`.**
+  (D-020).
 
-- **Cambios del 14/11 por la tarde y del 18/11: pusheados, FALTA el deploy, CON MIGRACIÓN.**
-  Primero `velox_agregar_aviso_observacion.sql` con `sa` (ver "Migraciones pendientes"), después
-  `git pull` + `pm2 restart velox`; los motorizados y los gestores recargan la app. Commits
+- **Deploy del 18 de noviembre de 2026: HECHO en producción** (confirmado por el usuario:
+  `velox_agregar_aviso_observacion.sql` con `sa`, terminó en OK; `git pull` a `bc30158`; `pm2
+  restart velox`; logs limpios y verificado). Entró todo lo del 14/11 por la tarde y del 18/11:
   `b6967bf` (aviso que se cierra al guardar, D-020), `f00c168` (foto del pago solo con Pago Velox /
   Pago tienda, D-021), `711a08d` y `69b5b1e` (observaciones para el moto y su protección, D-022) y
-  `48270a4` (aviso "X agregó una observación" + botón ✓, D-023). Todos probados por el usuario en
-  local. El detalle de cada uno, abajo.
+  `48270a4` (aviso "X agregó una observación" + botón ✓, D-023). El detalle de cada uno, abajo.
+  **Último commit en producción: `bc30158`.** No quedan migraciones pendientes.
 
 - **Aviso "ALEX agregó una observación" para los gestores + botón ✓ (18 de noviembre de 2026, commit
-  `48270a4`, probado por el usuario; D-023). CON MIGRACIÓN `velox_agregar_aviso_observacion.sql`
-  (aplicada en local el 18/11; en producción va ANTES del `git pull`, ver "Migraciones
-  pendientes").** **Toca el servidor:** hay que reiniciarlo. `server/avisos.js`,
+  `48270a4`, probado por el usuario; D-023; HECHO en producción el 18/11). Migración
+  `velox_agregar_aviso_observacion.sql` aplicada en local y en producción (antes del `git pull`).**
+  **Toca el servidor:** hay que reiniciarlo. `server/avisos.js`,
   `server/routes/ordenes.js`, `server/routes/notificaciones.js`, `js/notificaciones.js`,
   `js/entregas-moto.js`, `css/components.css`.
   - **Migración:** `chk_notif_tipo` acepta `observacion` (antes el INSERT fallaba) y dos columnas
@@ -65,7 +65,7 @@ Velox Courier — internal management system for a courier/delivery company in L
 
 - **Observaciones visibles para el motorizado; el moto solo AGREGA (14 de noviembre de 2026, commit
   `711a08d` y protección del gestor en `69b5b1e`, los dos probados por el usuario; D-022; sin
-  migración).** **Toca el servidor:** hay que reiniciarlo.
+  migración; HECHO en producción el 18/11).** **Toca el servidor:** hay que reiniciarlo.
   `server/routes/ordenes.js`, `js/entregas-moto.js`, `js/motorizados.js`, `css/components.css`.
   - **Columna:** `ordenes.observaciones` ya es `NVARCHAR(MAX)` (local y los scripts base): no hizo
     falta agrandarla. Los topes son del código: `MAX_NOTA_OBS = 300` por nota y `MAX_OBS_TOTAL =
@@ -119,7 +119,8 @@ Velox Courier — internal management system for a courier/delivery company in L
   probarlo entero, incluida la cola de fotos).
 
 - **Foto del pago: Yape y Efectivo motorizado ya no la piden (14 de noviembre de 2026, commit
-  `f00c168`, probado por el usuario; D-021; sin migración ni cambios en el servidor).** Solo `js/entregas-moto.js`
+  `f00c168`, probado por el usuario; D-021; sin migración ni cambios en el servidor; HECHO en
+  producción el 18/11).** Solo `js/entregas-moto.js`
   y `js/motorizados.js`. Con esos dos medios el moto tiene la plata y responde por ella: no hay foto.
   Pago tienda y Pago Velox (`pago-tienda`, `pago-empresa`) la siguen pidiendo como siempre.
   - **EMPEZAR → COMPLETAR:** `_ENT_MEDIOS_CON_FOTO` quedó en `['pago-tienda', 'pago-empresa']`. El
@@ -137,7 +138,8 @@ Velox Courier — internal management system for a courier/delivery company in L
     en la cola solo la foto de la entrega; foto de Pago tienda y cambio a Yape → no se encola.
 
 - **Notificaciones del admin: el aviso se cierra al GUARDAR la orden, no al abrirla (14 de noviembre
-  de 2026, probado por el usuario; sin migración).** **Toca el servidor:** hay que
+  de 2026, commit `b6967bf`, probado por el usuario; sin migración; HECHO en producción el 18/11).**
+  **Toca el servidor:** hay que
   reiniciarlo. `server/routes/notificaciones.js`, `js/notificaciones.js`, `js/motorizados.js`.
   - **"Abrir"** (`GET /notificaciones/:id`) solo lleva a Todos los pedidos con "Actualizar orden"
     abierto: **no marca nada**. Cerrar sin guardar (Cancelar o la X) deja el aviso en la campana.
@@ -1075,11 +1077,11 @@ Roles: `admin`, `operador`, `visor`, `tienda`, `motorizado`. `GESTORES = ['admin
 
 ## Migraciones pendientes de aplicar en producción
 
-- **`velox_agregar_aviso_observacion.sql`** (18/11/2026, aviso "X agregó una observación"):
-  `chk_notif_tipo` + `observacion` y columnas `notificaciones.autor` / `detalle`. Aplicada en local
-  el 18/11 (terminó en "OK"). En producción: copiarla al servidor y correrla con `sa` y
-  `sqlcmd -I` **antes** del `git pull` que traiga el código del aviso. Sin ella, la nota del moto se
-  guarda igual (el aviso falla solo, queda en el log), pero no llega ningún aviso.
+Ninguna por ahora.
+
+`velox_agregar_aviso_observacion.sql` (`chk_notif_tipo` + `observacion` y columnas
+`notificaciones.autor` / `detalle`, D-023) se aplicó en local y en producción el 18 de noviembre de
+2026, con `sa` y antes del `git pull` a `bc30158` (confirmado por el usuario: terminó en OK).
 
 `velox_agregar_asignada_en.sql` (columna `ordenes.asignada_en DATETIME2(0) NULL`, D-018) y
 `velox_agregar_notificaciones_reasignaciones.sql` (tablas `reasignaciones` y `notificaciones`, D-020)

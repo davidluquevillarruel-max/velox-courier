@@ -11,7 +11,7 @@ const { sumaEnCajaTienda, sumaEnCajaMoto, ESTADO_ANULADO } = require('../caja-mo
 const { requireAuth, requireRol } = require('../middleware/auth');
 const { r2Habilitado, generarUrlSubidaEvidencia, esUrlDeOrden } = require('../r2');
 const { guardarFoto, rutaArchivo, existeFoto } = require('../almacenamiento-local');
-const { tipoAvisoDeOrden, registrarAvisoSiNace } = require('../avisos');
+const { tipoAvisoDeOrden, registrarAvisoSiNace, registrarAvisoObservacion } = require('../avisos');
 
 /* Todas las rutas de este archivo exigen sesión */
 router.use(requireAuth);
@@ -155,9 +155,14 @@ const MAX_NOTA_OBS  = 300;   /* cada nota que se agrega */
 const MAX_OBS_TOTAL = 4000;  /* el texto completo */
 const SEP_OBS = ' // ';
 
+/* El texto de una nota en una sola línea, sin espacios de más */
+function limpiarNotaObs(texto) {
+  return String(texto || '').replace(/\s+/g, ' ').trim();
+}
+
 /* Arma la nota firmada; null si el texto queda vacío */
 function notaObservacion(usuario, texto) {
-  const limpio = String(texto || '').replace(/\s+/g, ' ').trim();
+  const limpio = limpiarNotaObs(texto);
   if (!limpio) return null;
   const [fecha, hora] = ahoraEnLima().split(' ');
   const [, mes, dia] = fecha.split('-');
@@ -1230,6 +1235,10 @@ router.post('/:id/observaciones', soloAdminSiAnulada, async (req, res) => {
     if (!r.recordset.length) {
       return res.status(400).json({ error: 'Las observaciones de esta orden llegaron al máximo: pedile a la oficina que las resuma.' });
     }
+    /* Nota de un motorizado → aviso para los gestores (las de un gestor no) */
+    if (req.usuario.rol === 'motorizado') {
+      await registrarAvisoObservacion(pool, req.params.id, req.usuario.nombre, limpiarNotaObs(req.body.texto));
+    }
     res.json({ ok: true, observaciones: r.recordset[0].observaciones });
   } catch (err) {
     console.error('POST /ordenes/:id/observaciones:', err.message);
@@ -1340,6 +1349,7 @@ router.patch('/:id/completo', soloAdminSiAnulada, async (req, res) => {
        se suma su nota nueva (o.obsAgregar) al final. */
     let setObs = 'observaciones = @obs,';
     let whereObs = '';
+    let notaMoto = null;   /* texto de la nota del moto, para el aviso */
     if (esMotorizado) {
       setObs = '';
       if (String(o.obsAgregar || '').length > MAX_NOTA_OBS) {
@@ -1354,6 +1364,7 @@ router.patch('/:id/completo', soloAdminSiAnulada, async (req, res) => {
         }
         request.input('nota', sql.NVarChar, nota);
         setObs = `observaciones = ${SQL_OBS_MAS_NOTA},`;
+        notaMoto = limpiarNotaObs(o.obsAgregar);
       }
     } else if ((o.obs || '').length > MAX_OBS_TOTAL) {
       return res.status(400).json({ error: `Las observaciones no pueden pasar de ${MAX_OBS_TOTAL} caracteres` });
@@ -1413,6 +1424,9 @@ router.patch('/:id/completo', soloAdminSiAnulada, async (req, res) => {
       if (!fresca) return res.status(404).json({ error: 'Orden no encontrada' });
       return res.status(409).json({ error: 'Esta orden fue modificada por otro usuario mientras la editabas.', orden: fresca });
     }
+
+    /* La nota que sumó el motorizado → aviso para los gestores */
+    if (notaMoto) await registrarAvisoObservacion(pool, req.params.id, req.usuario.nombre, notaMoto);
 
     /* Si era una orden de ráfaga y con esto quedaron completos los
        datos, deja de estar pendiente (también desde "Actualizar orden") */

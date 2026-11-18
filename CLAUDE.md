@@ -10,7 +10,7 @@ Velox Courier — internal management system for a courier/delivery company in L
 
 ## Estado actual
 
-Última actualización: 14 de noviembre de 2026.
+Última actualización: 18 de noviembre de 2026.
 
 - **Deploy del 14 de noviembre de 2026: HECHO en producción** (confirmado por el usuario: las dos
   migraciones OK con `sa`, `velox_agregar_asignada_en.sql` y después
@@ -24,6 +24,42 @@ Velox Courier — internal management system for a courier/delivery company in L
   se cierra al guardar, D-020), `f00c168` (foto del pago solo con Pago Velox / Pago tienda, D-021),
   `711a08d` y `69b5b1e` (observaciones para el moto y su protección, D-022). Todos probados por el
   usuario en local. El detalle de cada uno, abajo.
+
+- **Aviso "ALEX agregó una observación" para los gestores + botón ✓ (18 de noviembre de 2026, en
+  local, falta que el usuario lo pruebe). CON MIGRACIÓN `velox_agregar_aviso_observacion.sql`
+  (aplicada en local el 18/11; en producción va ANTES del `git pull`, ver "Migraciones
+  pendientes").** **Toca el servidor:** hay que reiniciarlo. `server/avisos.js`,
+  `server/routes/ordenes.js`, `server/routes/notificaciones.js`, `js/notificaciones.js`,
+  `js/entregas-moto.js`, `css/components.css`.
+  - **Migración:** `chk_notif_tipo` acepta `observacion` (antes el INSERT fallaba) y dos columnas
+    NULL nuevas en `notificaciones`, solo para este tipo: `autor NVARCHAR(100)` (quién escribió la
+    última nota) y `detalle NVARCHAR(300)` (su texto). Se guardan en el aviso y no se leen de
+    `ordenes.observaciones` porque un gestor puede reescribir ese texto. Índices sin cambios.
+  - **Nace** solo con la nota de un **motorizado**: `POST /ordenes/:id/observaciones` (EMPEZAR) y
+    `obsAgregar` de su "Actualizar orden" (`/completo`), después de que la nota se guardó. Las notas
+    de un gestor no generan aviso. `registrarAvisoObservacion(pool, idOrden, autor, texto)` en
+    `server/avisos.js`: **uno por orden** (índice `ux_notif_orden_tipo_abierta`); si hay uno
+    abierto, se ACTUALIZA (autor, detalle, `creada_en`, así sube arriba), si no se crea. Si dos
+    notas llegan a la vez y el índice frena un INSERT (2601/2627), reintenta y actualiza. Nunca
+    hace fallar la nota (solo log). `limpiarNotaObs()` en `ordenes.js` deja el texto en una línea.
+  - **Se ve siempre** (informativo, como el de reasignación: `SQL_AVISO_VIGENTE`) y se cierra como
+    los demás: "Abrir" no marca; **guardar la orden** lo marca para todos. Una nota nueva después de
+    revisado crea un aviso nuevo.
+  - **Pantalla:** tipo `observacion` en `_AVISO_TIPOS` (`aviso-azul`, `ti-message-2`):
+    "**ALEX** agregó una observación · #C-1095 · **cliente**", debajo la última nota entre comillas
+    (`.aviso-extracto`, cursiva azul, recortada a 140 con `_recortarAviso`) y distrito · hora.
+    `GET /notificaciones` devuelve `autor` y `detalle`.
+  - **EMPEZAR:** el "Agregar" pasó a un botón ✓ (`.entrega-obs-ok`, 46 px, ícono de 24 px; Enter
+    sigue). El campo perdió la sangría de lupa de `search-box`.
+  - **Probado el 18/11** (servidor en el 3001, TST-AO-* y un operador de prueba, borrados): 20 de
+    20 en la API (nace con autor y texto, segunda nota = mismo aviso con la última y hora nueva,
+    tres a la vez = un aviso, el operador lo ve, gestor no genera, moto desde "Actualizar orden"
+    sí, abrir no marca, guardar marca para todos y guarda quién, "ya revisó", nota después de
+    revisado = aviso nuevo, los otros tipos sin autor/detalle, moto 403 en `/notificaciones`). A
+    375 px: ✓ guarda y cierra el campo, el aviso azul con el extracto, "Abrir" lleva al modal, la X
+    no lo cierra, segunda nota actualiza el mismo aviso, Guardar lo cierra para admin y operador.
+    Ojo: el navegador del panel tuvo la escala corrida y sus toques caían fuera del ✓ y del aviso;
+    esos dos se tocaron con un clic de DOM (`element.click()`), el resto con el navegador.
 
 - **Observaciones visibles para el motorizado; el moto solo AGREGA (14 de noviembre de 2026, commit
   `711a08d` y protección del gestor en `69b5b1e`, los dos probados por el usuario; D-022; sin
@@ -1037,7 +1073,11 @@ Roles: `admin`, `operador`, `visor`, `tienda`, `motorizado`. `GESTORES = ['admin
 
 ## Migraciones pendientes de aplicar en producción
 
-Ninguna por ahora.
+- **`velox_agregar_aviso_observacion.sql`** (18/11/2026, aviso "X agregó una observación"):
+  `chk_notif_tipo` + `observacion` y columnas `notificaciones.autor` / `detalle`. Aplicada en local
+  el 18/11 (terminó en "OK"). En producción: copiarla al servidor y correrla con `sa` y
+  `sqlcmd -I` **antes** del `git pull` que traiga el código del aviso. Sin ella, la nota del moto se
+  guarda igual (el aviso falla solo, queda en el log), pero no llega ningún aviso.
 
 `velox_agregar_asignada_en.sql` (columna `ordenes.asignada_en DATETIME2(0) NULL`, D-018) y
 `velox_agregar_notificaciones_reasignaciones.sql` (tablas `reasignaciones` y `notificaciones`, D-020)

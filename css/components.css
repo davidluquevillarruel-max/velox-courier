@@ -889,7 +889,19 @@
   cursor: pointer;
 }
 .entrega-obs-agregar { display: flex; gap: 8px; }
-.entrega-obs-agregar input { flex: 1; min-width: 0; }
+.entrega-obs-agregar input { flex: 1; min-width: 0; padding-left: 12px; }
+/* Botón ✓ que guarda la observación (ancho fijo, cómodo para el dedo) */
+.entrega-obs-ok {
+  flex: 0 0 auto;
+  width: 46px;
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  padding: 0;
+}
+.entrega-obs-ok .ti { font-size: 24px; }
 .entrega-seccion {
   background: var(--color-bg-primary);
   border-radius: var(--radius-lg);
@@ -1258,6 +1270,16 @@ tr.fila-inactiva td { color: var(--color-text-secondary); }
 .aviso-rojo  { background: var(--color-red-bg);   color: var(--color-red); }
 .aviso-ambar { background: var(--color-amber-bg); color: var(--color-amber); }
 .aviso-verde { background: var(--color-green-bg); color: var(--color-green); }
+.aviso-azul  { background: var(--color-blue-bg);  color: var(--color-blue); }
+/* La última nota del moto en el aviso de observación (js/notificaciones.js) */
+.aviso-extracto {
+  display: block;
+  font-size: 12.5px;
+  font-style: italic;
+  color: var(--color-blue-text);
+  margin: 2px 0 1px;
+  overflow-wrap: anywhere;
+}
 .aviso-texto { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .aviso-principal { font-size: 13px; overflow-wrap: anywhere; }
 .aviso-detalle { font-size: 11.5px; color: var(--color-text-secondary); overflow-wrap: anywhere; }

@@ -153,13 +153,29 @@ var _AVISO_TIPOS = {
   no_entregado: { clase: 'aviso-rojo',  icono: 'ti-x',              titulo: 'No entregado' },
   pago_tienda:  { clase: 'aviso-ambar', icono: 'ti-building-store', titulo: 'Pago tienda' },
   reasignacion: { clase: 'aviso-verde', icono: 'ti-motorbike',      titulo: 'Reasignación' },
+  observacion:  { clase: 'aviso-azul',  icono: 'ti-message-2',      titulo: 'Observación' },
 };
+
+/* Extracto de una nota larga: corta en una palabra y agrega "…" */
+function _recortarAviso(texto, max) {
+  texto = String(texto || '');
+  if (texto.length <= max) return texto;
+  var corte = texto.lastIndexOf(' ', max);
+  return texto.slice(0, corte > max * 0.6 ? corte : max) + '…';
+}
 
 function _avisoHTML(a) {
   var t = _AVISO_TIPOS[a.tipo] || { clase: '', icono: 'ti-bell', titulo: a.tipo };
   var cliente = a.dest_nombre ? _escAvisos(a.dest_nombre) : 'Sin nombre';
-  var principal, detalle;
-  if (a.tipo === 'reasignacion') {
+  var principal, detalle, extracto = '';
+  if (a.tipo === 'observacion') {
+    /* "ALEX agregó una observación · #C-1095 · Berth A" y abajo la última
+       nota (el aviso es uno por orden y guarda la última: autor, detalle) */
+    principal = '<strong>' + _escAvisos(a.autor || a.motorizado || 'El motorizado') + '</strong> agregó una observación · #' +
+                _escAvisos(a.codigo) + ' · <strong>' + cliente + '</strong>';
+    if (a.detalle) extracto = '<span class="aviso-extracto">“' + _escAvisos(_recortarAviso(a.detalle, 140)) + '”</span>';
+    detalle = [_escAvisos(a.distrito)];
+  } else if (a.tipo === 'reasignacion') {
     principal = '<strong>' + _escAvisos(a.moto_de || '—') + '</strong> pasó #' + _escAvisos(a.codigo) +
                 ' a <strong>' + _escAvisos(a.moto_para || '—') + '</strong>';
     detalle = [cliente, _escAvisos(a.distrito)];
@@ -174,6 +190,7 @@ function _avisoHTML(a) {
       '<span class="aviso-icono ' + t.clase + '"><i class="ti ' + t.icono + '"></i></span>' +
       '<span class="aviso-texto">' +
         '<span class="aviso-principal">' + principal + '</span>' +
+        extracto +
         '<span class="aviso-detalle">' + detalle.filter(Boolean).join(' · ') + '</span>' +
       '</span>' +
       '<span class="aviso-abrir">Abrir <i class="ti ti-chevron-right"></i></span>' +

@@ -383,7 +383,9 @@ function _bloqueObsEnt(o, b) {
       '<input id="entrega-obs-nueva" class="search-box" maxlength="300" placeholder="Escribí la observación" ' +
         'value="' + _escEnt(b.obsNueva || '') + '" oninput="_borradorEnt(' + o.id + ').obsNueva = this.value" ' +
         'onkeydown="if (event.key === \'Enter\') agregarObservacionEntrega()">' +
-      '<button type="button" class="btn btn-sm btn-primary" id="btn-entrega-obs" onclick="agregarObservacionEntrega()">Agregar</button>' +
+      /* ✓ confirma y guarda la nota (Enter hace lo mismo) */
+      '<button type="button" class="btn btn-primary entrega-obs-ok" id="btn-entrega-obs" onclick="agregarObservacionEntrega()" ' +
+        'aria-label="Guardar observación" title="Guardar observación"><i class="ti ti-check"></i></button>' +
     '</div>';
   } else {
     html += '<button type="button" class="entrega-obs-link" onclick="abrirObservacionEntrega()">+ Agregar observación</button>';

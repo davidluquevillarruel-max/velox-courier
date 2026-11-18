@@ -6,7 +6,8 @@
    solo lleva a la orden; queda revisado (revisada_en, quién) recién
    cuando alguien GUARDA "Actualizar orden" de esa orden, y entonces
    desaparece para todos. Nacen en server/avisos.js (registrarAvisoSiNace, al
-   pasar a no entregado o a entregado con Pago tienda) y en
+   pasar a no entregado o a entregado con Pago tienda;
+   registrarAvisoObservacion, cuando un motorizado agrega una nota) y en
    routes/reasignaciones.js (cuando se acepta una reasignación).
    Los datos que se muestran se leen de la orden en vivo.
    ============================================================ */
@@ -42,7 +43,7 @@ router.get('/', async (req, res) => {
     const pool = await getPool();
     const r = await pool.request().query(`
       SELECT TOP 200
-        n.id, n.tipo, n.id_orden,
+        n.id, n.tipo, n.id_orden, n.autor, n.detalle,
         CONVERT(varchar(19), n.creada_en, 120) AS creada_en,
         o.codigo, o.dest_nombre, o.metodo_pago, o.monto_cobrado,
         CONVERT(varchar, o.fecha_reparto, 23) AS fecha_reparto,

@@ -87,12 +87,45 @@ async function registrarAvisoSiNace(pool, idOrden, tipoAntes) {
   }
 }
 
+/* Aviso "ALEX agregó una observación" (velox_agregar_aviso_observacion.sql):
+   lo crea una nota del MOTORIZADO (POST /ordenes/:id/observaciones o su
+   "Actualizar orden"); las de un gestor no. UNO por orden: si ya hay uno
+   abierto, se actualiza con la última nota (autor, detalle) y su hora,
+   así sube arriba de la lista. Se cierra como los demás, al guardar la
+   orden. Igual que registrarAvisoSiNace, nunca hace fallar el guardado. */
+async function registrarAvisoObservacion(pool, idOrden, autor, texto) {
+  const upsert = () => pool.request()
+    .input('orden',   sql.BigInt,        idOrden)
+    .input('autor',   sql.NVarChar(100), String(autor || '').slice(0, 100))
+    .input('detalle', sql.NVarChar(300), String(texto || '').slice(0, 300))
+    .input('ahora',   sql.VarChar(19),   ahoraLima())
+    .query(`
+      UPDATE notificaciones
+      SET autor = @autor, detalle = @detalle, creada_en = CONVERT(datetime2(0), @ahora, 120)
+      WHERE id_orden = @orden AND tipo = N'observacion'
+        AND revisada_en IS NULL AND id_reasignacion IS NULL;
+      IF @@ROWCOUNT = 0
+        INSERT INTO notificaciones (tipo, id_orden, creada_en, autor, detalle)
+        VALUES (N'observacion', @orden, CONVERT(datetime2(0), @ahora, 120), @autor, @detalle);
+    `);
+  try {
+    await upsert();
+  } catch (err) {
+    /* Dos notas a la vez: las dos vieron "no hay" e intentaron el INSERT;
+       el índice único frenó a una. Otra vuelta y actualiza la que quedó. */
+    if (err.number === 2601 || err.number === 2627) {
+      try { await upsert(); return; } catch (e) { err = e; }
+    }
+    console.error('registrarAvisoObservacion:', err.message);
+  }
+}
+
 /* Un aviso abierto se muestra solo si la orden sigue siendo de su tipo
    (si la corrigieron antes de que alguien lo abriera, se esconde). Los
-   de reasignación son informativos: siempre. Alias: n (notificaciones)
-   y o (ordenes). */
+   de reasignación y de observación son informativos: siempre. Alias: n
+   (notificaciones) y o (ordenes). */
 const SQL_AVISO_VIGENTE = `(
-  n.tipo = 'reasignacion'
+  n.tipo IN ('reasignacion', 'observacion')
   OR (n.tipo = 'no_entregado' AND o.estado = 'no-entregado')
   OR (n.tipo = 'pago_tienda'  AND o.estado = 'entregado' AND o.medio_pago = 'pago-tienda')
 )`;
@@ -123,6 +156,7 @@ async function cerrarReasignacionesViejas(poolOTransaccion) {
 }
 
 module.exports = {
+  registrarAvisoObservacion,
   ahoraLima,
   proximaMedianocheLima,
   tipoAviso,

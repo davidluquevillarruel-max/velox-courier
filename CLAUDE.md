@@ -85,25 +85,51 @@ Velox Courier — internal management system for a courier/delivery company in L
       (`#card-motos-resumen`) y el panel (`#panel-detalle-moto`), `_renderTablaResumen` no consulta,
       y el "Ver detalle" de la tarjeta llama `abrirGestionMoto(id)` (abre la página nueva ya en ese
       moto, en hoy). **El rol motorizado sigue igual** (período, su fila, su panel con historial).
-    - **Servidor (`server/routes/caja.js`):** `ordenesDiaMotos(pool, fecha, idMoto?)` y
-      `armarDiaMoto(ordenes, pagado)` = la ÚNICA cuenta del día de un moto (resumen por estado,
-      pedidos y totales con `calcularOrdenCaja`, `liquidado`). La usan el reporte y la lista nueva
-      `GET /caja/motorizados/gestion?fecha=` (cada moto con órdenes ese día, sin anuladas). `GET
-      /caja/motorizados/:id/reporte` ya **no** es solo admin (admin y operador, por el
-      `requireRol` del router); `/reporte/subida` sigue solo admin.
+    - **Servidor (`server/routes/caja.js`):** `armarDiaMoto(ordenes, pagado)` = la ÚNICA cuenta
+      del día de un moto (resumen por estado, pedidos y totales con `calcularOrdenCaja`,
+      `liquidado`). **Un período no tiene cuenta propia: es la suma de sus días**
+      (`ordenesMotosPeriodo` trae las órdenes con su día, `diasPorMoto` arma cada día con
+      `armarDiaMoto`, `sumarDiasMoto` suma en céntimos y cuenta días liquidados). Rutas:
+      `GET /caja/motorizados/gestion?desde=&hasta=` (o `?fecha=`; sin fechas = todo) = la lista;
+      `GET /caja/motorizados/:id/dias?hasta=` (últimos 7 días con órdenes hasta ese día) o
+      `?desde=&hasta=` (un período) = el historial del detalle; `GET /caja/motorizados/:id/reporte`
+      ya **no** es solo admin (admin y operador, por el `requireRol` del router); `/reporte/subida`
+      sigue solo admin. `GET /motorizados/:id/ordenes` acepta también `desde` + `hasta`.
     - **Frontend:** `pages/gestion-motos.html` + `js/gestion-motos.js` (`initGestionMotos`; script
       después de `clientes.js`), menú `#nav-gestion-motos` debajo de Clientes / Tiendas, oculto y
-      con `showPage` redirigido para quien no es admin / operador (`js/navigation.js`). Filtro de un
-      día (Hoy / Ayer / fecha; vacío = hoy). Lista `#tabla-gestion-motos` (órdenes, entregados, no
-      entregados, ausentes, efectivo, Yape, su pago, deuda, Liquidado / Pendiente, fila TOTALES en
-      céntimos), refresco de 8 s sin repintar si nada cambió; en el celular, el mismo tratamiento
-      del cambio anterior (`css/responsive.css`). Detalle en la misma página con "← Volver": los
-      números salen del JSON del reporte (la pantalla y la imagen no pueden dar distinto), aviso si
-      el día está liquidado ("difiere" si cambió), botones `botonesReporteMotoHTML` (los mismos de
-      Caja → Motorizados: misma URL, mismo archivo; solo admin) y la tabla de órdenes del panel
-      (`_renderTablaOrdenesDetalle` con Actualizar y Reasignar, `o.caja` del motor). El detalle no
-      se refresca solo (consultaría R2): se repinta al guardar (`_refrescarTrasGuardarOrden` →
-      `refrescarGestionMotos`) y con `velox:reasignaciones`.
+      con `showPage` redirigido para quien no es admin / operador (`js/navigation.js`).
+      **Igual que Clientes / Tiendas (cambio 5b):** filtros Hoy / Ayer / Por semana / Semana pasada
+      / Por mes / Mes pasado / desde-hasta / Ver todos (semana y mes con los mismos
+      `_rango…Cli` de Clientes), chips por moto con un período, Exportar (CSV con `;` y BOM de lo
+      que se ve). Lista `#tabla-gestion-motos`: Motorizado, Teléfono (link a WhatsApp), **WA**,
+      órdenes, entregados, no entregados, ausentes, efectivo, Yape, su pago, deuda, Liquidado (un
+      día: Liquidado / Pendiente; período: "x de n días"), Ver detalle y fila TOTALES; refresco de
+      8 s sin repintar si nada cambió; en el celular, Motorizado fijo (`css/responsive.css`).
+    - **WhatsApp (`enviarReporteMotoWA`):** al teléfono del moto, con SU reporte en imagen (el de
+      Caja → Motorizados): mensaje con el link + efectivo, Yape, entrega, su pago y neto (de
+      `armarDiaMoto`). Si ese día todavía no tiene imagen, **la genera antes** (solo admin;
+      `_repGenerarYSubir` de `js/reporte-tienda.js`, que ahora comparte con el botón "Generar
+      reporte"); el **operador** manda la que ya existe y, si no hay, avisa "lo tiene que generar
+      un admin" (no puede subir imágenes, como en la Caja). La pestaña de WhatsApp se abre con el
+      toque (`window.open('')`) y después se le pone la URL: abrirla después de esperar al servidor
+      la bloquea el celular. Solo con UN día elegido (con un período, el botón sale apagado).
+      **Ojo, distinto de tiendas:** el WhatsApp de Clientes / Tiendas manda un **texto** armado en
+      el navegador con la regla vieja, no la imagen, y no genera nada.
+    - **"Enviado":** igual que tiendas, en **este navegador** (`localStorage` `velox_wa_motos`, sin
+      tabla ni migración): no lo ve otro gestor ni otro teléfono. Va por moto **y día del
+      reporte** (`id|fecha`, se guardan 60 días), se marca al mandar, se ve en la lista (columna
+      WA), en el botón del día del detalle y en su pestaña. Tiendas no tiene desmarcar: acá
+      tampoco.
+    - **Detalle** (misma página, "← Volver"): pestañas con los últimos 7 días con órdenes hasta el
+      día elegido (como el de una tienda; si ese día no tuvo, lo avisa), cada una con liquidado,
+      "Generar reporte dd/mm" (`botonesReporteMotoHTML`, mismo archivo que la Caja; solo admin),
+      "Enviar reporte dd/mm" con su marca, cuadros, resumen y la tabla de órdenes del panel
+      (`_renderTablaOrdenesDetalle` con Actualizar y Reasignar). Filtro de período del detalle
+      (semana / mes / desde-hasta, "Últimos 7 días" vuelve a las pestañas): vista agrupada con la
+      suma de los días y las órdenes del período, sin reporte ni WhatsApp (son de un día). Desde la
+      lista: un día → sus pestañas; un período → ese período agrupado (cuadra con la fila). El
+      detalle no se refresca solo (consultaría R2): se repinta al guardar
+      (`_refrescarTrasGuardarOrden` → `refrescarGestionMotos`) y con `velox:reasignaciones`.
     - **Diferencia a propósito:** en un día **ya liquidado** la Caja muestra el saldo guardado y
       esta página el de ahora (con el aviso "difiere"). En un día sin liquidar dan idéntico.
     - **Probado el 19/11** (servidor en el 3001; datos TST GM y operador / visor de prueba,
@@ -115,6 +141,15 @@ Velox Courier — internal management system for a courier/delivery company in L
       tarjeta → página nueva en ese moto, operador sin botones del reporte, ALEX con Motorizados
       como siempre y sin el menú nuevo, visor sin menú y redirigido. **No se generó ninguna imagen**
       (el bucket de R2 es el real).
+    - **Probado el 19/11, cambio 5b** (TST GM con días anteriores; borrados): 50 de 50 por día y
+      172 de 172 por período (16–19/11, noviembre, octubre, sep–nov y "Ver todos") contra Caja →
+      Motorizados, con lista = suma del historial y cada día del historial = su reporte. Permisos
+      12 de 12 (`/dias`: operador sí, visor y moto 403). A 375 px: filtros, chips, Exportar, WA
+      apagado con período, pestañas 19 ✓ / 18 / 16 con sus números y su reporte, período agrupado
+      = suma de los 3 días. WhatsApp con la subida a R2 y `window.open` reemplazados **solo en la
+      prueba**: admin sin imagen → la genera y manda link + montos al 51…; con imagen → usa la que
+      hay; operador sin imagen → no genera, avisa, cierra la pestaña y no marca; la marca sobrevive
+      al refresco. Falta probar con el celular real que WhatsApp abra (y una generación real).
 
 - **Aviso "ALEX agregó una observación" para los gestores + botón ✓ (18 de noviembre de 2026, commit
   `48270a4`, probado por el usuario; D-023; HECHO en producción el 18/11). Migración

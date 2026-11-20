@@ -359,23 +359,22 @@ function _repCanvasABlob(canvas) {
 
 var _repGenerando = false;
 
-window.generarReporteTienda = async function(btn) {
-  var cont = btn && btn.closest('.reporte-tienda');
-  if (!cont || _repGenerando) return;
-  var cfg = _REP_TIPOS[cont.getAttribute('data-tipo')];
-  var base = _repRutaBase(cont);
-  if (!cfg || !base) return;
-  var fecha = cont.getAttribute('data-fecha');
-  var htmlBtn = btn.innerHTML;
-  _repGenerando = true;
-  btn.disabled = true;
-  btn.innerHTML = '<i class="ti ti-loader"></i> Generando...';
-
+/* Arma la imagen del día y la sube a R2 (siempre el mismo archivo para
+   ese tipo, id y día). La usan el botón "Generar reporte" y el WhatsApp
+   de "Gestión / Motorizado" (que la genera si todavía no existe).
+   datos: el JSON de /reporte si ya se trajo (si no, lo pide).
+   → { url, generadoEn }. Tira Error con un mensaje para mostrar. */
+async function _repGenerarYSubir(tipo, idQuien, fecha, datos) {
+  var cfg = _REP_TIPOS[tipo];
+  if (!cfg) throw new Error('Tipo de reporte desconocido');
+  var base = API + cfg.api + idQuien;
   var blob = null;
   try {
-    var r = await fetch(base + '/reporte?fecha=' + fecha);
-    var datos = await r.json().catch(function() { return {}; });
-    if (!r.ok) throw new Error(datos.error || 'No se pudieron traer los datos del día');
+    if (!datos) {
+      var r = await fetch(base + '/reporte?fecha=' + fecha);
+      datos = await r.json().catch(function() { return {}; });
+      if (!r.ok) throw new Error(datos.error || 'No se pudieron traer los datos del día');
+    }
 
     var ahora = new Date();
     blob = await _repCanvasABlob(cfg.dibujar(datos, ahora));
@@ -390,14 +389,41 @@ window.generarReporteTienda = async function(btn) {
 
     var put = await fetch(subida.uploadUrl, { method: 'PUT', headers: subida.headers, body: blob, credentials: 'omit' });
     if (!put.ok) throw new Error('R2 rechazó la imagen (HTTP ' + put.status + ')');
+    return { url: subida.publicUrl, generadoEn: ahora.toISOString() };
+  } catch (err) {
+    /* Un PUT bloqueado por CORS llega como TypeError sin status */
+    if (err instanceof TypeError && blob) {
+      throw new Error('No se pudo subir la imagen a R2 (revisá que el CORS del bucket permita cache-control)');
+    }
+    throw err;
+  }
+}
 
-    _repMostrarUrl(cont, subida.publicUrl, ahora.toISOString());
+/* Si hay botones de ese reporte pintados en la pantalla, que muestren
+   la URL nueva (p. ej. después de generarlo desde el WhatsApp) */
+function _repAvisarGenerado(tipo, idQuien, fecha, url, generadoEn) {
+  var cont = document.getElementById('rep-' + tipo + '-' + idQuien + '-' + fecha);
+  if (cont) _repMostrarUrl(cont, url, generadoEn);
+}
+
+window.generarReporteTienda = async function(btn) {
+  var cont = btn && btn.closest('.reporte-tienda');
+  if (!cont || _repGenerando) return;
+  var tipo = cont.getAttribute('data-tipo');
+  if (!_REP_TIPOS[tipo] || !_repRutaBase(cont)) return;
+  var fecha = cont.getAttribute('data-fecha');
+  var htmlBtn = btn.innerHTML;
+  _repGenerando = true;
+  btn.disabled = true;
+  btn.innerHTML = '<i class="ti ti-loader"></i> Generando...';
+
+  try {
+    var hecho = await _repGenerarYSubir(tipo, cont.getAttribute('data-id'), fecha);
+    _repMostrarUrl(cont, hecho.url, hecho.generadoEn);
     if (typeof showNotif === 'function') showNotif('Reporte listo: copiá la URL con "Copiar"', 3500);
   } catch (err) {
     console.error('Reporte de tienda:', err);
     var msg = err && err.message ? err.message : 'Error';
-    /* Un PUT bloqueado por CORS llega como TypeError sin status */
-    if (err instanceof TypeError && blob) msg = 'No se pudo subir la imagen a R2 (revisá que el CORS del bucket permita cache-control)';
     if (typeof showNotif === 'function') showNotif('No se generó el reporte: ' + msg, 7000);
   } finally {
     _repGenerando = false;

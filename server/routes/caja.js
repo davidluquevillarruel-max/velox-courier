@@ -371,27 +371,6 @@ async function leerMotoYFecha(req, res, pool, fechaCruda) {
   return { idMoto, fecha, motorizado: m.recordset[0].nombre };
 }
 
-/* Las órdenes de un día de reparto (sin anuladas), de un moto o de
-   todos. Las usan el reporte y "Gestión / Motorizado". */
-async function ordenesDiaMotos(pool, fecha, idMoto) {
-  const request = pool.request().input('fecha', sql.Date, fecha);
-  let fMoto = 'AND o.id_motorizado IS NOT NULL';
-  if (idMoto) {
-    request.input('id_motorizado', sql.Int, idMoto);
-    fMoto = 'AND o.id_motorizado = @id_motorizado';
-  }
-  const r = await request.query(`
-    SELECT o.id, o.codigo, o.estado, o.metodo_pago, o.medio_pago, o.pago_velox, o.pago_velox_metodo,
-           o.delivery_total, o.pago_moto_total, o.monto_cobrado, o.id_motorizado,
-           o.dest_nombre, d.nombre AS distrito, t.nombre AS tienda
-    FROM ordenes o
-    LEFT JOIN distritos d ON d.id = o.id_distrito
-    LEFT JOIN tiendas t ON t.id = o.id_tienda
-    WHERE o.fecha_reparto = @fecha ${fMoto} AND o.estado <> '${ESTADO_ANULADO}'
-    ORDER BY o.id`);
-  return r.recordset;
-}
-
 /* El día de UN moto: pedidos, resumen por estado y totales, todo con
    calcularOrdenCaja(). ÚNICA cuenta del día de un moto: la usan el
    reporte en imagen (detalle de "Gestión / Motorizado") y la lista de
@@ -435,40 +414,145 @@ function armarDiaMoto(ordenes, pagado) {
   };
 }
 
-/* GET /api/caja/motorizados/gestion?fecha=YYYY-MM-DD
-   "Gestión / Motorizado": cada moto con órdenes ese día, con su
-   resumen y sus totales (armarDiaMoto, la misma cuenta del reporte).
+/* ── Varios días ("Gestión / Motorizado") ──
+   Un período NO tiene cuenta propia: es la suma de sus días, y cada día
+   sale de armarDiaMoto (lo mismo que el reporte de ese día y que la
+   Caja). Así un período también cuadra con Caja → Motorizados. */
+
+/* Órdenes de un período (sin anuladas), con su día de reparto (o.dia).
+   Sin desde ni hasta: todas. Solo desde: ese día. */
+async function ordenesMotosPeriodo(pool, { desde, hasta, idMoto } = {}) {
+  const request = pool.request();
+  const fFecha = filtroFecha(request, desde, hasta);
+  let fMoto = 'AND o.id_motorizado IS NOT NULL';
+  if (idMoto) {
+    request.input('id_motorizado', sql.Int, idMoto);
+    fMoto = 'AND o.id_motorizado = @id_motorizado';
+  }
+  const r = await request.query(`
+    SELECT o.id, o.codigo, o.estado, o.metodo_pago, o.medio_pago, o.pago_velox, o.pago_velox_metodo,
+           o.delivery_total, o.pago_moto_total, o.monto_cobrado, o.id_motorizado,
+           o.dest_nombre, d.nombre AS distrito, t.nombre AS tienda,
+           CONVERT(varchar, o.fecha_reparto, 23) AS dia
+    FROM ordenes o
+    LEFT JOIN distritos d ON d.id = o.id_distrito
+    LEFT JOIN tiendas t ON t.id = o.id_tienda
+    WHERE o.estado <> '${ESTADO_ANULADO}' ${fFecha} ${fMoto}
+    ORDER BY o.id`);
+  return r.recordset;
+}
+
+/* Agrupa por moto y por día, y arma cada día con armarDiaMoto.
+   → Map idMoto → [{ fecha, resumen, totales, liquidado }] (día más nuevo primero) */
+function diasPorMoto(ordenes, pagados) {
+  const pagadoDe = new Map(pagados.map(p => [`${p.id_motorizado}|${p.fecha}`, p]));
+  const grupos = new Map();
+  for (const o of ordenes) {
+    const k = `${o.id_motorizado}|${o.dia}`;
+    if (!grupos.has(k)) grupos.set(k, []);
+    grupos.get(k).push(o);
+  }
+  const porMoto = new Map();
+  for (const [k, ords] of grupos) {
+    const [idMoto, fecha] = k.split('|');
+    const dia = armarDiaMoto(ords, pagadoDe.get(k));
+    const id = Number(idMoto);
+    if (!porMoto.has(id)) porMoto.set(id, []);
+    porMoto.get(id).push({ fecha, resumen: dia.resumen, totales: dia.totales, liquidado: dia.liquidado });
+  }
+  for (const dias of porMoto.values()) dias.sort((a, b) => (a.fecha < b.fecha ? 1 : -1));
+  return porMoto;
+}
+
+/* Suma de días (en céntimos). liquidado: cuántos de esos días ya se
+   pagaron y si alguno difiere de lo pagado. */
+function sumarDiasMoto(dias) {
+  const resumen = {};
+  const cent = { efectivo: 0, yape: 0, a_entregar: 0, pago_moto: 0, neto: 0 };
+  let liquidados = 0, difiere = false;
+  for (const d of dias) {
+    for (const [k, v] of Object.entries(d.resumen)) resumen[k] = (resumen[k] || 0) + v;
+    for (const k of Object.keys(cent)) cent[k] += aCentimos(d.totales[k]);
+    if (d.liquidado) { liquidados++; if (d.liquidado.difiere) difiere = true; }
+  }
+  const totales = {};
+  for (const k of Object.keys(cent)) totales[k] = aSoles(cent[k]);
+  return { resumen, totales, dias: dias.length, dias_liquidados: liquidados, difiere };
+}
+
+function leerPeriodo(q) {
+  /* "fecha" = un solo día (la primera versión de la página) */
+  const desde = FECHA_RE.test(q.desde || q.fecha || '') ? (q.desde || q.fecha) : '';
+  const hasta = FECHA_RE.test(q.hasta || '') ? q.hasta : (q.fecha ? q.fecha : '');
+  return { desde, hasta };
+}
+
+/* GET /api/caja/motorizados/gestion?desde=&hasta=   (o ?fecha=)
+   "Gestión / Motorizado": cada moto con órdenes en el período, con la
+   suma de sus días (cada día = armarDiaMoto). Sin fechas: todo.
    Admin y operador. */
 router.get('/motorizados/gestion', async (req, res) => {
   try {
-    const fecha = FECHA_RE.test(req.query.fecha || '') ? req.query.fecha : '';
-    if (!fecha) return res.status(400).json({ error: 'Fecha no válida (YYYY-MM-DD)' });
+    const { desde, hasta } = leerPeriodo(req.query);
     const pool = await getPool();
     const [ordenes, pagados, motos] = await Promise.all([
-      ordenesDiaMotos(pool, fecha),
-      diasPagadosMoto(pool, { desde: fecha }),
+      ordenesMotosPeriodo(pool, { desde, hasta }),
+      diasPagadosMoto(pool, { desde, hasta }),
       pool.request().query('SELECT id, nombre, iniciales, color_avatar, telefono, activo FROM motorizados'),
     ]);
-    const porMoto = new Map();
-    for (const o of ordenes) {
-      if (!porMoto.has(o.id_motorizado)) porMoto.set(o.id_motorizado, []);
-      porMoto.get(o.id_motorizado).push(o);
-    }
-    const pagadoDe = new Map(pagados.map(p => [p.id_motorizado, p]));
+    const porMoto = diasPorMoto(ordenes, pagados);
     const datosMoto = new Map(motos.recordset.map(m => [m.id, m]));
-    const lista = [...porMoto.entries()].map(([idMoto, ords]) => {
+    const lista = [...porMoto.entries()].map(([idMoto, dias]) => {
       const m = datosMoto.get(idMoto) || {};
-      const dia = armarDiaMoto(ords, pagadoDe.get(idMoto));
+      const suma = sumarDiasMoto(dias);
       return {
         id: idMoto, nombre: m.nombre || '—', iniciales: m.iniciales || '', color_avatar: m.color_avatar || 'av-blue',
         telefono: m.telefono || '', activo: !!m.activo,
-        resumen: dia.resumen, totales: dia.totales, liquidado: dia.liquidado,
+        resumen: suma.resumen, totales: suma.totales,
+        dias: suma.dias, dias_liquidados: suma.dias_liquidados, difiere: suma.difiere,
+        /* Un solo día: el mismo objeto que el reporte (para la marca "Liquidado") */
+        liquidado: dias.length === 1 ? dias[0].liquidado : null,
       };
     }).sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'));
-    res.json({ fecha, motorizados: lista });
+    res.json({ desde, hasta, fecha: desde && desde === (hasta || desde) ? desde : '', motorizados: lista });
   } catch (err) {
     console.error('GET /caja/motorizados/gestion:', err.message);
     res.status(500).json({ error: 'Error al armar la gestión de los motorizados' });
+  }
+});
+
+/* GET /api/caja/motorizados/:id/dias?hasta=&desde=
+   Historial por día de un moto (detalle de "Gestión / Motorizado"):
+   · con desde y hasta: todos los días con órdenes de ese período;
+   · sin desde: los últimos 7 días con órdenes hasta "hasta" (hoy si
+     no viene), como las pestañas del detalle de una tienda.
+   Cada día = armarDiaMoto; "periodo" = su suma. */
+router.get('/motorizados/:id/dias', async (req, res) => {
+  try {
+    const idMoto = parseInt(req.params.id, 10);
+    if (!idMoto) return res.status(400).json({ error: 'Motorizado no válido' });
+    const hasta = FECHA_RE.test(req.query.hasta || '') ? req.query.hasta : hoyEnLima();
+    let desde = FECHA_RE.test(req.query.desde || '') ? req.query.desde : '';
+    const pool = await getPool();
+    if (!desde) {
+      const r = await pool.request().input('id', sql.Int, idMoto).input('hasta', sql.Date, hasta).query(`
+        SELECT CONVERT(varchar, MIN(dia), 23) AS desde FROM (
+          SELECT DISTINCT TOP 7 o.fecha_reparto AS dia FROM ordenes o
+          WHERE o.id_motorizado = @id AND o.fecha_reparto <= @hasta AND o.estado <> '${ESTADO_ANULADO}'
+          ORDER BY o.fecha_reparto DESC) x`);
+      const d = r.recordset[0] && r.recordset[0].desde;
+      if (!d) return res.json({ desde: '', hasta, dias: [], periodo: sumarDiasMoto([]) });
+      desde = d;
+    }
+    const [ordenes, pagados] = await Promise.all([
+      ordenesMotosPeriodo(pool, { desde, hasta, idMoto }),
+      diasPagadosMoto(pool, { desde, hasta, idMotorizado: idMoto }),
+    ]);
+    const dias = diasPorMoto(ordenes, pagados).get(idMoto) || [];
+    res.json({ desde, hasta, dias, periodo: sumarDiasMoto(dias) });
+  } catch (err) {
+    console.error('GET /caja/motorizados/:id/dias:', err.message);
+    res.status(500).json({ error: 'Error al armar el historial del motorizado' });
   }
 });
 
@@ -483,7 +567,7 @@ router.get('/motorizados/:id/reporte', async (req, res) => {
     const { idMoto, fecha, motorizado } = base;
 
     const [ordenes, pagados] = await Promise.all([
-      ordenesDiaMotos(pool, fecha, idMoto),
+      ordenesMotosPeriodo(pool, { desde: fecha, idMoto }),
       diasPagadosMoto(pool, { desde: fecha, idMotorizado: idMoto }),
     ]);
     const dia = armarDiaMoto(ordenes, pagados[0]);

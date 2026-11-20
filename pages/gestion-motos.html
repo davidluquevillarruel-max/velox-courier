@@ -1,43 +1,59 @@
 <!-- ============================================================
      pages/gestion-motos.html — Gestión / Motorizado
      "Qué hicieron y cuánto": la gemela de Clientes / Tiendas para
-     los motorizados. La página Motorizados queda para "quiénes son"
-     (alta, edición, accesos). Lógica en js/gestion-motos.js.
-     Toda la plata sale de caja-motor.js (calcularOrdenCaja), la misma
-     cuenta que Caja → Motorizados y que el reporte en imagen.
-     Admin y operador; generar el reporte, solo admin.
+     los motorizados (mismos filtros, WhatsApp con su marca de enviado,
+     detalle con historial por día). La página Motorizados queda para
+     "quiénes son" (alta, edición, accesos). Lógica en js/gestion-motos.js.
+     Toda la plata sale de caja-motor.js (calcularOrdenCaja): cada día con
+     armarDiaMoto (server/routes/caja.js), la misma cuenta que Caja →
+     Motorizados y que el reporte en imagen; un período es la suma de
+     sus días. Admin y operador; generar el reporte, solo admin.
      ============================================================ -->
 
 <div class="page-title">Gestión / Motorizado</div>
-<div class="page-sub">Lo que hizo cada motorizado en el día: órdenes, lo que cobró, su pago y su deuda</div>
+<div class="page-sub">Lo que hizo cada motorizado: órdenes, lo que cobró, su pago y su deuda</div>
 
 <!-- ── Vista lista ── -->
 <div id="gm-vista-lista">
-  <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:16px">
-    <span style="font-size:13px;color:var(--color-text-secondary)">Día:</span>
-    <button class="btn btn-sm" id="btn-hoy-gm" onclick="filtroRapidoGestionMotos('hoy')">Hoy</button>
-    <button class="btn btn-sm" id="btn-ayer-gm" onclick="filtroRapidoGestionMotos('ayer')">Ayer</button>
-    <div class="date-filter-wrap">
-      <i class="ti ti-calendar"></i>
-      <input type="date" id="filtro-fecha-gm" onchange="aplicarFiltroGestionMotos()" />
-    </div>
-    <span style="font-size:12px;color:var(--color-text-tertiary)" id="lbl-fecha-gm"></span>
-  </div>
-
   <div class="card">
     <div class="card-head">
-      <span class="card-title">Gestión del día por motorizado</span>
+      <span class="card-title">Gestión por motorizado</span>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-sm" id="btn-hoy-gm" onclick="filtroRapidoGestionMotos('hoy')">Hoy</button>
+        <button class="btn btn-sm" id="btn-ayer-gm" onclick="filtroRapidoGestionMotos('ayer')">Ayer</button>
+        <button class="btn btn-sm" id="btn-semana-gm" onclick="filtroRapidoGestionMotos('semana')">Por semana</button>
+        <button class="btn btn-sm" id="btn-semana-pasada-gm" onclick="filtroRapidoGestionMotos('semana-pasada')">Semana pasada</button>
+        <button class="btn btn-sm" id="btn-mes-gm" onclick="filtroRapidoGestionMotos('mes')">Por mes</button>
+        <button class="btn btn-sm" id="btn-mes-pasado-gm" onclick="filtroRapidoGestionMotos('mes-pasado')">Mes pasado</button>
+        <div class="date-filter-wrap">
+          <i class="ti ti-calendar"></i>
+          <input type="date" id="filtro-fecha-gm-desde" onchange="aplicarFiltroGestionMotos()" />
+        </div>
+        <span style="font-size:12px;color:var(--color-text-secondary)">hasta</span>
+        <div class="date-filter-wrap">
+          <i class="ti ti-calendar"></i>
+          <input type="date" id="filtro-fecha-gm-hasta" onchange="aplicarFiltroGestionMotos()" />
+        </div>
+        <button class="btn btn-sm" onclick="limpiarFiltroGestionMotos()">
+          <i class="ti ti-adjustments-horizontal"></i> Ver todos
+        </button>
+        <span style="font-size:12px;color:var(--color-text-tertiary)" id="lbl-fecha-gm"></span>
+        <button class="btn btn-sm" onclick="exportarGestionMotos()">
+          <i class="ti ti-download"></i> Exportar
+        </button>
+      </div>
     </div>
+    <!-- Chips por moto (con un período elegido, como las tiendas en Clientes) -->
+    <div id="gm-chips"></div>
     <!-- En el celular: aviso y barra, Motorizado fijo a la izquierda y lo
-         demás se desliza (mismo tratamiento que la tabla del cambio del
-         19/11 en css/responsive.css) -->
-    <div class="tabla-moto-aviso"><i class="ti ti-arrows-horizontal"></i> Desliza la tabla a los lados para ver todas las columnas</div>
+         demás se desliza (css/responsive.css) -->
+    <div class="tabla-moto-aviso" style="padding:0 16px"><i class="ti ti-arrows-horizontal"></i> Desliza la tabla a los lados para ver todas las columnas</div>
     <div class="table-wrap tabla-moto-wrap">
       <table id="tabla-gestion-motos">
         <thead>
           <tr>
-            <th>Motorizado</th><th>Órdenes</th><th>Entregados</th><th>No entregados</th><th>Ausentes</th>
-            <th>Efectivo</th><th>Yape</th><th>Su pago</th><th>Deuda moto</th><th>Día</th><th></th>
+            <th>Motorizado</th><th>Teléfono</th><th>WA</th><th>Órdenes</th><th>Entregados</th><th>No entregados</th>
+            <th>Ausentes</th><th>Efectivo</th><th>Yape</th><th>Su pago</th><th>Deuda moto</th><th>Liquidado</th><th></th>
           </tr>
         </thead>
         <tbody id="tbody-gestion-motos"></tbody>

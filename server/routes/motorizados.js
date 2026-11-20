@@ -194,13 +194,21 @@ router.get('/:id/ordenes', async (req, res) => {
       JOIN distritos d ON d.id = o.id_distrito
       WHERE o.id_motorizado = @id AND o.estado <> 'anulado'
     `;
-    if (fecha) query += ` AND o.fecha_reparto = @fecha`;
+    /* Un período (desde + hasta, la vista agrupada del detalle de
+       "Gestión / Motorizado"); si no, un día ("fecha") o todo */
+    const FECHA_OK = /^\d{4}-\d{2}-\d{2}$/;
+    const desde = FECHA_OK.test(req.query.desde || '') ? req.query.desde : '';
+    const hasta = FECHA_OK.test(req.query.hasta || '') ? req.query.hasta : '';
+    const porRango = !!(desde && hasta);
+    if (porRango) query += ` AND o.fecha_reparto BETWEEN @desde AND @hasta`;
+    else if (fecha) query += ` AND o.fecha_reparto = @fecha`;
     /* Por día (el más reciente arriba) y, dentro del día, la última
        asignada arriba (asignada_en, hora de Lima). Las que no tienen
        hora (anteriores a la columna) van al final del día, por id. */
     query += ` ORDER BY o.fecha_reparto DESC, o.asignada_en DESC, o.id DESC`;
     const request = pool.request().input('id', sql.Int, req.params.id);
-    if (fecha) request.input('fecha', sql.Date, fecha);
+    if (porRango) request.input('desde', sql.Date, desde).input('hasta', sql.Date, hasta);
+    else if (fecha) request.input('fecha', sql.Date, fecha);
     const result = await request.query(query);
     /* La plata de cada orden sale del motor de la Caja (calcularOrdenCaja),
        la misma cuenta que Caja → Motorizados. Antes el navegador tomaba el

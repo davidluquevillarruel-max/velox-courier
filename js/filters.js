@@ -24,6 +24,11 @@
  * @param {string} [cfg.idCondicion]  - checkbox "con condición especial"
  * @param {string} [cfg.idPendiente]  - checkbox "pendientes de devolución"
  * @param {string} [cfg.idSubestado]  - select de sub-estado
+ * @param {string} [cfg.idSinAsignar] - chip "Sin asignar" (activo =
+ *        aria-pressed="true"); mira el data-sin-asignar de cada fila
+ * @param {string} [cfg.idCuentaSinAsignar] - dónde va la cuenta del
+ *        chip: las sin asignar que pasan TODOS los demás filtros (lo que
+ *        se vería al prenderlo)
  */
 function filtrarTablaOrdenes(cfg) {
   var val = function(id) { var el = document.getElementById(id); return el ? el.value : ''; };
@@ -36,6 +41,9 @@ function filtrarTablaOrdenes(cfg) {
   var subestado  = cfg.idSubestado ? val(cfg.idSubestado) : '';
   var soloCondicion  = cfg.idCondicion ? chk(cfg.idCondicion) : false;
   var soloPendientes = cfg.idPendiente ? chk(cfg.idPendiente) : false;
+  var chipSinAsignar = cfg.idSinAsignar ? document.getElementById(cfg.idSinAsignar) : null;
+  var soloSinAsignar = !!chipSinAsignar && chipSinAsignar.getAttribute('aria-pressed') === 'true';
+  var cuentaSinAsignar = 0;
 
   var cols = cfg.cols || {};
   var rows = document.querySelectorAll('#' + cfg.tableId + ' tbody tr');
@@ -61,8 +69,26 @@ function filtrarTablaOrdenes(cfg) {
       checks.push(!subestado || celdas[cols.subestado].textContent.trim() === etiqueta);
     }
 
-    row.style.display = checks.indexOf(false) === -1 ? '' : 'none';
+    var pasaLosDemas = checks.indexOf(false) === -1;
+    var esSinAsignar = row.getAttribute('data-sin-asignar') === '1';
+    if (pasaLosDemas && esSinAsignar) cuentaSinAsignar++;
+
+    row.style.display = pasaLosDemas && (!soloSinAsignar || esSinAsignar) ? '' : 'none';
   });
+
+  if (chipSinAsignar) chipSinAsignar.classList.toggle('active', soloSinAsignar);
+  if (cfg.idCuentaSinAsignar) {
+    var elCuenta = document.getElementById(cfg.idCuentaSinAsignar);
+    if (elCuenta) elCuenta.textContent = cuentaSinAsignar;
+  }
+}
+
+/* Chip "Sin asignar" de "Todos los pedidos": prende / apaga */
+function alternarFiltroSinAsignar() {
+  var chip = document.getElementById('f-filtro-sin-asignar');
+  if (!chip) return;
+  chip.setAttribute('aria-pressed', chip.getAttribute('aria-pressed') === 'true' ? 'false' : 'true');
+  filtrarTablaPedidos();
 }
 
 /* "Todos los pedidos" — la tabla con más columnas y filtros */
@@ -78,6 +104,8 @@ function filtrarTablaPedidos() {
     idCondicion: 'f-filtro-condicion-especial',
     idPendiente: 'f-filtro-pendiente-devolucion',
     idSubestado: 'f-filtro-subestado-pedidos',
+    idSinAsignar: 'f-filtro-sin-asignar',
+    idCuentaSinAsignar: 'lbl-total-sin-asignar',
   });
 }
 

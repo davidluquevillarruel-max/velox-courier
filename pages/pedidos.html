@@ -169,6 +169,13 @@
         <option value="Anulado">Anulado</option>
       </select>
 
+      <!-- Filtro: solo las que no tienen motorizado (sin anuladas). Chip:
+           tocar lo prende y lo apaga; la cuenta respeta los otros filtros -->
+      <button type="button" id="f-filtro-sin-asignar" class="chip-tienda" aria-pressed="false"
+              onclick="alternarFiltroSinAsignar()" style="white-space:nowrap">
+        Sin asignar (<span id="lbl-total-sin-asignar">0</span>)
+      </button>
+
       <!-- Filtro: pendientes de confirmar devolución -->
       <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--color-text-secondary);white-space:nowrap;cursor:pointer">
         <input type="checkbox" id="f-filtro-pendiente-devolucion" onchange="filtrarTablaPedidos()" />

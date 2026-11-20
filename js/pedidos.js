@@ -198,8 +198,11 @@ function _filaOrdenPedido(o) {
     : o.tienda + especial;
 
   /* data-id: lo usa "Descargar Excel/CSV" (js/exportar-pedidos.js)
-     para saber qué órdenes están visibles con los filtros */
-  return '<tr data-id="' + o.id + '">' +
+     para saber qué órdenes están visibles con los filtros.
+     data-sin-asignar: el chip "Sin asignar" (js/filters.js); las
+     anuladas no cuentan aunque no tengan motorizado. */
+  var sinAsignar = !o.motorizado && o.estado !== 'anulado';
+  return '<tr data-id="' + o.id + '"' + (sinAsignar ? ' data-sin-asignar="1"' : '') + '>' +
     '<td><strong>#' + o.codigo + '</strong>' + _iconoFotoProducto(o.foto_producto_url) + _iconoEvidenciaPendiente(o) + '</td>' +
     '<td>' + tiendaHTML + '</td>' +
     '<td>' + (o.dest_nombre || '—') + '</td>' +

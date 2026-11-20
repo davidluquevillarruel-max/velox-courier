@@ -49,7 +49,19 @@ Velox Courier — internal management system for a courier/delivery company in L
     `type=number` lo entrega como `''`) **no** se toma como 0: `validity.badInput` → "El monto por
     cobrar no es válido.". El servidor sigue igual: 0 = sin-cobro, > 0 = contraentrega. Probado a
     375 px: tocar + "85" = 85; 85 / 0 / vacío guardados = contraentrega 85 / sin-cobro 0 /
-    sin-cobro 0, sin datos pendientes.
+    sin-cobro 0, sin datos pendientes. Commit `b4dbf95`.
+  - **"Todos los pedidos": chip "Sin asignar (N)"** (`pages/pedidos.html`, `js/filters.js`,
+    `js/pedidos.js`, `js/exportar-pedidos.js`; sin servidor ni migración). Botón
+    `#f-filtro-sin-asignar` con el estilo `.chip-tienda` de Clientes (azul con `.active`), estado en
+    `aria-pressed`, `alternarFiltroSinAsignar()`. Cada fila lleva `data-sin-asignar="1"` si no tiene
+    motorizado y no está anulada (`_filaOrdenPedido`); `filtrarTablaOrdenes` lo combina con "Y" con
+    el resto (período, tienda, moto, estado, buscador, casillas) y la cuenta del chip son las sin
+    asignar que pasan **los demás** filtros (lo que se vería al prenderlo). Sobrevive al refresco de
+    8 s. **Los 4 indicadores de arriba NO cambian** con este filtro ni con ningún otro: cuentan todo
+    el período (decisión del usuario, 19/11). Excel / CSV: bajan solo las filas visibles (como
+    siempre) y el nombre lleva `sin-asignar`. Probado a 375 px con 4 órdenes TST-SA-* (2 sin moto,
+    1 con moto, 1 anulada sin moto; borradas): 29 = lo que da la base, las con moto y la anulada
+    fuera, + "Reprogramado" = 1, + "Anulado" = 0, prende / apaga, el total de arriba quieto.
 
 - **Aviso "ALEX agregó una observación" para los gestores + botón ✓ (18 de noviembre de 2026, commit
   `48270a4`, probado por el usuario; D-023; HECHO en producción el 18/11). Migración

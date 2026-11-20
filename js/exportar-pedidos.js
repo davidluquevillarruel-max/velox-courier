@@ -333,7 +333,8 @@ function _ordenesVisiblesPedidos() {
 }
 
 /* pedidos_<filtro>_<hoy>: la fecha que se ve (o "todos"), el estado
-   si hay uno elegido, y "filtrado" si hay otro filtro activo */
+   si hay uno elegido, "filtrado" si hay otro filtro activo y
+   "sin-asignar" con ese chip prendido */
 function _nombreArchivoPedidos(extension) {
   var val = function(id) { var el = document.getElementById(id); return el ? el.value.trim() : ''; };
   var chk = function(id) { var el = document.getElementById(id); return el ? el.checked : false; };
@@ -346,6 +347,11 @@ function _nombreArchivoPedidos(extension) {
   if (val('f-buscar-pedidos') || val('f-filtro-tienda-pedidos') || val('f-filtro-motorizado-pedidos') ||
       val('f-filtro-subestado-pedidos') || chk('f-filtro-pendiente-devolucion') || chk('f-filtro-condicion-especial')) {
     partes.push('filtrado');
+  }
+  /* El chip "Sin asignar" es un botón, no una casilla */
+  var chipSinAsignar = document.getElementById('f-filtro-sin-asignar');
+  if (chipSinAsignar && chipSinAsignar.getAttribute('aria-pressed') === 'true') {
+    partes.push('sin-asignar');
   }
   return 'pedidos_' + partes.join('_') + '_' + _hoy() + '.' + extension;
 }

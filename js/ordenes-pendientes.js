@@ -83,17 +83,33 @@ var _CAMPOS_PENDIENTES_FORM = {
     },
     body: 'distrito',
   },
-  /* Obligatorio, 0 vale (= sin cobro). El servidor pone el método de
-     pago (contraentrega / sin-cobro) y el valor del producto */
+  /* Viene con 0 (= sin cobro); vacío también se guarda como 0. El
+     servidor pone el método de pago (contraentrega si > 0, sin-cobro
+     si es 0) y el valor del producto. Al entrar se selecciona todo, así
+     el monto escrito reemplaza el 0 (no queda "085"): al soltar el dedo
+     o el mouse el navegador pone el cursor y deshace la selección, por
+     eso se frena ese primer mouseup (_selTodo) y se vuelve a
+     seleccionar en un setTimeout (iOS). */
   cobrado: {
     label: 'Por cobrar (S/) *',
+    ayuda: '0 si no se cobra',
     input: function(id) {
-      return '<input id="pend-cobrado-' + id + '" type="number" min="0" step="0.50" inputmode="decimal" class="search-box" style="' + _ESTILO_INPUT_PEND + '" placeholder="0 si no se cobra" ' +
+      return '<input id="pend-cobrado-' + id + '" type="number" min="0" step="0.50" inputmode="decimal" class="search-box" style="' + _ESTILO_INPUT_PEND + '" value="0" ' +
+        'onfocus="var e=this;e._selTodo=1;e.select();setTimeout(function(){try{e.select()}catch(x){}},0)" ' +
+        'onmouseup="if(this._selTodo){this._selTodo=0;event.preventDefault()}" ' +
+        'onblur="this._selTodo=0" ' +
         'onkeydown="if(event.key===\'Enter\')guardarPendiente(\'' + id + '\')" />';
     },
-    leer: function(id) { return _valorPend('pend-cobrado-' + id).trim(); },
+    leer: function(id) {
+      var el = document.getElementById('pend-cobrado-' + id);
+      if (!el) return '';
+      /* Algo que no es un número (ej. "12,50" en algunos teclados) llega
+         como '' en un type=number: no confundirlo con "vacío = 0" */
+      if (el.validity && el.validity.badInput) return 'no-es-numero';
+      return el.value.trim();
+    },
     validar: function(v) {
-      if (v === '') return { ok: false, msg: 'Escribí el monto por cobrar (0 si no se cobra).' };
+      if (v === '') v = '0';
       var n = Number(v);
       if (!isFinite(n) || n < 0) return { ok: false, msg: 'El monto por cobrar no es válido.' };
       return { ok: true, valor: Math.round(n * 100) / 100 };
@@ -303,7 +319,10 @@ function _filaPendienteHTML(o, subiendo) {
 
   var campos = _camposDeFila(o).map(function(c) {
     var def = _CAMPOS_PENDIENTES_FORM[c];
-    return '<div><label style="' + _ESTILO_LABEL_PEND + '">' + def.label + '</label>' + def.input(id) + '</div>';
+    var ayuda = def.ayuda
+      ? ' <span style="font-weight:400;color:var(--color-text-tertiary)">· ' + _escPend(def.ayuda) + '</span>'
+      : '';
+    return '<div><label style="' + _ESTILO_LABEL_PEND + '">' + def.label + ayuda + '</label>' + def.input(id) + '</div>';
   }).join('');
 
   return '<div id="pend-fila-' + id + '" data-pendiente="' + id + '" ' +

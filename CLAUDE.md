@@ -40,6 +40,16 @@ Velox Courier — internal management system for a courier/delivery company in L
     espera a la cola: si alguna todavía no se creó en el servidor, debajo, chico: "3 se terminan de
     crear en segundo plano". `_mostrarFinRafaga` la cierra sola a los 2 s o al tocarla; la lista
     ya se repintó detrás. Probado a 375 px (12 con 3 en camino, 1 en singular, tocar, 2 s).
+    Commit `4a09622`.
+  - **"Pendiente": "Por cobrar (S/)" viene con 0** (`js/ordenes-pendientes.js`, sin servidor ni
+    migración). `value="0"` (ya no es un placeholder) y "· 0 si no se cobra" como ayuda chica al
+    lado del título (`ayuda` opcional en `_CAMPOS_PENDIENTES_FORM`). Al entrar se selecciona todo:
+    `onfocus` hace `select()` y se frena el primer `mouseup` (`_selTodo`), si no el navegador pone
+    el cursor y queda "085". Vacío al guardar = 0. Algo que no es número (ej. "1-"; un
+    `type=number` lo entrega como `''`) **no** se toma como 0: `validity.badInput` → "El monto por
+    cobrar no es válido.". El servidor sigue igual: 0 = sin-cobro, > 0 = contraentrega. Probado a
+    375 px: tocar + "85" = 85; 85 / 0 / vacío guardados = contraentrega 85 / sin-cobro 0 /
+    sin-cobro 0, sin datos pendientes.
 
 - **Aviso "ALEX agregó una observación" para los gestores + botón ✓ (18 de noviembre de 2026, commit
   `48270a4`, probado por el usuario; D-023; HECHO en producción el 18/11). Migración
@@ -880,8 +890,8 @@ Velox Courier — internal management system for a courier/delivery company in L
   - **`CAMPOS_PENDIENTES` = destinatario, distrito, cobrado.** "Tienda distinta del comodín"
     es un chequeo **fijo** (`tieneTiendaReal`), fuera de la lista: las pendientes viejas con
     tienda `SIN DEFINIR` llegan con `falta_tienda` y solo esas filas muestran el buscador de
-    tienda. El cobrado es obligatorio en la ventana (0 vale); en la base no se puede
-    distinguir de "sin llenar", así que su chequeo es siempre verdadero.
+    tienda. El cobrado viene con 0 en la ventana y vacío se guarda como 0 (desde el 19/11);
+    en la base no se puede distinguir de "sin llenar", así que su chequeo es siempre verdadero.
   - **Al guardar la fila (`PATCH /:id/completar-datos`) el servidor completa (afecta la Caja):**
     delivery y pago al moto con la tarifa del distrito; método `contraentrega` si cobrado > 0
     o `sin-cobro` si es 0; valor del producto = cobrado − (delivery + adicional), mínimo 0.

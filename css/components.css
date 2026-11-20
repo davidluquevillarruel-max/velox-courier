@@ -76,6 +76,74 @@
   background: var(--color-amber-bg);
 }
 
+/* Confirmación al terminar la ráfaga: tienda + órdenes, se cierra sola */
+.rafaga-fin-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1400;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(0,0,0,0.55);
+  cursor: pointer;
+  animation: rafaga-fin-entra 0.18s ease-out;
+}
+
+.rafaga-fin-tarjeta {
+  width: 100%;
+  max-width: 360px;
+  padding: 28px 20px 24px;
+  background: var(--color-bg-primary);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  text-align: center;
+}
+
+.rafaga-fin-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 72px;
+  height: 72px;
+  margin-bottom: 14px;
+  border-radius: 50%;
+  background: var(--color-green-bg);
+  color: var(--color-green);
+  font-size: 44px;
+}
+
+.rafaga-fin-tienda {
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--color-text-primary);
+  text-transform: uppercase;
+  overflow-wrap: anywhere;
+}
+
+.rafaga-fin-ordenes {
+  margin-top: 8px;
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--color-green-text);
+}
+
+.rafaga-fin-detalle {
+  margin-top: 6px;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+.rafaga-fin-detalle:empty {
+  display: none;
+}
+
+@keyframes rafaga-fin-entra {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
 /* "Pendiente" (al lado del ⚡): ámbar si hay órdenes por completar,
    gris y sin clic si no queda ninguna */
 .btn-pendientes {

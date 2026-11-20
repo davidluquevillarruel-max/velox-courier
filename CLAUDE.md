@@ -29,10 +29,17 @@ Velox Courier — internal management system for a courier/delivery company in L
 
 - **Cambios chicos del 19/11 (commiteados en local, sin push; van juntos en un solo deploy).**
   - **Ráfaga: "Terminar" ya no abre "Órdenes por completar"** (`js/pedidos.js`, `terminarRafaga`;
-    sin servidor ni migración). Cierra la cámara, repinta "Todos los pedidos" y muestra el aviso
-    "N fotos de <tienda>…". Las órdenes siguen naciendo pendientes y se completan desde el botón
-    "Pendiente" cuando se quiera; las que la cola crea después aparecen con el refresco de 8 s, y
-    las fotos siguen subiendo en segundo plano con su indicador.
+    sin servidor ni migración, commit `783802a`). Cierra la cámara y repinta "Todos los pedidos".
+    Las órdenes siguen naciendo pendientes y se completan desde el botón "Pendiente" cuando se
+    quiera; las que la cola crea después aparecen con el refresco de 8 s, y las fotos siguen
+    subiendo en segundo plano con su indicador.
+  - **Ráfaga: ventana de confirmación al terminar** (`js/pedidos.js` + `css/components.css`,
+    `.rafaga-fin-*`; reemplaza al aviso "N fotos de <tienda>…"). Check verde, la tienda grande en
+    mayúsculas y "12 órdenes creadas" (`_textoOrdenesRafaga`). El número es el de ESA ráfaga
+    (`_rafagaTomadas`; `_rafagaIds` se vacía al abrir la cámara), leído antes de cerrarla, y no
+    espera a la cola: si alguna todavía no se creó en el servidor, debajo, chico: "3 se terminan de
+    crear en segundo plano". `_mostrarFinRafaga` la cierra sola a los 2 s o al tocarla; la lista
+    ya se repintó detrás. Probado a 375 px (12 con 3 en camino, 1 en singular, tocar, 2 s).
 
 - **Aviso "ALEX agregó una observación" para los gestores + botón ✓ (18 de noviembre de 2026, commit
   `48270a4`, probado por el usuario; D-023; HECHO en producción el 18/11). Migración

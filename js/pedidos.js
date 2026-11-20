@@ -1050,19 +1050,67 @@ function _cerrarCamaraRafaga() {
   if (overlay) overlay.style.display = 'none';
 }
 
+/* Textos de la confirmación: { principal, detalle }. principal va
+   grande en verde debajo de la tienda; detalle, chico y gris (vacío =
+   no se muestra). tomadas = fotos de ESTA ráfaga (cada una es una
+   orden); creadas = de esas, las que la cola ya creó en el servidor
+   (las otras se crean en segundo plano, p. ej. sin señal). */
+function _textoOrdenesRafaga(tomadas, creadas) {
+  var principal = tomadas + (tomadas === 1 ? ' orden creada' : ' órdenes creadas');
+  var faltan = tomadas - creadas;
+  var detalle = faltan > 0
+    ? (faltan === 1 ? '1 se termina' : faltan + ' se terminan') + ' de crear en segundo plano'
+    : '';
+  return { principal: principal, detalle: detalle };
+}
+
+/* Ventana de confirmación: se cierra sola a los 2 s o al tocarla.
+   No espera a la cola: muestra lo que hay en este momento. */
+function _mostrarFinRafaga(tienda, tomadas, creadas) {
+  var anterior = document.getElementById('rafaga-fin-overlay');
+  if (anterior) anterior.remove();
+
+  var textos = _textoOrdenesRafaga(tomadas, creadas) || {};
+  var overlay = document.createElement('div');
+  overlay.id = 'rafaga-fin-overlay';
+  overlay.className = 'rafaga-fin-overlay';
+  overlay.setAttribute('role', 'status');
+  overlay.innerHTML =
+    '<div class="rafaga-fin-tarjeta">' +
+      '<div class="rafaga-fin-check"><i class="ti ti-check"></i></div>' +
+      '<div class="rafaga-fin-tienda"></div>' +
+      '<div class="rafaga-fin-ordenes"></div>' +
+      '<div class="rafaga-fin-detalle"></div>' +
+    '</div>';
+  /* textContent: el nombre de la tienda no se interpreta como HTML */
+  overlay.querySelector('.rafaga-fin-tienda').textContent = tienda || '';
+  overlay.querySelector('.rafaga-fin-ordenes').textContent = textos.principal || '';
+  overlay.querySelector('.rafaga-fin-detalle').textContent = textos.detalle || '';
+
+  var timer = null;
+  function cerrar() {
+    clearTimeout(timer);
+    if (overlay.parentNode) overlay.remove();
+  }
+  overlay.addEventListener('click', cerrar);
+  timer = setTimeout(cerrar, 2000);
+  document.body.appendChild(overlay);
+}
+
 window.terminarRafaga = function() {
   var tomadas = _rafagaTomadas;
+  /* Solo las de ESTA ráfaga (_rafagaIds se vacía al abrir la cámara) */
+  var creadas = Object.keys(_rafagaIds).filter(function(id) { return _rafagaCreadas[id]; }).length;
+  var tienda = _rafagaTienda;
   _cerrarCamaraRafaga();
   if (!tomadas) return;
 
   /* Vuelve directo a "Todos los pedidos" (no abre "Pendiente": se
-     completan cuando se quiera, desde ese botón). Las órdenes que la
-     cola todavía no creó aparecen solas con el refresco de 8 s. */
+     completan cuando se quiera, desde ese botón). La lista se repinta
+     detrás de la confirmación; las órdenes que la cola todavía no creó
+     aparecen solas con el refresco de 8 s. */
   renderPedidos();
-  if (typeof showNotif === 'function') {
-    showNotif(tomadas + (tomadas === 1 ? ' foto' : ' fotos') +
-      ' de ' + _rafagaTienda + '. Las órdenes se crean en segundo plano.', 5000);
-  }
+  _mostrarFinRafaga(tienda, tomadas, creadas);
 };
 
 /* Imágenes elegidas para la ráfaga: varias de la galería ("Subir

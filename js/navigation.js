@@ -19,6 +19,8 @@ function showPage(id) {
     if (id === 'usuarios' && rol !== 'admin' && rol !== 'motorizado' && rol !== 'tienda') {
       id = 'pedidos';
     }
+    /* Gestión / Motorizado: plata de la Caja, solo gestores */
+    if (id === 'gestion-motos' && rol !== 'admin' && rol !== 'operador') id = 'pedidos';
   }
 
   document.querySelectorAll('.nav-item').forEach(function(n) {
@@ -46,6 +48,7 @@ function showPage(id) {
       if (id === 'pendiente-devolucion') initPendienteDevolucion();
       if (id === 'devolucion-tienda') initDevolucionTienda();
       if (id === 'clientes')         initClientes();
+      if (id === 'gestion-motos')    initGestionMotos();
       if (id === 'evidencias')       initEvidencias();
       if (id === 'tarifas')          initTarifas();
       if (id === 'caja')             initCaja();
@@ -141,6 +144,12 @@ function _obtenerSesion() {
 function _aplicarPermisosPorRol() {
   var sesion = _obtenerSesion();
   if (!sesion) return;
+
+  /* Gestión / Motorizado: solo admin y operador */
+  if (sesion.rol !== 'admin' && sesion.rol !== 'operador') {
+    var navGm = document.getElementById('nav-gestion-motos');
+    if (navGm) navGm.style.display = 'none';
+  }
 
   if (sesion.rol === 'motorizado') {
     /* Motorizado: ocultar todo menos lo suyo */

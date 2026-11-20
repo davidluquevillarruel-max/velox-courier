@@ -1,0 +1,50 @@
+<!-- ============================================================
+     pages/gestion-motos.html — Gestión / Motorizado
+     "Qué hicieron y cuánto": la gemela de Clientes / Tiendas para
+     los motorizados. La página Motorizados queda para "quiénes son"
+     (alta, edición, accesos). Lógica en js/gestion-motos.js.
+     Toda la plata sale de caja-motor.js (calcularOrdenCaja), la misma
+     cuenta que Caja → Motorizados y que el reporte en imagen.
+     Admin y operador; generar el reporte, solo admin.
+     ============================================================ -->
+
+<div class="page-title">Gestión / Motorizado</div>
+<div class="page-sub">Lo que hizo cada motorizado en el día: órdenes, lo que cobró, su pago y su deuda</div>
+
+<!-- ── Vista lista ── -->
+<div id="gm-vista-lista">
+  <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:16px">
+    <span style="font-size:13px;color:var(--color-text-secondary)">Día:</span>
+    <button class="btn btn-sm" id="btn-hoy-gm" onclick="filtroRapidoGestionMotos('hoy')">Hoy</button>
+    <button class="btn btn-sm" id="btn-ayer-gm" onclick="filtroRapidoGestionMotos('ayer')">Ayer</button>
+    <div class="date-filter-wrap">
+      <i class="ti ti-calendar"></i>
+      <input type="date" id="filtro-fecha-gm" onchange="aplicarFiltroGestionMotos()" />
+    </div>
+    <span style="font-size:12px;color:var(--color-text-tertiary)" id="lbl-fecha-gm"></span>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <span class="card-title">Gestión del día por motorizado</span>
+    </div>
+    <!-- En el celular: aviso y barra, Motorizado fijo a la izquierda y lo
+         demás se desliza (mismo tratamiento que la tabla del cambio del
+         19/11 en css/responsive.css) -->
+    <div class="tabla-moto-aviso"><i class="ti ti-arrows-horizontal"></i> Desliza la tabla a los lados para ver todas las columnas</div>
+    <div class="table-wrap tabla-moto-wrap">
+      <table id="tabla-gestion-motos">
+        <thead>
+          <tr>
+            <th>Motorizado</th><th>Órdenes</th><th>Entregados</th><th>No entregados</th><th>Ausentes</th>
+            <th>Efectivo</th><th>Yape</th><th>Su pago</th><th>Deuda moto</th><th>Día</th><th></th>
+          </tr>
+        </thead>
+        <tbody id="tbody-gestion-motos"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ── Vista detalle de un motorizado (la arma js/gestion-motos.js) ── -->
+<div id="gm-vista-detalle" style="display:none"></div>

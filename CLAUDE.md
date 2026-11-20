@@ -75,7 +75,46 @@ Velox Courier — internal management system for a courier/delivery company in L
     (antes, un ojo gris; esto sí se ve también en PC). En PC, lo demás igual (columnas fijas a la
     derecha, sin aviso). Probado a 375 px con un moto de nombre largo y deuda − S/ 6.00 y otro sin
     órdenes (borrados): las 12 columnas se ven enteras al lado de la fija, lo deslizado pasa por
-    debajo, botones de 97×28 en todas las filas; y a 1280 px como antes.
+    debajo, botones de 97×28 en todas las filas; y a 1280 px como antes. Commit `742ef2b`. Desde
+    el cambio de abajo esa tabla solo la ve el rol motorizado (su propia fila).
+  - **Página nueva "Gestión / Motorizado" — "una página por pregunta"** (OK del usuario a la
+    estructura, 19/11). **Toca el servidor:** hay que reiniciarlo. Sin migración.
+    - **Qué va en cada una:** *Motorizados* = "quiénes son" (tarjetas, alta, edición, accesos).
+      *Gestión / Motorizado* = "qué hicieron y cuánto" en UN día. Para los gestores,
+      `renderMotorizados` esconde en Motorizados el período (`#motos-periodo`), la tabla
+      (`#card-motos-resumen`) y el panel (`#panel-detalle-moto`), `_renderTablaResumen` no consulta,
+      y el "Ver detalle" de la tarjeta llama `abrirGestionMoto(id)` (abre la página nueva ya en ese
+      moto, en hoy). **El rol motorizado sigue igual** (período, su fila, su panel con historial).
+    - **Servidor (`server/routes/caja.js`):** `ordenesDiaMotos(pool, fecha, idMoto?)` y
+      `armarDiaMoto(ordenes, pagado)` = la ÚNICA cuenta del día de un moto (resumen por estado,
+      pedidos y totales con `calcularOrdenCaja`, `liquidado`). La usan el reporte y la lista nueva
+      `GET /caja/motorizados/gestion?fecha=` (cada moto con órdenes ese día, sin anuladas). `GET
+      /caja/motorizados/:id/reporte` ya **no** es solo admin (admin y operador, por el
+      `requireRol` del router); `/reporte/subida` sigue solo admin.
+    - **Frontend:** `pages/gestion-motos.html` + `js/gestion-motos.js` (`initGestionMotos`; script
+      después de `clientes.js`), menú `#nav-gestion-motos` debajo de Clientes / Tiendas, oculto y
+      con `showPage` redirigido para quien no es admin / operador (`js/navigation.js`). Filtro de un
+      día (Hoy / Ayer / fecha; vacío = hoy). Lista `#tabla-gestion-motos` (órdenes, entregados, no
+      entregados, ausentes, efectivo, Yape, su pago, deuda, Liquidado / Pendiente, fila TOTALES en
+      céntimos), refresco de 8 s sin repintar si nada cambió; en el celular, el mismo tratamiento
+      del cambio anterior (`css/responsive.css`). Detalle en la misma página con "← Volver": los
+      números salen del JSON del reporte (la pantalla y la imagen no pueden dar distinto), aviso si
+      el día está liquidado ("difiere" si cambió), botones `botonesReporteMotoHTML` (los mismos de
+      Caja → Motorizados: misma URL, mismo archivo; solo admin) y la tabla de órdenes del panel
+      (`_renderTablaOrdenesDetalle` con Actualizar y Reasignar, `o.caja` del motor). El detalle no
+      se refresca solo (consultaría R2): se repinta al guardar (`_refrescarTrasGuardarOrden` →
+      `refrescarGestionMotos`) y con `velox:reasignaciones`.
+    - **Diferencia a propósito:** en un día **ya liquidado** la Caja muestra el saldo guardado y
+      esta página el de ahora (con el aviso "difiere"). En un día sin liquidar dan idéntico.
+    - **Probado el 19/11** (servidor en el 3001; datos TST GM y operador / visor de prueba,
+      borrados): 48 de 48 contra Caja → Motorizados en 6 días (hoy con efectivo, Yape, Pago tienda,
+      Pago Velox, sin cobro, ausente, reprogramado, devolución, no entregado, en proceso y deuda
+      negativa; y los días con datos reales de la base local), y detalle = lista. Permisos 9 de 9
+      (operador ve lista y detalle, no sube; visor y moto 403). A 375 px: lista con las 10 columnas
+      enteras al deslizar, detalle, Volver, mismo id de reporte que la Caja, "Ver detalle" de la
+      tarjeta → página nueva en ese moto, operador sin botones del reporte, ALEX con Motorizados
+      como siempre y sin el menú nuevo, visor sin menú y redirigido. **No se generó ninguna imagen**
+      (el bucket de R2 es el real).
 
 - **Aviso "ALEX agregó una observación" para los gestores + botón ✓ (18 de noviembre de 2026, commit
   `48270a4`, probado por el usuario; D-023; HECHO en producción el 18/11). Migración

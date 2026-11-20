@@ -225,6 +225,19 @@ window.renderMotorizados = async function() {
   var btnAgregar = document.querySelector('[onclick="abrirModalMoto()"]');
   if (btnAgregar && esMoto) btnAgregar.style.display = 'none';
 
+  /* "Una página por pregunta": para los gestores esta página es
+     "quiénes son" (alta, edición, accesos); el período, la tabla y el
+     panel con la plata del día están en "Gestión / Motorizado"
+     (js/gestion-motos.js). El motorizado sigue viendo su historial acá. */
+  if (!esMoto) {
+    ['motos-periodo', 'card-motos-resumen', 'panel-detalle-moto'].forEach(function(id) {
+      var el = document.getElementById(id);
+      if (el) el.style.display = 'none';
+    });
+  }
+  /* Ver detalle: el moto abre su panel acá; un gestor va a la página nueva */
+  var accionDetalle = esMoto ? 'abrirDetalleMotoHistorial' : 'abrirGestionMoto';
+
   grid.innerHTML = visibles.map(function(m) {
     var estadoBadge = m.activo
       ? '<span class="badge pendiente">Activo</span>'
@@ -248,7 +261,7 @@ window.renderMotorizados = async function() {
         'Ingreso: ' + (m.fecha_ingreso || '—') + ' &nbsp;·&nbsp; ' + estadoBadge +
       '</div>' +
       '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;gap:6px">' +
-        '<button class="btn btn-primary btn-sm" onclick="abrirDetalleMotoHistorial(' + m.id + ')">' +
+        '<button class="btn btn-primary btn-sm" onclick="' + accionDetalle + '(' + m.id + ')">' +
           '<i class="ti ti-eye"></i> Ver detalle</button>' +
         accionesEdicion +
       '</div>' +
@@ -261,6 +274,8 @@ window.renderMotorizados = async function() {
 async function _renderTablaResumen() {
   var tbody = document.getElementById('tbody-motos-resumen');
   if (!tbody) return;
+  /* Los gestores no la ven (está escondida): no pedir una consulta por moto */
+  if (!_esSesionMotorizado()) return;
 
   var fecha = _filtroFechaMoto;
   var lbl = document.getElementById('lbl-fecha-motos');
@@ -1953,6 +1968,7 @@ function _refrescarTrasGuardarOrden() {
   if (typeof _recargarTablaPendienteDevolucion === 'function') _recargarTablaPendienteDevolucion();
   if (typeof _recargarTablaDevolucionTienda === 'function') _recargarTablaDevolucionTienda();
   if (typeof _refrescarCajaActual === 'function') _refrescarCajaActual();
+  if (typeof refrescarGestionMotos === 'function') refrescarGestionMotos();
 }
 
 function _mostrarErrorGuardarOrden(err, errEl) {

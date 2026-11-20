@@ -86,6 +86,9 @@
       <div class="nav-item" id="nav-clientes" onclick="showPage('clientes')">
         <i class="ti ti-building-store" aria-hidden="true"></i> Clientes / Tiendas
       </div>
+      <div class="nav-item" id="nav-gestion-motos" onclick="showPage('gestion-motos')">
+        <i class="ti ti-report-money" aria-hidden="true"></i> Gestión / Motorizado
+      </div>
       <div class="nav-item" id="nav-tiendas" onclick="showPage('tiendas')">
         <i class="ti ti-list-details" aria-hidden="true"></i> Tiendas
       </div>
@@ -173,6 +176,8 @@
      tiendas   → catálogo de tiendas; después de pedidos (_cargarCatalogos)
      reasignaciones → después de motorizados y asignacion (_miniaturaFotoAsig,
                   MOTORIZADOS); pedir / aceptar pasar una orden entre motos
+     gestion-motos → después de motorizados y reporte-moto (_renderTablaOrdenesDetalle,
+                  _kpiCard, botonesReporteMotoHTML); página "Gestión / Motorizado"
      notificaciones → al final: abre la orden con showPage + abrirActualizarEstadoOrden
 ══════════════════════════════════════════ -->
 <script src="js/validators.js"></script>
@@ -193,6 +198,7 @@
 <script src="js/reporte-tienda.js"></script>
 <script src="js/reporte-moto.js"></script>
 <script src="js/clientes.js"></script>
+<script src="js/gestion-motos.js"></script>
 <script src="js/navigation.js"></script>
 <script src="js/filters.js"></script>
 <script src="js/asignacion.js"></script>

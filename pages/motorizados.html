@@ -8,7 +8,10 @@
 <!-- "Mis entregas de hoy": solo para el rol motorizado (js/entregas-moto.js) -->
 <div id="mis-entregas-hoy" class="entregas-hoy" style="display:none"></div>
 
-<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:16px">
+<!-- Período, tabla y panel "Ver detalle": solo el rol motorizado (su
+     historial). Los gestores ven la gestión del día en "Gestión /
+     Motorizado" (js/gestion-motos.js): renderMotorizados los esconde. -->
+<div id="motos-periodo" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:16px">
   <span style="font-size:13px;color:var(--color-text-secondary)">Período:</span>
   <button class="btn btn-sm" id="btn-hoy-motos" onclick="filtroRapidoMotos('hoy', this)">Hoy</button>
   <button class="btn btn-sm" id="btn-ayer-motos" onclick="filtroRapidoMotos('ayer', this)">Ayer</button>
@@ -31,7 +34,7 @@
 <div class="moto-grid" id="moto-grid-content"></div>
 <div id="panel-detalle-moto" class="card" style="display:none;margin-bottom:16px;padding:20px"></div>
 
-<div class="card">
+<div class="card" id="card-motos-resumen">
   <div class="card-head">
     <span class="card-title">Detalle de gestión por motorizado</span>
   </div>

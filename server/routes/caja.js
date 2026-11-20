@@ -351,8 +351,10 @@ router.post('/tiendas/:id/reporte/subida', requireRol('admin'), async (req, res)
 });
 
 /* ════════════════════════════════════════════════════════════
-   REPORTE DEL DÍA DE UN MOTORIZADO (imagen, en Motorizados)
-   Solo admin, igual que el de tienda (D-017). Lo dibuja
+   REPORTE DEL DÍA DE UN MOTORIZADO (imagen) + "GESTIÓN / MOTORIZADO"
+   Los datos del día los leen admin y operador (la página "Gestión /
+   Motorizado" los muestra); generar la imagen es solo admin, igual que
+   el de tienda (D-017). Lo dibuja
    js/reporte-moto.js. Regla: el moto entrega TODO lo que pasó por sus
    manos (efectivo + Yape) y Velox le paga su delivery aparte; Pago
    Velox y Pago tienda no pasan por él. Neto = saldo_moto del motor.
@@ -369,66 +371,130 @@ async function leerMotoYFecha(req, res, pool, fechaCruda) {
   return { idMoto, fecha, motorizado: m.recordset[0].nombre };
 }
 
-/* GET /api/caja/motorizados/:id/reporte?fecha=YYYY-MM-DD */
-router.get('/motorizados/:id/reporte', requireRol('admin'), async (req, res) => {
+/* Las órdenes de un día de reparto (sin anuladas), de un moto o de
+   todos. Las usan el reporte y "Gestión / Motorizado". */
+async function ordenesDiaMotos(pool, fecha, idMoto) {
+  const request = pool.request().input('fecha', sql.Date, fecha);
+  let fMoto = 'AND o.id_motorizado IS NOT NULL';
+  if (idMoto) {
+    request.input('id_motorizado', sql.Int, idMoto);
+    fMoto = 'AND o.id_motorizado = @id_motorizado';
+  }
+  const r = await request.query(`
+    SELECT o.id, o.codigo, o.estado, o.metodo_pago, o.medio_pago, o.pago_velox, o.pago_velox_metodo,
+           o.delivery_total, o.pago_moto_total, o.monto_cobrado, o.id_motorizado,
+           o.dest_nombre, d.nombre AS distrito, t.nombre AS tienda
+    FROM ordenes o
+    LEFT JOIN distritos d ON d.id = o.id_distrito
+    LEFT JOIN tiendas t ON t.id = o.id_tienda
+    WHERE o.fecha_reparto = @fecha ${fMoto} AND o.estado <> '${ESTADO_ANULADO}'
+    ORDER BY o.id`);
+  return r.recordset;
+}
+
+/* El día de UN moto: pedidos, resumen por estado y totales, todo con
+   calcularOrdenCaja(). ÚNICA cuenta del día de un moto: la usan el
+   reporte en imagen (detalle de "Gestión / Motorizado") y la lista de
+   esa página, así no pueden dar distinto. `pagado` = su fila de
+   caja_pagos_motorizados de ese día, si ya se liquidó. */
+function armarDiaMoto(ordenes, pagado) {
+  const tot = { efectivo: 0, yape: 0, pago_moto: 0, saldo: 0 };
+  const resumen = { pedidos: 0, entregados: 0, ausentes: 0, devoluciones: 0,
+                    reprogramados: 0, no_entregados: 0, cancelados: 0, en_proceso: 0 };
+  const CLAVE_RESUMEN = { 'entregado': 'entregados', 'ausente': 'ausentes', 'devolucion': 'devoluciones',
+                          'reprogramado': 'reprogramados', 'no-entregado': 'no_entregados',
+                          'cancelado': 'cancelados', 'en-proceso': 'en_proceso' };
+  const pedidos = ordenes.map((o) => {
+    const c = calcularOrdenCaja(o);
+    tot.efectivo += c.en_mano_efectivo; tot.yape += c.en_mano_yape;
+    tot.pago_moto += c.pago_moto; tot.saldo += c.saldo_moto;
+    resumen.pedidos++;
+    if (CLAVE_RESUMEN[o.estado]) resumen[CLAVE_RESUMEN[o.estado]]++;
+    return {
+      codigo: o.codigo, dest_nombre: o.dest_nombre, distrito: o.distrito, tienda: o.tienda,
+      estado: o.estado, metodo_pago: o.metodo_pago, medio_pago: o.medio_pago,
+      efectivo: aSoles(c.en_mano_efectivo), yape: aSoles(c.en_mano_yape),
+      directo_velox: aSoles(c.directo_velox), pago_moto: aSoles(c.pago_moto),
+    };
+  });
+  const liquidado = pagado ? {
+    fecha_pago: pagado.fecha_pago,
+    saldo_pagado: aSoles(pagado.saldo),
+    difiere: pagado.saldo !== tot.saldo,
+  } : null;
+  return {
+    resumen,
+    pedidos,
+    totales: {
+      efectivo: aSoles(tot.efectivo), yape: aSoles(tot.yape),
+      a_entregar: aSoles(tot.efectivo + tot.yape),
+      pago_moto: aSoles(tot.pago_moto),
+      neto: aSoles(tot.saldo),          /* > 0 entrega a Velox después de su pago; < 0 Velox le paga */
+    },
+    liquidado,
+  };
+}
+
+/* GET /api/caja/motorizados/gestion?fecha=YYYY-MM-DD
+   "Gestión / Motorizado": cada moto con órdenes ese día, con su
+   resumen y sus totales (armarDiaMoto, la misma cuenta del reporte).
+   Admin y operador. */
+router.get('/motorizados/gestion', async (req, res) => {
+  try {
+    const fecha = FECHA_RE.test(req.query.fecha || '') ? req.query.fecha : '';
+    if (!fecha) return res.status(400).json({ error: 'Fecha no válida (YYYY-MM-DD)' });
+    const pool = await getPool();
+    const [ordenes, pagados, motos] = await Promise.all([
+      ordenesDiaMotos(pool, fecha),
+      diasPagadosMoto(pool, { desde: fecha }),
+      pool.request().query('SELECT id, nombre, iniciales, color_avatar, telefono, activo FROM motorizados'),
+    ]);
+    const porMoto = new Map();
+    for (const o of ordenes) {
+      if (!porMoto.has(o.id_motorizado)) porMoto.set(o.id_motorizado, []);
+      porMoto.get(o.id_motorizado).push(o);
+    }
+    const pagadoDe = new Map(pagados.map(p => [p.id_motorizado, p]));
+    const datosMoto = new Map(motos.recordset.map(m => [m.id, m]));
+    const lista = [...porMoto.entries()].map(([idMoto, ords]) => {
+      const m = datosMoto.get(idMoto) || {};
+      const dia = armarDiaMoto(ords, pagadoDe.get(idMoto));
+      return {
+        id: idMoto, nombre: m.nombre || '—', iniciales: m.iniciales || '', color_avatar: m.color_avatar || 'av-blue',
+        telefono: m.telefono || '', activo: !!m.activo,
+        resumen: dia.resumen, totales: dia.totales, liquidado: dia.liquidado,
+      };
+    }).sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'));
+    res.json({ fecha, motorizados: lista });
+  } catch (err) {
+    console.error('GET /caja/motorizados/gestion:', err.message);
+    res.status(500).json({ error: 'Error al armar la gestión de los motorizados' });
+  }
+});
+
+/* GET /api/caja/motorizados/:id/reporte?fecha=YYYY-MM-DD
+   Admin y operador (el detalle de "Gestión / Motorizado" lo muestra);
+   generar la imagen (/reporte/subida) sigue siendo solo admin. */
+router.get('/motorizados/:id/reporte', async (req, res) => {
   try {
     const pool = await getPool();
     const base = await leerMotoYFecha(req, res, pool, req.query.fecha);
     if (!base) return;
     const { idMoto, fecha, motorizado } = base;
 
-    const r = await pool.request()
-      .input('id_motorizado', sql.Int, idMoto)
-      .input('fecha', sql.Date, fecha)
-      .query(`
-        SELECT o.id, o.codigo, o.estado, o.metodo_pago, o.medio_pago, o.pago_velox, o.pago_velox_metodo,
-               o.delivery_total, o.pago_moto_total, o.monto_cobrado, o.id_motorizado,
-               o.dest_nombre, d.nombre AS distrito, t.nombre AS tienda
-        FROM ordenes o
-        LEFT JOIN distritos d ON d.id = o.id_distrito
-        LEFT JOIN tiendas t ON t.id = o.id_tienda
-        WHERE o.id_motorizado = @id_motorizado AND o.fecha_reparto = @fecha AND o.estado <> '${ESTADO_ANULADO}'
-        ORDER BY o.id`);
-
-    const tot = { efectivo: 0, yape: 0, pago_moto: 0, saldo: 0 };
-    const resumen = { pedidos: 0, entregados: 0, ausentes: 0, devoluciones: 0,
-                      reprogramados: 0, no_entregados: 0, cancelados: 0, en_proceso: 0 };
-    const CLAVE_RESUMEN = { 'entregado': 'entregados', 'ausente': 'ausentes', 'devolucion': 'devoluciones',
-                            'reprogramado': 'reprogramados', 'no-entregado': 'no_entregados',
-                            'cancelado': 'cancelados', 'en-proceso': 'en_proceso' };
-    const pedidos = r.recordset.map((o) => {
-      const c = calcularOrdenCaja(o);
-      tot.efectivo += c.en_mano_efectivo; tot.yape += c.en_mano_yape;
-      tot.pago_moto += c.pago_moto; tot.saldo += c.saldo_moto;
-      resumen.pedidos++;
-      if (CLAVE_RESUMEN[o.estado]) resumen[CLAVE_RESUMEN[o.estado]]++;
-      return {
-        codigo: o.codigo, dest_nombre: o.dest_nombre, distrito: o.distrito, tienda: o.tienda,
-        estado: o.estado, metodo_pago: o.metodo_pago, medio_pago: o.medio_pago,
-        efectivo: aSoles(c.en_mano_efectivo), yape: aSoles(c.en_mano_yape),
-        directo_velox: aSoles(c.directo_velox), pago_moto: aSoles(c.pago_moto),
-      };
-    });
-
-    const pagado = (await diasPagadosMoto(pool, { desde: fecha, idMotorizado: idMoto }))[0];
-    const liquidado = pagado ? {
-      fecha_pago: pagado.fecha_pago,
-      saldo_pagado: aSoles(pagado.saldo),
-      difiere: pagado.saldo !== tot.saldo,
-    } : null;
+    const [ordenes, pagados] = await Promise.all([
+      ordenesDiaMotos(pool, fecha, idMoto),
+      diasPagadosMoto(pool, { desde: fecha, idMotorizado: idMoto }),
+    ]);
+    const dia = armarDiaMoto(ordenes, pagados[0]);
 
     res.json({
       motorizado: { id: idMoto, nombre: motorizado },
       fecha,
-      resumen,
-      pedidos,
-      totales: {
-        efectivo: aSoles(tot.efectivo), yape: aSoles(tot.yape),
-        a_entregar: aSoles(tot.efectivo + tot.yape),
-        pago_moto: aSoles(tot.pago_moto),
-        neto: aSoles(tot.saldo),          /* > 0 entrega a Velox después de su pago; < 0 Velox le paga */
-      },
-      liquidado,
+      resumen: dia.resumen,
+      pedidos: dia.pedidos,
+      totales: dia.totales,
+      liquidado: dia.liquidado,
       r2: r2Habilitado(),
       reporte: r2Habilitado() ? await infoReporte('moto', idMoto, fecha) : null,
     });

@@ -62,6 +62,20 @@ Velox Courier — internal management system for a courier/delivery company in L
     siempre) y el nombre lleva `sin-asignar`. Probado a 375 px con 4 órdenes TST-SA-* (2 sin moto,
     1 con moto, 1 anulada sin moto; borradas): 29 = lo que da la base, las con moto y la anulada
     fuera, + "Reprogramado" = 1, + "Anulado" = 0, prende / apaga, el total de arriba quieto.
+    Commit `b8e786b`.
+  - **Motorizados: tabla "Detalle de gestión por motorizado" en el celular** (`pages/motorizados.html`,
+    `js/motorizados.js`, `css/responsive.css`; sin servidor ni migración). El problema: las 3
+    columnas fijas a la derecha (`.col-cobrado-fijo`, `.col-totalmoto-fijo`, `.col-accion-moto-fijo`,
+    350 px) no dejaban lugar a 375 px y aplastaban la de Motorizado ("Mc", medio avatar). Hasta 768
+    px (`#tabla-motos-resumen`): esas 3 pasan a `position: static` y se deslizan con las demás;
+    Motorizado queda fija con 150 px, `white-space: nowrap`, el nombre con "…"
+    (`.moto-resumen-nombre`, `title` con el nombre entero) y una sombra más marcada; el aviso
+    "Desliza la tabla…" y la barra gruesa reusan `.tabla-moto-aviso` / `.tabla-moto-wrap` del
+    historial. El botón de la fila "Sin órdenes" ahora es el mismo "Ver detalle" azul de las demás
+    (antes, un ojo gris; esto sí se ve también en PC). En PC, lo demás igual (columnas fijas a la
+    derecha, sin aviso). Probado a 375 px con un moto de nombre largo y deuda − S/ 6.00 y otro sin
+    órdenes (borrados): las 12 columnas se ven enteras al lado de la fija, lo deslizado pasa por
+    debajo, botones de 97×28 en todas las filas; y a 1280 px como antes.
 
 - **Aviso "ALEX agregó una observación" para los gestores + botón ✓ (18 de noviembre de 2026, commit
   `48270a4`, probado por el usuario; D-023; HECHO en producción el 18/11). Migración

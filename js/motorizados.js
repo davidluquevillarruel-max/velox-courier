@@ -271,24 +271,30 @@ async function _renderTablaResumen() {
      9 columnas de números y la de acción) */
   var filas = await Promise.all(_motorizadosVisibles().map(async function(m) {
     var s = await _calcularStatsMoto(m.id, fecha);
+    /* Avatar + nombre: en el celular la celda es fija y angosta, y el
+       nombre largo se corta con "…" (el title lo muestra entero) */
+    var celdaNombre =
+      '<td><div class="moto-resumen-nombre" title="' + _escFoto(m.nombre) + '">' +
+        '<div class="avatar ' + m.color_avatar + '" style="width:30px;height:30px;font-size:11px;flex-shrink:0">' + m.iniciales + '</div>' +
+        '<strong>' + _escFoto(m.nombre) + '</strong></div></td>';
     var celdasContacto =
       '<td style="font-size:12px">' + (m.telefono || '—') + '</td>' +
       '<td style="font-size:12px">' + (m.yape || '—') + '</td>';
+    /* El mismo botón en todas las filas, tenga o no órdenes */
+    var celdaAccion =
+      '<td class="col-accion-moto-fijo"><button class="btn btn-primary btn-sm" onclick="abrirDetalleMotoHistorial(' + m.id + ')">' +
+        '<i class="ti ti-eye"></i> Ver detalle</button></td>';
     if (!s) {
       return '<tr>' +
-        '<td><div style="display:flex;align-items:center;gap:8px">' +
-          '<div class="avatar ' + m.color_avatar + '" style="width:30px;height:30px;font-size:11px">' + m.iniciales + '</div>' +
-          '<strong>' + m.nombre + '</strong></div></td>' +
+        celdaNombre +
         celdasContacto +
         '<td colspan="9" style="color:var(--color-text-tertiary)">Sin órdenes</td>' +
-        '<td class="col-accion-moto-fijo"><button class="btn btn-sm" onclick="abrirDetalleMotoHistorial(' + m.id + ')"><i class="ti ti-eye"></i></button></td>' +
+        celdaAccion +
       '</tr>';
     }
     var tc = s.tasaNum >= 75 ? 'var(--color-green)' : s.tasaNum >= 50 ? 'var(--color-amber)' : 'var(--color-red-text)';
     return '<tr>' +
-      '<td><div style="display:flex;align-items:center;gap:8px">' +
-        '<div class="avatar ' + m.color_avatar + '" style="width:30px;height:30px;font-size:11px">' + m.iniciales + '</div>' +
-        '<strong>' + m.nombre + '</strong></div></td>' +
+      celdaNombre +
       celdasContacto +
       '<td><strong>' + s.total + '</strong></td>' +
       '<td style="color:var(--color-green);font-weight:600">' + s.entregados + '</td>' +
@@ -299,8 +305,7 @@ async function _renderTablaResumen() {
       '<td style="font-weight:600">S/ ' + s.pagoTotal.toFixed(2) + '</td>' +
       '<td class="col-cobrado-fijo" style="font-weight:600;color:var(--color-blue-text)">S/ ' + s.cobrado.toFixed(2) + '</td>' +
       '<td class="col-totalmoto-fijo">' + _deudaMotoHTML(s.deuda) + '</td>' +
-      '<td class="col-accion-moto-fijo"><button class="btn btn-primary btn-sm" onclick="abrirDetalleMotoHistorial(' + m.id + ')">' +
-        '<i class="ti ti-eye"></i> Ver detalle</button></td>' +
+      celdaAccion +
     '</tr>';
   }));
 

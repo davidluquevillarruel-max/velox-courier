@@ -1055,11 +1055,10 @@ window.terminarRafaga = function() {
   _cerrarCamaraRafaga();
   if (!tomadas) return;
 
+  /* Vuelve directo a "Todos los pedidos" (no abre "Pendiente": se
+     completan cuando se quiera, desde ese botón). Las órdenes que la
+     cola todavía no creó aparecen solas con el refresco de 8 s. */
   renderPedidos();
-  /* Todas las pendientes (de esta ráfaga y de antes), con su foto y
-     su tienda. Las órdenes que la cola todavía no creó (sin señal)
-     aparecen solas a medida que se crean. */
-  if (typeof abrirPendientes === 'function') abrirPendientes();
   if (typeof showNotif === 'function') {
     showNotif(tomadas + (tomadas === 1 ? ' foto' : ' fotos') +
       ' de ' + _rafagaTienda + '. Las órdenes se crean en segundo plano.', 5000);

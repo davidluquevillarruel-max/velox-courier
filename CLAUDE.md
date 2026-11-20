@@ -10,7 +10,7 @@ Velox Courier — internal management system for a courier/delivery company in L
 
 ## Estado actual
 
-Última actualización: 18 de noviembre de 2026.
+Última actualización: 19 de noviembre de 2026.
 
 - **Deploy del 14 de noviembre de 2026: HECHO en producción** (confirmado por el usuario: las dos
   migraciones OK con `sa`, `velox_agregar_asignada_en.sql` y después
@@ -26,6 +26,13 @@ Velox Courier — internal management system for a courier/delivery company in L
   Pago tienda, D-021), `711a08d` y `69b5b1e` (observaciones para el moto y su protección, D-022) y
   `48270a4` (aviso "X agregó una observación" + botón ✓, D-023). El detalle de cada uno, abajo.
   **Último commit en producción: `bc30158`.** No quedan migraciones pendientes.
+
+- **Cambios chicos del 19/11 (commiteados en local, sin push; van juntos en un solo deploy).**
+  - **Ráfaga: "Terminar" ya no abre "Órdenes por completar"** (`js/pedidos.js`, `terminarRafaga`;
+    sin servidor ni migración). Cierra la cámara, repinta "Todos los pedidos" y muestra el aviso
+    "N fotos de <tienda>…". Las órdenes siguen naciendo pendientes y se completan desde el botón
+    "Pendiente" cuando se quiera; las que la cola crea después aparecen con el refresco de 8 s, y
+    las fotos siguen subiendo en segundo plano con su indicador.
 
 - **Aviso "ALEX agregó una observación" para los gestores + botón ✓ (18 de noviembre de 2026, commit
   `48270a4`, probado por el usuario; D-023; HECHO en producción el 18/11). Migración
@@ -861,7 +868,8 @@ Velox Courier — internal management system for a courier/delivery company in L
     mismo buscador que "Nueva orden"); recién después abre la cámara. Una tienda por ráfaga;
     la cámara la muestra arriba del contador. La tienda viaja guardada con cada foto en la
     cola (`item.rafaga.tienda`) y `POST /rafaga` la usa; si no viene (fotos viejas en cola) o
-    ya no es válida, usa la tienda comodín. "Terminar" abre la ventana "Pendiente" (todas).
+    ya no es válida, usa la tienda comodín. "Terminar" vuelve a "Todos los pedidos" (desde el
+    19/11; antes abría la ventana "Pendiente").
   - **`CAMPOS_PENDIENTES` = destinatario, distrito, cobrado.** "Tienda distinta del comodín"
     es un chequeo **fijo** (`tieneTiendaReal`), fuera de la lista: las pendientes viejas con
     tienda `SIN DEFINIR` llegan con `falta_tienda` y solo esas filas muestran el buscador de

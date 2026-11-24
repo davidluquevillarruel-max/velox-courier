@@ -318,7 +318,8 @@ function _pintarOverlayEnt() {
   var ov = _overlayEnt();
 
   var fotoProducto = o.foto_producto_url
-    ? '<img class="entrega-foto-producto" src="' + _escEnt(o.foto_producto_url) + '" alt="Foto del producto" ' +
+    ? '<img class="entrega-foto-producto" src="' + _escEnt(o.foto_producto_url) + '" alt="Foto del producto"' +
+        atributosVisor(o.foto_producto_url, 'Foto del producto · #' + o.codigo) + ' ' +
         'onerror="this.outerHTML=\'<div class=&quot;entrega-sin-foto&quot;><i class=&quot;ti ti-photo-off&quot;></i> No se pudo cargar la foto del producto</div>\'">'
     : '<div class="entrega-sin-foto"><i class="ti ti-photo-off"></i> Sin foto del producto</div>';
 

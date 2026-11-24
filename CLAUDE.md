@@ -10,7 +10,53 @@ Velox Courier — internal management system for a courier/delivery company in L
 
 ## Estado actual
 
-Última actualización: 19 de noviembre de 2026.
+Última actualización: 24 de noviembre de 2026.
+
+- **Cambio 6 — visor de imágenes dentro del sistema (24 de noviembre de 2026, commit en local, sin
+  push; solo frontend, sin servidor ni migración: basta recargar la app).** Ninguna foto ni reporte
+  abre otra pestaña: se abren encima de la pantalla y lo de atrás queda igual (un modal con datos
+  escritos no pierde nada).
+  - **Un solo componente:** `js/visor-imagen.js` (`<script>` después de `utils.js`) + estilos
+    `.visor-*` al final de `css/components.css`. Título arriba ("Foto de entrega · #C-1412 · 1 de 3",
+    "Reporte · ALEX · 19/11"), imagen con `object-fit: contain`, "Copiar URL" (→ "✓ URL copiada") y
+    "Cerrar" abajo; ✕, Esc, tocar fuera de la imagen o el **botón atrás del celular** (al abrir hace
+    `pushState` y al cerrar `history.back()`; `navigation.js` solo usa `replaceState`). Flechas ‹ ›,
+    ← → en PC y deslizar en el celular (más de 50 px y sobre todo horizontal). Mientras carga,
+    "Cargando…"; si no carga, mensaje (y "Copiar URL" igual anda). Copiar: `navigator.clipboard` →
+    `execCommand('copy')` → si nada anda, muestra la URL seleccionable. Esc no cierra el modal de
+    atrás (listener en captura). Hasta 768 px, botones de 48 px de alto a lo ancho.
+  - **Cómo se usa (para un lugar nuevo):** poner `atributosVisor(url, titulo)` en el elemento
+    (`data-visor-url` + `data-visor-titulo`); un listener en `document`, en captura, lo abre (el clic
+    no llega a la fila / tarjeta de atrás) y sobrevive a los repintados de 8 s. Los que están dentro
+    del mismo `[data-visor-grupo]` forman el juego de flechas (la misma URL cuenta una vez). Desde JS:
+    `abrirVisorImagen([{url, titulo}], indice)`. Un `<a href>` sigue abriendo otra pestaña con
+    Ctrl+clic.
+  - **Dónde:** cámara de "Todos los pedidos" y del detalle de Clientes / Tiendas
+    (`_iconoFotoProducto(url, codigo)`), foto de "Pendiente", miniatura de Asignación y de "Mis
+    entregas de hoy" (`_miniaturaFotoAsig`), foto grande de EMPEZAR, tarjeta "X te quiere pasar una
+    orden", fotos del pago de la Caja (tienda y moto, un grupo por pago: "Pago a tienda · <tienda> ·
+    <fecha>"), y "Ver imagen" de los reportes (`_repBotonesHTML` recibe el nombre: Clientes /
+    Tiendas, Caja → Motorizados, Gestión / Motorizado). En **Actualizar orden** todo el modal es un
+    grupo: la cámara del producto, "Fotos de la orden", las de devolución y "ver foto" de la
+    evidencia. Cada tipo tiene su título en `_GRUPOS_FOTOS_ORDEN` (`titulo`): **un tipo de foto
+    nuevo lleva también su título ahí.**
+  - **Se borraron** los 3 visores viejos: `verFotoProductoAsig` y `.asig-foto-grande`
+    (Asignación), `verFotoPagoGrande` y `#caja-foto-grande` (Caja), y la vista previa chica de
+    Actualizar orden (`verFotoEnSeccion`, `_vistaPreviaFotosHTML`, `toggleVistaPreviaFotoUpdate`).
+    La vista previa de "Nueva orden" (foto recién tomada, sin URL todavía) sigue igual. No se tocaron
+    WhatsApp ni la exportación. Caja → Tienda sigue sin "Ver imagen" del reporte (a pedido del
+    usuario: alcanza con el de Clientes / Tiendas). Evidencias y Notificaciones del admin no tienen
+    imágenes.
+  - **Probado el 24/11** contra el servidor del usuario en el 3000 (es solo frontend; admin de
+    prueba y órdenes TST-VI-1 / TST-VI-2 con 5 filas en `ordenes_fotos`, todo borrado). En PC: cámara
+    de Todos los pedidos (misma página, título, `history.state`), Esc, atrás, "Copiar URL" con clic
+    real (✓ URL copiada) y el respaldo de la URL seleccionable, Actualizar orden con ← →, "2 de 4",
+    foto rota con su mensaje, tocar afuera → el modal sigue abierto con lo escrito y Esc no lo cierra.
+    A 375 px: miniatura de Asignación (imagen de 367 px, botones de 172×48), deslizar (eventos
+    táctiles sintéticos: izquierda, derecha y vertical que no cambia), flecha ›, reporte de tienda y
+    de moto (PNG de prueba del 01/10 de "PRUEBA CAJA") y fotos del pago (HTML de `_liquidacionesHTML`
+    con datos de prueba: en local no hay pagos liquidados). **Falta probarlo en un celular real**
+    (atrás de Android, copiar, deslizar con el dedo).
 
 - **Deploy del 14 de noviembre de 2026: HECHO en producción** (confirmado por el usuario: las dos
   migraciones OK con `sa`, `velox_agregar_asignada_en.sql` y después

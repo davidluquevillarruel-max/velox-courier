@@ -241,7 +241,8 @@ window.recibidasReasignacionHTML = function() {
    La usan la lista ("Mis entregas de hoy") y el panel Notificaciones. */
 function _tarjetaRecibidaRsg(x) {
       var foto = x.foto_producto_url
-        ? '<img class="rsg-foto" src="' + _escRsg(x.foto_producto_url) + '" alt="Foto del producto" ' +
+        ? '<img class="rsg-foto" src="' + _escRsg(x.foto_producto_url) + '" alt="Foto del producto"' +
+            atributosVisor(x.foto_producto_url, 'Foto del producto' + (x.codigo ? ' · #' + x.codigo : '')) + ' ' +
             'onerror="this.outerHTML=\'<div class=&quot;rsg-foto rsg-foto-vacia&quot;><i class=&quot;ti ti-photo-off&quot;></i></div>\'">'
         : '<div class="rsg-foto rsg-foto-vacia"><i class="ti ti-photo-off"></i></div>';
       return '<div class="rsg-pedido">' +

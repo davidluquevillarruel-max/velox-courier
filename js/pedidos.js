@@ -146,14 +146,15 @@ window.confirmarDevolucionDesdeTabla = function(ordenId, btnEl) {
   if (typeof confirmarDevolucionOrden === 'function') confirmarDevolucionOrden(ordenId, btnEl);
 };
 
-/* Ícono de cámara para abrir la foto del producto en otra pestaña.
-   Sin foto devuelve '' (no muestra nada). Lo comparten la tabla de
-   "Todos los pedidos" y el detalle de la tienda en js/clientes.js. */
-function _iconoFotoProducto(url) {
+/* Ícono de cámara: abre la foto del producto en el visor
+   (js/visor-imagen.js), sin salir de la página. Sin foto devuelve ''
+   (no muestra nada). Lo comparten la tabla de "Todos los pedidos" y el
+   detalle de la tienda en js/clientes.js. */
+function _iconoFotoProducto(url, codigo) {
   if (!url) return '';
   var href = String(url).replace(/&/g, '&amp;').replace(/"/g, '&quot;');
-  return ' <a href="' + href + '" target="_blank" rel="noopener" title="Ver la foto del producto"' +
-    ' style="color:var(--color-blue);text-decoration:none"><i class="ti ti-camera"></i></a>';
+  return ' <a href="' + href + '"' + atributosVisor(url, 'Foto del producto' + (codigo ? ' · #' + codigo : '')) +
+    ' title="Ver la foto del producto" style="color:var(--color-blue);text-decoration:none"><i class="ti ti-camera"></i></a>';
 }
 
 /* Marca ámbar si la orden se cobró con un medio de pago que exige foto
@@ -203,7 +204,7 @@ function _filaOrdenPedido(o) {
      anuladas no cuentan aunque no tengan motorizado. */
   var sinAsignar = !o.motorizado && o.estado !== 'anulado';
   return '<tr data-id="' + o.id + '"' + (sinAsignar ? ' data-sin-asignar="1"' : '') + '>' +
-    '<td><strong>#' + o.codigo + '</strong>' + _iconoFotoProducto(o.foto_producto_url) + _iconoEvidenciaPendiente(o) + '</td>' +
+    '<td><strong>#' + o.codigo + '</strong>' + _iconoFotoProducto(o.foto_producto_url, o.codigo) + _iconoEvidenciaPendiente(o) + '</td>' +
     '<td>' + tiendaHTML + '</td>' +
     '<td>' + (o.dest_nombre || '—') + '</td>' +
     '<td>' + (typeof _botonWhatsApp === 'function' ? _botonWhatsApp(o.dest_telefono, o.dest_nombre, o.dest_telefono_2) : (o.dest_telefono || '—')) + '</td>' +

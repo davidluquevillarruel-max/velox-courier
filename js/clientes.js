@@ -446,7 +446,7 @@ function _filaOrdenDetalle(o, _ec, mostrarFecha) {
   return '<tr>' +
     (mostrarFecha ? '<td style="font-size:12px;color:var(--color-text-secondary)">' + _fechaDisplayCli(_diaCli(o)) + '</td>' : '') +
     /* Mismo ícono de foto que en "Todos los pedidos" (js/pedidos.js) */
-    '<td><strong>#'+o.codigo+'</strong>'+_iconoFotoProducto(o.foto_producto_url)+'</td>' +
+    '<td><strong>#'+o.codigo+'</strong>'+_iconoFotoProducto(o.foto_producto_url, o.codigo)+'</td>' +
     '<td>'+(o.dest_nombre||'—')+'</td>' +
     '<td>'+o.distrito+'</td>' +
     '<td>'+(o.motorizado||'—')+'</td>' +
@@ -561,7 +561,7 @@ window.renderDetalleTienda = async function(tiendaId) {
         '</div>' +
       '</div>' +
       '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">' +
-        (typeof botonesReporteTiendaHTML === 'function' ? botonesReporteTiendaHTML(tienda.id, fechaReporte) : '') +
+        (typeof botonesReporteTiendaHTML === 'function' ? botonesReporteTiendaHTML(tienda.id, fechaReporte, tienda.nombre) : '') +
         (tienda.telefono
           ? '<button class="btn btn-sm" style="background:#25D366;color:#fff;border-color:#25D366;font-weight:600" ' +
               'onclick="enviarResumenWP(\'' + tienda.telefono + '\',\'' + tienda.nombre.replace(/'/g,"\\'") + '\')">' +

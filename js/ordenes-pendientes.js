@@ -287,7 +287,8 @@ function _fotoPendienteHTML(o, subiendo) {
   var caja = 'width:110px;height:110px;border-radius:var(--radius-md);';
   if (o.foto_producto_url) {
     var url = _escPend(o.foto_producto_url);
-    return '<a href="' + url + '" target="_blank" rel="noopener" title="Ver la foto en grande">' +
+    return '<a href="' + url + '"' + atributosVisor(o.foto_producto_url, 'Foto del producto' + (o.codigo ? ' · #' + o.codigo : '')) +
+      ' title="Ver la foto en grande">' +
       '<img src="' + url + '" alt="Foto del producto" loading="lazy" style="' + caja + 'object-fit:cover;display:block;background:var(--color-bg-secondary)"></a>';
   }
   return '<div style="' + caja + 'background:var(--color-bg-secondary);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;font-size:11px;color:var(--color-text-tertiary);text-align:center;padding:6px">' +

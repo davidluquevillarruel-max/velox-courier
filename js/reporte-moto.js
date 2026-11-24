@@ -181,6 +181,6 @@ if (typeof _REP_TIPOS !== 'undefined') {
 
 /* Detalle del moto en la Caja de motorizados (js/caja.js). Va diferido:
    caja.js llama hidratarReportes() después de pintar. */
-window.botonesReporteMotoHTML = function(idMoto, fecha) {
-  return typeof _repBotonesHTML === 'function' ? _repBotonesHTML('moto', idMoto, fecha, true) : '';
+window.botonesReporteMotoHTML = function(idMoto, fecha, nombre) {
+  return typeof _repBotonesHTML === 'function' ? _repBotonesHTML('moto', idMoto, fecha, true, nombre) : '';
 };

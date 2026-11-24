@@ -254,10 +254,6 @@
   </div>
 </div>
 
-<!-- Foto del pago en grande (Historial) -->
-<div id="caja-foto-grande" class="caja-foto-grande" style="display:none" onclick="cerrarFotoPagoGrande()">
-  <img id="caja-foto-grande-img" alt="Foto del pago" />
-</div>
 
 <style>
 .caja-tab { padding:10px 20px; border:none; background:transparent; cursor:pointer; font-size:13px; color:var(--color-text-secondary); border-bottom:2px solid transparent; margin-bottom:-1.5px; display:inline-flex; align-items:center; gap:6px; transition:all .15s; }
@@ -333,6 +329,4 @@
 .caja-liq-fila { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
 .caja-liq-fotos { display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; }
 .caja-liq-fotos img { width:72px; height:72px; object-fit:cover; border-radius:var(--radius-md); cursor:zoom-in; background:var(--color-bg-secondary); }
-.caja-foto-grande { position:fixed; inset:0; background:rgba(0,0,0,0.88); z-index:1250; display:flex; align-items:center; justify-content:center; padding:16px; cursor:zoom-out; }
-.caja-foto-grande img { max-width:100%; max-height:100%; border-radius:var(--radius-md); }
 </style>

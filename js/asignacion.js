@@ -369,9 +369,9 @@ function _miniaturaFotoAsig(o) {
   if (!o.foto_producto_url) {
     return '<div class="assign-thumb assign-thumb-vacia" title="Sin foto del producto"><i class="ti ti-photo-off"></i></div>';
   }
-  return '<button type="button" class="assign-thumb" title="Ver la foto en grande" ' +
-      'data-url="' + _escAsig(o.foto_producto_url) + '" data-codigo="' + _escAsig(o.codigo) + '" ' +
-      'onclick="verFotoProductoAsig(this)">' +
+  /* Al tocarla, el visor de imágenes (js/visor-imagen.js) */
+  return '<button type="button" class="assign-thumb" title="Ver la foto en grande"' +
+      atributosVisor(o.foto_producto_url, 'Foto del producto · #' + o.codigo) + '>' +
       '<img src="' + _escAsig(o.foto_producto_url) + '" alt="Foto del producto" width="64" height="64" ' +
         'loading="lazy" decoding="async" onerror="_fotoAsigNoCarga(this)">' +
     '</button>';
@@ -388,37 +388,6 @@ window._fotoAsigNoCarga = function(img) {
   vacia.innerHTML = '<i class="ti ti-photo-off"></i>';
   boton.replaceWith(vacia);
 };
-
-/* Vista en grande: capa sobre la página; se cierra tocando en
-   cualquier lado o con Escape */
-window.verFotoProductoAsig = function(boton) {
-  var url = boton && boton.dataset.url;
-  if (!url) return;
-  cerrarFotoProductoAsig();
-
-  var capa = document.createElement('div');
-  capa.id = 'asig-foto-grande';
-  capa.className = 'asig-foto-grande';
-  capa.innerHTML =
-    '<div class="asig-foto-grande-top">' +
-      '<span>#' + _escAsig(boton.dataset.codigo) + '</span>' +
-      '<button type="button" class="btn btn-sm" aria-label="Cerrar"><i class="ti ti-x"></i></button>' +
-    '</div>' +
-    '<img src="' + _escAsig(url) + '" alt="Foto del producto">';
-  capa.addEventListener('click', cerrarFotoProductoAsig);
-  document.addEventListener('keydown', _escFotoAsig);
-  document.body.appendChild(capa);
-};
-
-function cerrarFotoProductoAsig() {
-  var capa = document.getElementById('asig-foto-grande');
-  if (capa) capa.remove();
-  document.removeEventListener('keydown', _escFotoAsig);
-}
-
-function _escFotoAsig(e) {
-  if (e.key === 'Escape') cerrarFotoProductoAsig();
-}
 
 /* ════════════════════════════════════════════
    RENDER — POOL ASIGNADOS (derecha)

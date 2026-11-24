@@ -416,36 +416,6 @@
   cursor: default;
 }
 
-/* Foto en grande al tocar la miniatura */
-.asig-foto-grande {
-  position: fixed;
-  inset: 0;
-  z-index: 1100;
-  background: rgba(0, 0, 0, 0.85);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 16px;
-  gap: 10px;
-  cursor: zoom-out;
-}
-.asig-foto-grande-top {
-  width: 100%;
-  max-width: 720px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  color: #fff;
-  font-weight: 500;
-}
-.asig-foto-grande img {
-  max-width: 100%;
-  max-height: calc(100vh - 80px);
-  object-fit: contain;
-  border-radius: var(--radius-md);
-}
-
 /* ── Notificación flotante ── */
 .notification {
   position: fixed;
@@ -1548,4 +1518,159 @@ tr.fila-inactiva td { color: var(--color-text-secondary); }
 @media (max-width: 400px) {
   .rsg-pedido { grid-template-columns: 1fr; grid-template-areas: "titulo" "foto" "datos" "botones"; }
   .rsg-foto { width: 100%; height: 200px; }
+}
+
+/* ════════════════════════════════════════════
+   Visor de imágenes único (js/visor-imagen.js)
+   Fondo oscuro encima de todo (también de los modales, z-index 1000+).
+   Los colores del fondo son fijos a propósito: la foto se ve igual
+   con cualquier tema, como en los visores de fotos de los celulares.
+════════════════════════════════════════════ */
+.visor {
+  position: fixed;
+  inset: 0;
+  z-index: 4000;
+  background: rgba(10, 12, 20, 0.92);
+  display: flex;
+  flex-direction: column;
+  color: #fff;
+  font-family: var(--font-sans);
+}
+.visor[hidden] { display: none; }
+/* Todo lo que abre el visor (data-visor-url) */
+[data-visor-url] { cursor: zoom-in; }
+.visor-top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 12px 8px 16px;
+}
+.visor-titulo {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.visor-x {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  font-size: 22px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.visor-x:hover { background: rgba(255, 255, 255, 0.22); }
+.visor-cuerpo {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 64px;
+  cursor: zoom-out;
+}
+.visor-img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;          /* ajustada a la pantalla, sin deformarse */
+  border-radius: var(--radius-sm);
+  cursor: default;
+  user-select: none;
+}
+.visor-img[hidden], .visor-cargando[hidden], .visor-error[hidden],
+.visor-flecha[hidden], .visor-url[hidden] { display: none; }
+.visor-cargando {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.75);
+}
+.visor-cargando .ti { font-size: 22px; animation: visor-giro 0.9s linear infinite; }
+@keyframes visor-giro { to { transform: rotate(360deg); } }
+.visor-error {
+  max-width: 320px;
+  text-align: center;
+  padding: 24px 20px;
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.08);
+  font-size: 14px;
+  cursor: default;
+}
+.visor-error .ti { font-size: 36px; display: block; margin-bottom: 8px; color: rgba(255, 255, 255, 0.6); }
+.visor-error-ayuda { margin-top: 6px; font-size: 12px; color: rgba(255, 255, 255, 0.6); }
+.visor-flecha {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 48px;
+  height: 48px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+  font-size: 28px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.visor-flecha:hover { background: rgba(255, 255, 255, 0.26); }
+.visor-prev { left: 8px; }
+.visor-next { right: 8px; }
+.visor-url {
+  margin: 8px auto 0;
+  width: calc(100% - 32px);
+  max-width: 640px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.75);
+}
+.visor-url-input {
+  width: 100%;
+  margin-top: 4px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  background: rgba(255, 255, 255, 0.95);
+  color: var(--color-text-primary);
+  font-size: 13px;
+  user-select: all;
+  -webkit-user-select: all;
+}
+.visor-acciones {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  padding: 12px 16px calc(14px + env(safe-area-inset-bottom, 0px));
+}
+.visor-btn { min-width: 140px; justify-content: center; }
+/* .btn es transparente con texto oscuro: sobre el fondo negro, blanco */
+.visor-btn:not(.btn-primary) { background: var(--color-bg-primary); color: var(--color-text-primary); }
+.visor-btn:not(.btn-primary):hover { background: var(--color-bg-tertiary); }
+.visor-btn-hecho { background: var(--color-green-bg); color: var(--color-green-text); border-color: var(--color-green); }
+
+/* Celular: la imagen ocupa casi todo; flechas encima de la foto y
+   botones grandes abajo, a lo ancho, fáciles de tocar */
+@media (max-width: 768px) {
+  .visor-cuerpo { padding: 0 4px; }
+  .visor-flecha {
+    width: 42px;
+    height: 42px;
+    font-size: 24px;
+    background: rgba(0, 0, 0, 0.45);
+  }
+  .visor-prev { left: 6px; }
+  .visor-next { right: 6px; }
+  .visor-acciones { gap: 8px; padding-left: 12px; padding-right: 12px; }
+  .visor-btn { flex: 1; min-width: 0; min-height: 48px; font-size: 15px; }
 }

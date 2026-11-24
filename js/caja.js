@@ -193,7 +193,7 @@ function _diasDifierenHTML(dias) {
     }).join('') + '</div>';
 }
 
-function _detalleTiendaHTML(idTienda) {
+function _detalleTiendaHTML(idTienda, nombre) {
   var d = _cajaDetallesTienda[idTienda];
   if (!d || d.cargando) {
     return '<div class="caja-detalle" style="padding:14px 24px;color:var(--color-text-tertiary);font-size:12px">Cargando pedidos…</div>';
@@ -220,7 +220,7 @@ function _detalleTiendaHTML(idTienda) {
     filas = '<tr><td colspan="10" style="text-align:center;padding:16px;color:var(--color-text-tertiary)">Sin pedidos en este filtro</td></tr>';
   }
   var t = d.totales;
-  return _liquidacionesHTML(d.liquidaciones) + _diasDifierenHTML(d.dias_pagados) + '<div class="caja-detalle"><table>' +
+  return _liquidacionesHTML(d.liquidaciones, 'tienda', nombre) + _diasDifierenHTML(d.dias_pagados) + '<div class="caja-detalle"><table>' +
     '<thead><tr><th>N° pedido</th><th>Fecha</th><th>Estado</th><th>Medio de pago</th><th>Delivery</th>' +
       '<th>Retenido</th><th>Saldo</th><th>Pre/Post</th><th>Pago</th><th></th></tr></thead>' +
     '<tbody>' + filas +
@@ -275,7 +275,7 @@ window.pintarTiendasCaja = function() {
       '<td class="col-ver-tienda-fijo"><button class="btn btn-sm" title="' + (abierta ? 'Ocultar pedidos' : 'Ver pedidos') + '" onclick="toggleDetalleTiendaCaja(' + t.id + ')">' +
         '<i class="ti ' + (abierta ? 'ti-eye-off' : 'ti-eye') + '"></i></button></td>' +
     '</tr>';
-    if (abierta) fila += '<tr><td colspan="8" class="caja-detalle-celda">' + _detalleTiendaHTML(t.id) + '</td></tr>';
+    if (abierta) fila += '<tr><td colspan="8" class="caja-detalle-celda">' + _detalleTiendaHTML(t.id, t.tienda) + '</td></tr>';
     return fila;
   }).join('');
 
@@ -522,19 +522,10 @@ window.toggleFotosLiquidacion = function(clave) {
   pintarMotosCaja();
 };
 
-window.verFotoPagoGrande = function(url) {
-  var ov = document.getElementById('caja-foto-grande');
-  var img = document.getElementById('caja-foto-grande-img');
-  if (!ov || !img) return;
-  img.src = url;
-  ov.style.display = 'flex';
-};
-window.cerrarFotoPagoGrande = function() {
-  var ov = document.getElementById('caja-foto-grande');
-  if (ov) ov.style.display = 'none';
-};
-
-function _liquidacionesHTML(liqs, tipo) {
+/* Las fotos de cada pago se abren en el visor (js/visor-imagen.js):
+   las de un mismo pago van juntas, con flechas. nombre = la tienda o
+   el motorizado, para el título. */
+function _liquidacionesHTML(liqs, tipo, nombre) {
   if (!liqs || !liqs.length) return '';
   return '<div class="caja-liqs"><div class="caja-liqs-titulo"><i class="ti ti-receipt"></i> Pagos registrados</div>' +
     liqs.map(function(l) {
@@ -546,10 +537,12 @@ function _liquidacionesHTML(liqs, tipo) {
       var faltan = Math.max((l.fotos_declaradas || 0) - l.fotos.length, 0);
       var fotos = '';
       if (abierta) {
-        fotos = '<div class="caja-liq-fotos">' +
+        var tituloFoto = (tipo === 'moto' ? 'Pago al motorizado' : 'Pago a tienda') +
+          (nombre ? ' · ' + nombre : '') + ' · ' + _fechaDisplayCaja(l.fecha_pago);
+        fotos = '<div class="caja-liq-fotos" data-visor-grupo>' +
           l.fotos.map(function(f, i) {
-            var u = _escCaja(f.url);
-            return '<img src="' + u + '" loading="lazy" alt="Foto del pago ' + (i + 1) + '" onclick="verFotoPagoGrande(\'' + u + '\')" />';
+            return '<img src="' + _escCaja(f.url) + '" loading="lazy" alt="Foto del pago ' + (i + 1) + '"' +
+              atributosVisor(f.url, tituloFoto) + ' />';
           }).join('') +
           (l.fotos.length ? '' : '<span class="caja-tenue">Sin fotos todavía</span>') +
         '</div>';
@@ -786,18 +779,18 @@ function _fechaReporteMotoCaja() {
   return null;
 }
 
-function _reporteMotoCajaHTML(idMoto) {
+function _reporteMotoCajaHTML(idMoto, nombre) {
   if (typeof botonesReporteMotoHTML !== 'function') return '';
   var fecha = _fechaReporteMotoCaja();
   var html = fecha
-    ? botonesReporteMotoHTML(idMoto, fecha)
+    ? botonesReporteMotoHTML(idMoto, fecha, nombre)
     : (typeof _repEsAdmin === 'function' && _repEsAdmin()
         ? '<span class="caja-tenue" style="font-size:12px"><i class="ti ti-photo"></i> Para el reporte en imagen, filtrá un solo día</span>'
         : '');
   return html ? '<div style="display:flex;justify-content:flex-end;padding:10px 24px 0">' + html + '</div>' : '';
 }
 
-function _detalleMotoHTML(idMoto) {
+function _detalleMotoHTML(idMoto, nombre) {
   var d = _motoDetalles[idMoto];
   if (!d || d.cargando) {
     return '<div class="caja-detalle" style="padding:14px 24px;color:var(--color-text-tertiary);font-size:12px">Cargando pedidos…</div>';
@@ -829,8 +822,8 @@ function _detalleMotoHTML(idMoto) {
         d.dias_abiertos.map(_fechaDisplayCaja).join(', ') + ': no se liquidan hasta cerrarlas.</div>'
     : '';
   var t = d.totales;
-  return _reporteMotoCajaHTML(idMoto) +
-    _liquidacionesHTML(d.liquidaciones, 'moto') + _diasDifierenHTML(d.dias_pagados) + abiertos + '<div class="caja-detalle"><table>' +
+  return _reporteMotoCajaHTML(idMoto, nombre) +
+    _liquidacionesHTML(d.liquidaciones, 'moto', nombre) + _diasDifierenHTML(d.dias_pagados) + abiertos + '<div class="caja-detalle"><table>' +
     '<thead><tr><th>N° pedido</th><th>Fecha</th><th>Tienda</th><th>Estado</th><th>Medio de pago</th>' +
       '<th>En mano</th><th>Su pago</th><th>Saldo</th><th>Pago</th><th></th></tr></thead>' +
     '<tbody>' + filas +
@@ -891,7 +884,7 @@ window.pintarMotosCaja = function() {
       '<td class="col-ver-tienda-fijo"><button class="btn btn-sm" title="' + (abierta ? 'Ocultar pedidos' : 'Ver pedidos') + '" onclick="toggleDetalleMotoCaja(' + m.id + ')">' +
         '<i class="ti ' + (abierta ? 'ti-eye-off' : 'ti-eye') + '"></i></button></td>' +
     '</tr>';
-    if (abierta) fila += '<tr><td colspan="9" class="caja-detalle-celda">' + _detalleMotoHTML(m.id) + '</td></tr>';
+    if (abierta) fila += '<tr><td colspan="9" class="caja-detalle-celda">' + _detalleMotoHTML(m.id, m.motorizado) + '</td></tr>';
     return fila;
   }).join('');
 

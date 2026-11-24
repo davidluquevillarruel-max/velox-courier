@@ -289,25 +289,27 @@ function _repEsc(s) {
    cuando el HTML ya está en la página. Es para las listas que arman su
    HTML cada pocos segundos y solo lo pintan si cambió (la Caja): así no
    se consulta a R2 en cada refresco. */
-function _repBotonesHTML(tipo, idQuien, fecha, diferido) {
+function _repBotonesHTML(tipo, idQuien, fecha, diferido, nombre) {
   if (!_REP_TIPOS[tipo] || !_repEsAdmin() || !idQuien || !fecha) return '';
   var id = 'rep-' + tipo + '-' + idQuien + '-' + fecha;
   if (!diferido) setTimeout(function() { _repConsultarExistente(id); }, 0);
   return '<span id="' + id + '" class="reporte-tienda" data-tipo="' + _repEsc(tipo) + '" data-id="' + _repEsc(idQuien) + '" data-fecha="' + _repEsc(fecha) + '" ' +
+      'data-nombre="' + _repEsc(nombre || '') + '" ' +
       (diferido ? 'data-rep-pendiente="1" ' : '') +
       'style="display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap">' +
       '<button type="button" class="btn btn-sm" data-rep="generar" onclick="generarReporteTienda(this)" ' +
         'title="Crea una imagen del reporte del ' + _repEsc(_repDiaMes(fecha)) + ' y le da una URL para mandar">' +
         '<i class="ti ti-photo"></i> <span data-rep="texto">Generar reporte ' + _repEsc(_repDiaMes(fecha)) + '</span></button>' +
-      '<a data-rep="link" target="_blank" rel="noopener" style="display:none;font-size:12px"></a>' +
+      /* "Ver imagen": abre el visor (js/visor-imagen.js); Ctrl+clic, otra pestaña */
+      '<a data-rep="link" style="display:none;font-size:12px"></a>' +
       '<button type="button" class="btn btn-sm" data-rep="copiar" onclick="copiarUrlReporte(this)" style="display:none" title="Copiar la URL de la imagen">' +
         '<i class="ti ti-copy"></i> Copiar</button>' +
     '</span>';
 }
 
 /* Detalle de una tienda (js/clientes.js) */
-window.botonesReporteTiendaHTML = function(idTienda, fecha) {
-  return _repBotonesHTML('tienda', idTienda, fecha);
+window.botonesReporteTiendaHTML = function(idTienda, fecha, nombre) {
+  return _repBotonesHTML('tienda', idTienda, fecha, false, nombre);
 };
 
 /* Pregunta por los botones diferidos que ya están pintados dentro de raiz */
@@ -332,6 +334,9 @@ function _repMostrarUrl(cont, url, generadoEn) {
   cont.setAttribute('data-url', url);
   if (link) {
     link.href = url;
+    var nombre = cont.getAttribute('data-nombre');
+    link.setAttribute('data-visor-url', url);
+    link.setAttribute('data-visor-titulo', 'Reporte' + (nombre ? ' · ' + nombre : '') + ' · ' + _repDiaMes(cont.getAttribute('data-fecha')));
     link.textContent = 'Ver imagen' + (generadoEn ? ' (' + _repAhoraLima(new Date(generadoEn)).slice(-5) + ')' : '');
     link.style.display = '';
   }

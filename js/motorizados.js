@@ -1001,8 +1001,8 @@ function _renderModalActualizarOrden(orden, tiendas, distritos, motorizados) {
   var fotosOrden = Array.isArray(orden.fotos) ? orden.fotos : [];
   var fotosDevolucionHTML = _fotosDevolucionHTML(fotosOrden.filter(function(f) {
     return f.tipo === 'foto_devolucion' || f.tipo === 'foto_devolucion_tienda';
-  }));
-  var seccionFotosOrden = _seccionFotosOrdenHTML(fotosOrden, orden.motivo_no_entrega);
+  }), orden.codigo);
+  var seccionFotosOrden = _seccionFotosOrdenHTML(fotosOrden, orden.motivo_no_entrega, orden.codigo);
   var codigoAttr = String(orden.codigo || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;');
 
   var seccionDevuelto = '';
@@ -1038,34 +1038,24 @@ function _renderModalActualizarOrden(orden, tiendas, distritos, motorizados) {
       '</div>';
   }
 
-  /* Foto del producto: el mismo ícono de cámara y la misma vista previa
-     que el modal de nueva orden (pages/pedidos.html), solo para ver.
-     Sin foto no se muestra nada. La URL va en data-src y la imagen se
-     pide recién al tocar el ícono (ver _toggleVistaPreviaFoto). */
+  /* Foto del producto: el mismo ícono de cámara que el modal de nueva
+     orden (pages/pedidos.html). Sin foto no se muestra nada. Al tocarlo
+     se abre el visor (js/visor-imagen.js); la imagen se pide recién ahí. */
   var seccionFotoProducto = '';
   if (orden.foto_producto_url) {
-    var srcFoto = String(orden.foto_producto_url).replace(/&/g, '&amp;').replace(/"/g, '&quot;');
     seccionFotoProducto =
       '<div style="display:flex;align-items:center;gap:12px;background:var(--color-bg-secondary);border-radius:var(--radius-md);padding:10px 12px;margin-bottom:12px">' +
-        '<button type="button" id="btn-ver-foto-orden-update" data-src="' + srcFoto + '" onclick="toggleVistaPreviaFotoUpdate(this)" title="Ver la foto del producto" ' +
+        '<button type="button" id="btn-ver-foto-orden-update"' + atributosVisor(orden.foto_producto_url, 'Foto del producto · #' + orden.codigo) + ' title="Ver la foto del producto" ' +
                 'style="position:relative;background:var(--color-bg-primary);border:1px solid var(--color-border-secondary);border-radius:var(--radius-md);width:46px;height:46px;flex-shrink:0;cursor:pointer;font-size:21px;color:var(--color-green)">' +
           '<i class="ti ti-camera"></i>' +
           '<span style="position:absolute;top:-5px;right:-5px;width:15px;height:15px;border-radius:50%;background:var(--color-green);border:2px solid var(--color-bg-secondary)"></span>' +
         '</button>' +
         '<div style="font-size:12px;font-weight:600;color:var(--color-text-secondary)">Foto del producto — toca la cámara para verla</div>' +
-      '</div>' +
-      '<div id="foto-orden-preview-update" style="display:none;margin-bottom:18px">' +
-        '<img id="foto-orden-preview-img-update" alt="Foto del producto" ' +
-             'onerror="fotoUpdateNoCargo()" ' +
-             'style="width:100%;max-height:320px;object-fit:contain;border-radius:var(--radius-md);display:block;background:var(--color-bg-tertiary)" />' +
-        '<div id="foto-orden-preview-error-update" style="display:none;font-size:12px;color:var(--color-text-secondary);padding:10px 12px;background:var(--color-bg-tertiary);border-radius:var(--radius-md)">' +
-          '<i class="ti ti-photo-off"></i> No se pudo cargar la foto' +
-        '</div>' +
       '</div>';
   }
 
   overlay.innerHTML =
-    '<div style="background:var(--color-bg-primary);border-radius:var(--radius-lg);padding:24px;width:480px;max-width:95vw;box-shadow:0 8px 32px rgba(0,0,0,0.18);margin:auto">' +
+    '<div data-visor-grupo style="background:var(--color-bg-primary);border-radius:var(--radius-lg);padding:24px;width:480px;max-width:95vw;box-shadow:0 8px 32px rgba(0,0,0,0.18);margin:auto">' +
       '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px">' +
         '<span style="font-size:15px;font-weight:500">Actualizar orden #' + orden.codigo + '</span>' +
         '<button onclick="cerrarActualizarEstadoOrden()" style="background:none;border:none;cursor:pointer;font-size:18px;color:var(--color-text-secondary)"><i class="ti ti-x"></i></button>' +
@@ -1314,7 +1304,7 @@ function _renderModalActualizarOrden(orden, tiendas, distritos, motorizados) {
   var statusEvidencia = document.getElementById('f-orden-evidencia-status-update');
   if (statusEvidencia && orden.evidencia_url) {
     statusEvidencia.innerHTML = '<i class="ti ti-circle-check" style="color:var(--color-green)"></i> Ya tiene evidencia subida — ' +
-      '<a href="' + orden.evidencia_url + '" target="_blank" rel="noopener">ver foto</a>. Elige otro archivo solo si quieres reemplazarla.';
+      '<a href="' + _escFoto(orden.evidencia_url) + '"' + atributosVisor(orden.evidencia_url, 'Foto del pago · #' + orden.codigo) + '>ver foto</a>. Elige otro archivo solo si quieres reemplazarla.';
   } else if (statusEvidencia && orden.evidencia_pendiente) {
     /* Se guardó el medio de pago pero la foto todavía no llegó al
        servidor (sigue en la cola de algún teléfono) */
@@ -1515,8 +1505,8 @@ window.onTogglePrepagadoUpdate = function() {
 /* ── Fotos de la orden en "Actualizar orden" ──
    Vienen de GET /ordenes/:id (orden.fotos, ya filtradas por rol). Cada
    foto es un botón; la imagen se pide recién al tocarlo, para no gastar
-   datos al abrir el modal. Cada bloque (data-fotos-seccion) tiene su
-   propia vista previa (ver verFotoEnSeccion). */
+   datos al abrir el modal. Se abren en el visor (js/visor-imagen.js),
+   con flechas entre todas las fotos del modal (data-visor-grupo). */
 var _MAX_FOTOS_DEVOLUCION = 5;
 
 /* Observaciones en "Actualizar orden". Gestor: edita el texto completo.
@@ -1540,38 +1530,28 @@ function _escFoto(s) {
   return String(s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
 }
 
-/* Botón de una foto: cámara + etiqueta, y la fecha en el title */
-function _botonFotoOrden(f, etiqueta, titulo) {
+/* Botón de una foto: cámara + etiqueta, y la fecha en el title.
+   titulo = "Foto de entrega"; en el visor, + " · #C-1412" */
+function _botonFotoOrden(f, etiqueta, titulo, codigo) {
   var cuando = f.subido_en ? f.subido_en.slice(8, 10) + '/' + f.subido_en.slice(5, 7) + ' ' + f.subido_en.slice(11, 16) : '';
-  return '<button type="button" class="btn btn-sm" data-src="' + _escFoto(f.url) + '" onclick="verFotoEnSeccion(this)" ' +
+  return '<button type="button" class="btn btn-sm"' + atributosVisor(f.url, titulo + (codigo ? ' · #' + codigo : '')) + ' ' +
            'title="' + _escFoto(titulo + (cuando ? ' — ' + cuando : '')) + '" ' +
            'style="padding:4px 8px;font-size:12px;background:var(--color-bg-primary)">' +
            '<i class="ti ti-camera"></i> ' + _escFoto(etiqueta) +
          '</button>';
 }
 
-/* Vista previa compartida por las fotos de un bloque */
-function _vistaPreviaFotosHTML() {
-  return '<div class="fotos-preview" style="display:none;margin-top:8px">' +
-      '<img alt="Foto" onerror="fotoEnSeccionNoCargo(this)" ' +
-           'style="width:100%;max-height:280px;object-fit:contain;border-radius:var(--radius-md);display:block;background:var(--color-bg-tertiary)" />' +
-      '<div class="fotos-preview-error" style="display:none;font-size:12px;color:var(--color-text-secondary);padding:10px 12px;background:var(--color-bg-tertiary);border-radius:var(--radius-md)">' +
-        '<i class="ti ti-photo-off"></i> No se pudo cargar la foto' +
-      '</div>' +
-    '</div>';
-}
-
 /* Devolución: una por cada vez que el producto volvió a la oficina
    (hasta MAX_FOTOS_DEVOLUCION en el servidor) y la de la entrega a la
    tienda. Va en la zona amarilla / verde de la devolución. */
-function _fotosDevolucionHTML(fotos) {
+function _fotosDevolucionHTML(fotos, codigo) {
   if (!Array.isArray(fotos) || !fotos.length) return '';
 
   var vueltas = 0;
   var botones = fotos.map(function(f) {
     var esTienda = f.tipo === 'foto_devolucion_tienda';
     var etiqueta = esTienda ? 'Tienda' : String(++vueltas);
-    return _botonFotoOrden(f, etiqueta, esTienda ? 'Foto de la entrega a la tienda' : 'Foto de la devolución ' + etiqueta);
+    return _botonFotoOrden(f, etiqueta, esTienda ? 'Foto de la entrega a la tienda' : 'Foto de la devolución ' + etiqueta, codigo);
   }).join('');
 
   return '<div data-fotos-seccion style="flex:1;min-width:160px">' +
@@ -1579,7 +1559,6 @@ function _fotosDevolucionHTML(fotos) {
         'Fotos de devolución (' + vueltas + '/' + _MAX_FOTOS_DEVOLUCION + ')' +
       '</div>' +
       '<div style="display:flex;gap:6px;flex-wrap:wrap">' + botones + '</div>' +
-      _vistaPreviaFotosHTML() +
     '</div>';
 }
 
@@ -1589,70 +1568,45 @@ function _fotosDevolucionHTML(fotos) {
    solo si ese tipo tiene fotos. Un tipo que no esté en esta lista sale
    igual, en "Otras", para que ninguna foto quede escondida. Las que este
    rol no puede ver ya no vienen del servidor (GET /ordenes/:id). */
+/* titulo = el del visor (js/visor-imagen.js), + " · #C-1412" */
 var _GRUPOS_FOTOS_ORDEN = [
-  { tipo: 'foto_producto',          label: 'Producto' },
-  { tipo: 'foto_entrega',           label: 'Entrega' },
-  { tipo: 'foto_cambio',            label: 'Cambio' },
-  { tipo: 'evidencia_medio_pago',   label: 'Pago' },
-  { tipo: 'foto_reprogramado',      label: 'Reprogramado' },
-  { tipo: 'foto_ausente',           label: 'Ausente' },
-  { tipo: 'foto_cancelado',         label: 'Cancelado' },
-  { tipo: 'foto_no_entregado',      label: 'No entregado' },
-  { tipo: 'foto_devolucion',        label: 'Devolución' },
-  { tipo: 'foto_devolucion_tienda', label: 'Devolución tienda' },
+  { tipo: 'foto_producto',          label: 'Producto',          titulo: 'Foto del producto' },
+  { tipo: 'foto_entrega',           label: 'Entrega',           titulo: 'Foto de entrega' },
+  { tipo: 'foto_cambio',            label: 'Cambio',            titulo: 'Foto del cambio' },
+  { tipo: 'evidencia_medio_pago',   label: 'Pago',              titulo: 'Foto del pago' },
+  { tipo: 'foto_reprogramado',      label: 'Reprogramado',      titulo: 'Foto de reprogramado' },
+  { tipo: 'foto_ausente',           label: 'Ausente',           titulo: 'Foto de ausente' },
+  { tipo: 'foto_cancelado',         label: 'Cancelado',         titulo: 'Foto de cancelado' },
+  { tipo: 'foto_no_entregado',      label: 'No entregado',      titulo: 'Foto de no entregado' },
+  { tipo: 'foto_devolucion',        label: 'Devolución',        titulo: 'Foto de devolución' },
+  { tipo: 'foto_devolucion_tienda', label: 'Devolución tienda', titulo: 'Foto de la entrega a la tienda' },
 ];
 
-function _grupoFotosOrdenHTML(label, deEste) {
+function _grupoFotosOrdenHTML(label, deEste, codigo, titulo) {
   return '<div class="fotos-orden-grupo">' +
       '<span class="fotos-orden-grupo-label">' + _escFoto(label) + '</span>' +
       deEste.map(function(f, i) {
-        return _botonFotoOrden(f, deEste.length > 1 ? String(i + 1) : 'Ver', 'Foto: ' + label.toLowerCase());
+        return _botonFotoOrden(f, deEste.length > 1 ? String(i + 1) : 'Ver', titulo || 'Foto', codigo);
       }).join('') +
     '</div>';
 }
 
-function _seccionFotosOrdenHTML(fotos, motivo) {
+function _seccionFotosOrdenHTML(fotos, motivo, codigo) {
   var conocidos = _GRUPOS_FOTOS_ORDEN.map(function(g) { return g.tipo; });
   var grupos = _GRUPOS_FOTOS_ORDEN.map(function(g) {
     var deEste = fotos.filter(function(f) { return f.tipo === g.tipo; });
-    return deEste.length ? _grupoFotosOrdenHTML(g.label, deEste) : '';
+    return deEste.length ? _grupoFotosOrdenHTML(g.label, deEste, codigo, g.titulo) : '';
   }).join('');
   var otras = fotos.filter(function(f) { return conocidos.indexOf(f.tipo) === -1; });
-  if (otras.length) grupos += _grupoFotosOrdenHTML('Otras', otras);
+  if (otras.length) grupos += _grupoFotosOrdenHTML('Otras', otras, codigo, 'Foto');
   if (!grupos && !motivo) return '';
 
   return '<div data-fotos-seccion style="background:var(--color-bg-secondary);border-radius:var(--radius-md);padding:10px 12px;margin-bottom:12px;display:flex;flex-direction:column;gap:6px">' +
       '<div style="font-size:12px;font-weight:600;color:var(--color-text-secondary)">Fotos de la orden</div>' +
       grupos +
       (motivo ? '<div style="font-size:12px;color:var(--color-text-secondary)">Motivo del último intento: <strong style="color:var(--color-text-primary)">' + _escFoto(motivo) + '</strong></div>' : '') +
-      _vistaPreviaFotosHTML() +
     '</div>';
 }
-
-/* Tocar la misma foto la cierra; tocar otra la cambia */
-window.verFotoEnSeccion = function(btn) {
-  var seccion = btn.closest('[data-fotos-seccion]');
-  var cont = seccion && seccion.querySelector('.fotos-preview');
-  var img  = cont && cont.querySelector('img');
-  var err  = cont && cont.querySelector('.fotos-preview-error');
-  if (!cont || !img) return;
-  var src = btn.getAttribute('data-src');
-
-  if (cont.style.display === 'block' && img.getAttribute('src') === src) {
-    cont.style.display = 'none';
-    return;
-  }
-  img.style.display = 'block';
-  if (err) err.style.display = 'none';
-  if (img.getAttribute('src') !== src) img.src = src;
-  cont.style.display = 'block';
-};
-
-window.fotoEnSeccionNoCargo = function(img) {
-  var err = img.parentNode.querySelector('.fotos-preview-error');
-  img.style.display = 'none';
-  if (err) err.style.display = 'block';
-};
 
 /* Foto tomada para una devolución que no se pudo confirmar (sin señal,
    error del servidor): se guarda para que el reintento no obligue a
@@ -1758,21 +1712,6 @@ window.onDistritoChangeUpdate = function(distritoSeleccionado) {
 
   if (fDeliv)    fDeliv.value    = parseFloat(d.precio_delivery).toFixed(2);
   if (fPagoMoto) fPagoMoto.value = parseFloat(d.pago_motorizado || 0).toFixed(2);
-};
-
-/* Ícono de cámara de "Actualizar orden": reusa la vista previa del
-   modal de nueva orden (_toggleVistaPreviaFoto, en js/pedidos.js) */
-window.toggleVistaPreviaFotoUpdate = function(btn) {
-  _toggleVistaPreviaFoto('foto-orden-preview-update', 'foto-orden-preview-img-update', btn.getAttribute('data-src'));
-};
-
-/* La foto no cargó (no está en el servidor, o el rol no puede verla):
-   se esconde la imagen rota y se avisa en su lugar */
-window.fotoUpdateNoCargo = function() {
-  var img = document.getElementById('foto-orden-preview-img-update');
-  var err = document.getElementById('foto-orden-preview-error-update');
-  if (img) img.style.display = 'none';
-  if (err) err.style.display = 'block';
 };
 
 window.cerrarActualizarEstadoOrden = function() {

@@ -552,7 +552,7 @@ function _gmPintarDia() {
     /* El mismo reporte que Caja → Motorizados (generarlo acá o allá pisa
        el mismo archivo; solo admin) y el WhatsApp con su marca */
     '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px">' +
-      (typeof botonesReporteMotoHTML === 'function' ? botonesReporteMotoHTML(estado.id, d.fecha) : '') +
+      (typeof botonesReporteMotoHTML === 'function' ? botonesReporteMotoHTML(estado.id, d.fecha, m && m.nombre) : '') +
       _gmBotonWA(m, d.fecha, true) +
     '</div>' +
     liq +

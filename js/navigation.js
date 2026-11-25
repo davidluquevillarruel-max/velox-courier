@@ -133,6 +133,21 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 });
 
+/* Nombre del panel (arriba del menú) y título de la pestaña según el rol:
+   motorizado → "Motorizado", tienda → "Tienda", el resto (admin, operador,
+   visor) → "Admin". El <wbr> deja partirlo en dos líneas solo si no entra
+   (menú de 200 px entre 769 y 1024 px). Corre al cargar este archivo (está
+   al final del <body>) para que no se vea "Admin" un instante. */
+function _aplicarNombrePanel() {
+  var sesion = _obtenerSesion();
+  var rol = sesion && sesion.rol;
+  var sufijo = rol === 'motorizado' ? 'Motorizado' : rol === 'tienda' ? 'Tienda' : 'Admin';
+  var el = document.getElementById('logo-name');
+  if (el) el.innerHTML = 'VeloxCourier<wbr>' + sufijo;
+  document.title = 'Velox Courier - ' + sufijo;
+}
+_aplicarNombrePanel();
+
 /* Lee la sesión guardada en localStorage (objeto usuario) */
 function _obtenerSesion() {
   var raw = localStorage.getItem('velox_usuario');

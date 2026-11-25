@@ -12,6 +12,20 @@ Velox Courier — internal management system for a courier/delivery company in L
 
 Última actualización: 24 de noviembre de 2026.
 
+- **Cambio 7 — nombre del panel según el rol (24 de noviembre de 2026, commit en local, sin push;
+  solo frontend, sin servidor ni migración).** Arriba del menú: admin / operador / visor =
+  "VeloxCourierAdmin", motorizado = "VeloxCourierMotorizado", tienda = "VeloxCourierTienda"; la
+  pestaña sigue la misma regla ("Velox Courier - Motorizado"). `_aplicarNombrePanel()` en
+  `js/navigation.js` (lee `velox_usuario`), corre al cargar el archivo y no en `DOMContentLoaded`,
+  así no se ve "Admin" un instante; `#logo-name` en `index.html`. Lleva un `<wbr>` antes del rol:
+  si no entra, pasa a dos líneas en vez de salirse del menú. En el celular (≤ 768 px) el menú pasó
+  de 240 a 260 px (`css/responsive.css`) para que el nombre largo (167 px) entre en una línea.
+  **Probado el 24/11** con usuarios de prueba (borrados): a 375 px el de motorizado en una línea,
+  termina en x=235 dentro del menú de 260, la ✕ (x 14–54) no se mueve (tapa el ícono del logo,
+  como antes); tienda y operador en una línea; títulos de pestaña correctos. **En PC (menú de 230
+  px) y entre 769 y 1024 px (200 px) "VeloxCourierMotorizado" sale en dos líneas** ("VeloxCourier"
+  / "Motorizado"), sin cortarse; Admin y Tienda, en una.
+
 - **Cambio 6 — visor de imágenes dentro del sistema (24 de noviembre de 2026, commit en local, sin
   push; solo frontend, sin servidor ni migración: basta recargar la app).** Ninguna foto ni reporte
   abre otra pestaña: se abren encima de la pantalla y lo de atrás queda igual (un modal con datos

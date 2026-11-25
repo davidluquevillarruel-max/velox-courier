@@ -572,3 +572,32 @@ tbody tr:hover .col-cobrado-fijo {
     text-overflow: ellipsis;
   }
 }
+
+/* ══════════════════════════════════════
+   KPIs EN EL CELULAR: 2 COLUMNAS SIEMPRE (como .moto-kpis)
+   Varias páginas fijan las columnas en el HTML (style="grid-template-
+   columns:repeat(4,1fr)" en Clientes, Caja → Liquidez, Evidencias,
+   Tarifas) o en su <style> (.caja-kpis-tiendas, 5 columnas): eso le
+   ganaba a las reglas de arriba y los cuadros se salían de la pantalla
+   a 375 px. Por eso !important (igual que .resumen-dia). minmax(0, 1fr)
+   deja que el cuadro se achique en vez de empujar al de al lado.
+   Los cuadros que llevan etiqueta, monto y nota sueltos (sin
+   .metric-body) los ponían en fila y en medio celular no entraban: acá
+   van apilados. Los de .metric-body + ícono (Pedidos, Motorizados) no
+   cambian. Un monto se parte solo si no entra ni en su renglón.
+══════════════════════════════════════ */
+@media (max-width: 768px) {
+  .metrics,
+  .evidencia-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+  .metric,
+  .ev-card { min-width: 0; }
+  .metric { flex-wrap: wrap; }
+  .metric > .metric-label,
+  .metric > .metric-val,
+  .metric > .caja-kpi-nota { flex-basis: 100%; min-width: 0; }
+  .metric > .metric-label { margin-bottom: 0; }
+  .metric-body { min-width: 0; }
+  .ev-num { font-size: 22px; }
+  .metric-val,
+  .ev-num { overflow-wrap: break-word; }
+}

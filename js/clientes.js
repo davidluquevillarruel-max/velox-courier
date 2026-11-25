@@ -613,7 +613,8 @@ window.renderDetalleTienda = async function(tiendaId) {
   var html =
     '<div class="detalle-header">' +
       '<div class="detalle-header-left">' +
-        '<button class="btn-back" onclick="showPage(\'clientes\')"><i class="ti ti-arrow-left"></i> Volver</button>' +
+        /* La tienda entra directo acá ("Mi cuenta"): no tiene lista a la que volver */
+        (esTiendaDet ? '' : '<button class="btn-back" onclick="showPage(\'clientes\')"><i class="ti ti-arrow-left"></i> Volver</button>') +
         '<div><div class="detalle-nombre">' + tienda.nombre + '</div>' +
           '<div class="detalle-meta">' +
             (tienda.ruc ? '<span><i class="ti ti-id-badge"></i> RUC: '+tienda.ruc+'</span>' : '') +
@@ -652,7 +653,8 @@ window.renderDetalleTienda = async function(tiendaId) {
       '</div>' +
     '</div>';
 
-  if (fechas.length === 0) {
+  /* La tienda sigue con los filtros a mano (abajo) */
+  if (fechas.length === 0 && !esTiendaDet) {
     html += '<div style="padding:40px;text-align:center;color:var(--color-text-tertiary)">Sin órdenes registradas.</div>';
     container.innerHTML = html;
     return;
@@ -680,7 +682,12 @@ window.renderDetalleTienda = async function(tiendaId) {
     '<span style="font-size:12px;color:var(--color-text-tertiary)">' + descPeriodo + '</span>' +
   '</div>';
 
-  if (hayFiltroDetalle) {
+  if (fechas.length === 0 && !hayFiltroDetalle) {
+    /* Solo la tienda llega acá (arriba los gestores ya cortaron) */
+    html += '<div style="padding:32px 16px;text-align:center;color:var(--color-text-secondary)">' +
+      '<i class="ti ti-package-off" style="font-size:28px;display:block;margin-bottom:8px;color:var(--color-text-tertiary)"></i>' +
+      'Todavía no tenés órdenes con Velox. Cuando repartamos tus pedidos, los vas a ver acá día por día.</div>';
+  } else if (hayFiltroDetalle) {
     /* ── Vista agrupada: todo el rango en un solo bloque + tabla con columna Fecha ── */
     var ordsPeriodo = ordenes
       .filter(function(o){ return _diaCli(o) >= _filtroDesdeDetalle && _diaCli(o) <= _filtroHastaDetalle; })
@@ -751,7 +758,38 @@ window.exportarTiendas = function() {
   a.download = 'tiendas.csv'; a.click();
 };
 
+/* Rol tienda: "Mi cuenta" = su detalle directo, sin la lista, los KPIs,
+   Exportar ni "← Volver" (como el moto en Gestión / Motorizado). El id es
+   el de la sesión, pero eso es solo pantalla: el servidor ya filtra por
+   el id_tienda del token. La tarjeta "Lógica de saldo" queda abajo. */
+function _initMiCuentaTienda(idTienda) {
+  var titulo = document.getElementById('cli-titulo');
+  var sub    = document.getElementById('cli-sub');
+  if (titulo) titulo.textContent = 'Mi cuenta';
+  if (sub) sub.textContent = 'Tu saldo con Velox y tus órdenes, día por día';
+  ['cli-kpis', 'card-clientes-lista'].forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el) el.style.display = 'none';
+  });
+  var root = document.getElementById('detalle-tienda-root');
+  if (!root) return;
+  root.hidden = false;
+  if (!idTienda) {
+    root.innerHTML = '<div style="padding:40px;text-align:center;color:var(--color-text-secondary)">' +
+      'Tu usuario no está vinculado a una tienda. Pedile a la oficina que lo revise.</div>';
+    return;
+  }
+  _resetFiltroDetalleTienda();
+  renderDetalleTienda(idTienda);
+}
+
 window.initClientes = function() {
+  if (_sesionEsTiendaCli()) {
+    var sesionCli = null;
+    try { sesionCli = JSON.parse(localStorage.getItem('velox_usuario')); } catch (e) {}
+    _initMiCuentaTienda(sesionCli && sesionCli.id_tienda);
+    return;
+  }
   /* Si no hay filtro previo (primera vez), arrancar con hoy */
   if (!_filtroDesdeClientes && !_filtroHastaClientes) {
     _filtroDesdeClientes = _hoyCli();

@@ -5,11 +5,11 @@
      selector de órdenes en pedidos.js automáticamente.
      ============================================================ -->
 
-<div class="page-title">Clientes / Tiendas</div>
-<div class="page-sub">Las tiendas registradas aquí aparecen en el selector al crear nuevas órdenes</div>
+<div class="page-title" id="cli-titulo">Clientes / Tiendas</div>
+<div class="page-sub" id="cli-sub">Las tiendas registradas aquí aparecen en el selector al crear nuevas órdenes</div>
 
-<!-- ── KPIs + botón agregar ── -->
-<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px;gap:12px;flex-wrap:wrap">
+<!-- ── KPIs + botón agregar ── (el rol tienda no los ve: entra directo a su detalle) -->
+<div id="cli-kpis" style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px;gap:12px;flex-wrap:wrap">
   <div class="metrics" style="grid-template-columns:repeat(4,1fr);flex:1;min-width:0;margin-bottom:0">
     <div class="metric"><div class="metric-label">Total a cobrar</div><div class="metric-val red" id="kpi-cli-cobrar">—</div></div>
     <div class="metric"><div class="metric-label">Total a devolver</div><div class="metric-val amber" id="kpi-cli-devolver">—</div></div>
@@ -19,7 +19,7 @@
 </div>
 
 <!-- ── Tabla ── -->
-<div class="card">
+<div class="card" id="card-clientes-lista">
   <div class="card-head">
     <span class="card-title">Balance por tienda cliente</span>
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
@@ -70,6 +70,10 @@
     </table>
   </div>
 </div>
+
+<!-- Rol tienda: su detalle va acá, en vez de la lista (initClientes →
+     _initMiCuentaTienda, js/clientes.js). Para los gestores queda vacío. -->
+<div id="detalle-tienda-root" hidden></div>
 
 <!-- Lógica de saldo -->
 <div class="card" style="margin-top:16px">

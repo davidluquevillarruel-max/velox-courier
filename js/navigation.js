@@ -185,6 +185,10 @@ function _aplicarPermisosPorRol() {
     ['nav-clientes','nav-evidencias','nav-usuarios'].forEach(function(navId) {
       var el = document.getElementById(navId); if (el) el.style.display = '';
     });
+    /* Para la tienda, Clientes / Tiendas es su propia cuenta (js/clientes.js,
+       _initMiCuentaTienda): el menú dice lo mismo que el título */
+    var navCli = document.getElementById('nav-clientes');
+    if (navCli) navCli.innerHTML = '<i class="ti ti-building-store" aria-hidden="true"></i> Mi cuenta';
 
   } else if (sesion.rol !== 'admin') {
     var navUsuarios = document.getElementById('nav-usuarios');

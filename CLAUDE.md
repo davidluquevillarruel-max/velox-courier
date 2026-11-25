@@ -32,6 +32,26 @@ Velox Courier — internal management system for a courier/delivery company in L
     scripts con contraseñas (`31b71ea`; D-028).
   - Subidos después, el mismo 25/11: el WhatsApp del reporte a las tiendas y el arreglo del
     encabezado (`b0b53cc`), y Clientes / Tiendas con el motor de la Caja (D-029).
+- **La tienda entra directo a su detalle: "Mi cuenta" (25/11, commit en local, SIN push; solo
+  frontend, sin servidor ni migración: basta recargar la app).** `js/clientes.js`,
+  `pages/clientes.html`, `js/navigation.js`.
+  - `initClientes` → si el rol es tienda, `_initMiCuentaTienda(id_tienda de la sesión)`: título
+    "Mi cuenta" (subtítulo "Tu saldo con Velox y tus órdenes, día por día"), esconde los KPIs
+    (`#cli-kpis`) y la lista con Exportar (`#card-clientes-lista`), y pinta el detalle de siempre
+    (`renderDetalleTienda`) en `#detalle-tienda-root`, que ahora también está en
+    `pages/clientes.html` (vacío y oculto para los gestores), arriba de "Lógica de saldo". Sin el
+    refresco de 8 s de la lista. En el menú, `#nav-clientes` dice "Mi cuenta" para la tienda.
+  - `renderDetalleTienda`: sin "← Volver" para la tienda. Sin ninguna orden, la tienda ve los
+    filtros de período y "Todavía no tenés órdenes con Velox…" (los gestores siguen con "Sin
+    órdenes registradas."). Las pestañas son los últimos 7 días **con órdenes** (como para el
+    admin), así que ese mensaje sale solo si no tiene ninguna orden.
+  - Admin, operador y visor: sin cambios (lista, Ver detalle, Volver). El id es solo pantalla: el
+    servidor ya filtra por el `id_tienda` del token.
+  - **Probado el 25/11** (3001; usuarios de prueba y una tienda vacía "TST C15 VACIA", borrados):
+    a 375 px y en PC, la tienda entra a su detalle sin lista, KPIs, Exportar ni Volver, "Mes
+    pasado" = 18 órdenes y − S/ 290 con 2 días liquidados, Evidencias → "Mi cuenta" vuelve a su
+    detalle; la tienda vacía ve el mensaje y los filtros ("Por mes" → "Sin órdenes en este
+    período"); el admin, igual que antes.
 - **Fotos en las tablas de órdenes de Clientes / Tiendas y Gestión / Motorizado (25/11, commit
   en local, SIN push; sin migración). Toca el servidor: hay que reiniciarlo.**
   `server/fotos-ordenes.js` (nuevo), `server/routes/tiendas.js`, `server/routes/motorizados.js`,

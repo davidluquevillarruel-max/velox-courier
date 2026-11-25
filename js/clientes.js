@@ -130,23 +130,36 @@ function _diaCli(o) {
   return o.fecha_reparto || o.fecha;
 }
 
-/* ── Calcular stats de tienda desde API ── */
-async function _calcularStatsTienda(idTienda, fecha) {
-  try {
-    var url = API + '/tiendas/' + idTienda + '/ordenes' + (fecha ? '?fecha=' + fecha : '');
-    var r   = await fetch(url);
-    var ordenes = await r.json();
-    if (!ordenes.length) return null;
-    var entregados   = ordenes.filter(function(o){ return o.estado==='entregado'; }).length;
-    var noEntregados = ordenes.filter(function(o){ return o.estado==='no-entregado'; }).length;
-    var reprog       = ordenes.filter(function(o){ return o.estado==='reprogramado'; }).length;
-    var porCobrar    = ordenes.reduce(function(s,o){
-      return s + (['entregado','no-entregado'].includes(o.estado) ? parseFloat(o.delivery_total||0) : 0);
-    }, 0);
-    var porDevolver  = ordenes.reduce(function(s,o){ return s + (parseFloat(o.monto_producto)||0); }, 0);
-    return { total: ordenes.length, entregados, noEntregados, reprog,
-             porCobrar, porDevolver, saldoNeto: porCobrar - porDevolver };
-  } catch(err) { return null; }
+/* ── Plata de Clientes / Tiendas ──
+   No se calcula nada acá: la plata de cada orden (o.caja) y de cada
+   tienda (/tiendas/resumen) sale del motor de la Caja en el servidor
+   (calcularOrdenCaja), lo mismo que Caja → Tienda, el reporte en imagen
+   y el WhatsApp. El navegador solo suma (en céntimos) y pinta. */
+function _cent(v) { return Math.round((parseFloat(v) || 0) * 100); }
+
+function _totalesCajaCli(ords) {
+  var c = { delivery: 0, retenido: 0, saldo: 0 };
+  ords.forEach(function(o) {
+    var k = o.caja || {};
+    c.delivery += _cent(k.delivery); c.retenido += _cent(k.retenido); c.saldo += _cent(k.saldo);
+  });
+  return { delivery: c.delivery / 100, retenido: c.retenido / 100, saldo: c.saldo / 100 };
+}
+
+function _saldoTextoCli(saldo) {
+  return saldo > 0 ? 'En resumen debe la tienda a Velox: S/ ' + saldo.toFixed(2)
+    : saldo < 0 ? 'En resumen se le debe a la tienda: S/ ' + Math.abs(saldo).toFixed(2)
+    : 'Saldo en cero';
+}
+
+function _saldoColorCli(saldo) {
+  return saldo > 0 ? 'var(--color-green)' : saldo < 0 ? 'var(--color-red-text)' : 'var(--color-text-secondary)';
+}
+
+function _saldoHTMLCli(saldo) {
+  return saldo > 0 ? '<span class="balance-pos">S/ ' + saldo.toFixed(2) + '</span>'
+    : saldo < 0 ? '<span class="balance-neg">− S/ ' + Math.abs(saldo).toFixed(2) + '</span>'
+    : '<span class="balance-zero">S/ 0.00</span>';
 }
 
 /* ── Render principal ── */
@@ -191,19 +204,15 @@ window.renderClientes = async function() {
     var s = resumenMap[t.id];
     /* Si hay filtro de fecha y la tienda no tiene órdenes en ese rango, no mostrarla */
     if (hayFiltro && (!s || parseInt(s.total||0) === 0)) return null;
-    var porCobrar   = s ? parseFloat(s.por_cobrar||0)   : 0;
-    var porDevolver = s ? parseFloat(s.por_devolver||0) : 0;
+    var saldo       = s ? (parseFloat(s.saldo) || 0)     : 0;
     var pedidos     = s ? parseInt(s.total||0)          : 0;
     var entregados  = s ? parseInt(s.entregados||0)     : 0;
     var noEntregados= s ? parseInt(s.no_entregados||0)  : 0;
     var reprog      = s ? parseInt(s.reprogramados||0)  : 0;
 
-    var saldoHTML = '';
-    if (porCobrar>0)   saldoHTML += '<span class="balance-pos">S/ ' + porCobrar.toFixed(2) + '</span>';
-    if (porDevolver>0) saldoHTML += (saldoHTML?'<br>':'') + '<span class="balance-neg">− S/ ' + porDevolver.toFixed(2) + '</span>';
-    if (!saldoHTML)     saldoHTML  = '<span class="balance-zero">S/ 0.00</span>';
-
-    var estadoCli = (porCobrar>0) ? 'Deuda' : (porDevolver>0) ? 'Dev. pendiente' : 'Al día';
+    /* Saldo del período = motor de la Caja (> 0 nos debe, < 0 le debemos) */
+    var saldoHTML = _saldoHTMLCli(saldo);
+    var estadoCli = saldo > 0 ? 'Deuda' : saldo < 0 ? 'Dev. pendiente' : 'Al día';
 
     /* Teléfono + Yape */
     var telHTML = '';
@@ -279,12 +288,12 @@ window.renderClientes = async function() {
   /* KPIs — calcular desde resumenMap */
   var totCobrar=0, totDevolver=0, alDia=0, conSaldo=0;
   Object.values(resumenMap).forEach(function(s){
-    var c = parseFloat(s.por_cobrar||0);
-    var d = parseFloat(s.por_devolver||0);
-    if (c>0||d>0) conSaldo++; else alDia++;
-    totCobrar   += c;
-    totDevolver += d;
+    var sc = _cent(s.saldo);
+    if (sc !== 0) conSaldo++; else alDia++;
+    if (sc > 0) totCobrar += sc;
+    if (sc < 0) totDevolver -= sc;
   });
+  totCobrar /= 100; totDevolver /= 100;
   var set = function(id,v){ var el=document.getElementById(id); if(el) el.textContent=v; };
   set('kpi-cli-cobrar',   totCobrar>0   ? 'S/ '+totCobrar.toFixed(2)   : '—');
   set('kpi-cli-devolver', totDevolver>0 ? 'S/ '+totDevolver.toFixed(2) : '—');
@@ -470,7 +479,7 @@ window._resetFiltroDetalleTienda = function() {
 /* Fila de tabla de una orden en el detalle de tienda.
    mostrarFecha=true agrega la columna Fecha (para la vista agrupada por período,
    donde las órdenes de varios días conviven en una sola tabla) */
-function _filaOrdenDetalle(o, _ec, mostrarFecha) {
+function _filaOrdenDetalle(o, mostrarFecha) {
   var badgeE = {
     'entregado':'<span class="badge entregado">Entregado</span>',
     'no-entregado':'<span class="badge no-entregado">No entregado</span>',
@@ -482,23 +491,22 @@ function _filaOrdenDetalle(o, _ec, mostrarFecha) {
     'devolucion':'<span class="badge ausente">Devolución</span>',
     'recojo':'<span class="badge pendiente">Recojo</span>',
   };
-  var tieneCobro = _ec.includes(o.estado);
-  var delivery   = tieneCobro ? parseFloat(o.delivery_total||0) : 0;
+  /* La plata de la orden ya viene calculada (o.caja, motor de la Caja):
+     delivery cobrable, cobrado al cliente que tiene Velox (retenido) y
+     su saldo. Las que no cuentan en la Caja, en gris y en 0. */
+  var k = o.caja || {};
+  var tieneCobro = !!k.cobrable;
+  var delivery   = parseFloat(k.delivery) || 0;
   var adicional  = tieneCobro ? parseFloat(o.monto_adicional||0) : 0;
-  var cobrado    = tieneCobro ? parseFloat(o.monto_cobrado||0)  : 0;
-  var saldoO     = delivery - cobrado;
+  var cero = '<span style="color:var(--color-text-tertiary)">S/ 0.00</span>';
+  var tag = function(txt) {
+    return ' <span style="font-size:10px;color:var(--color-amber-text);background:var(--color-amber-bg);padding:1px 5px;border-radius:8px">' + txt + '</span>';
+  };
   var dStr = tieneCobro
-    ? 'S/ '+delivery.toFixed(2) +
-      (adicional > 0
-        ? ' <span style="font-size:10px;color:var(--color-amber-text);background:var(--color-amber-bg);padding:1px 5px;border-radius:8px">+S/'+adicional.toFixed(2)+'</span>'
-        : '')
-    : '<span style="color:var(--color-text-tertiary)">S/ 0.00</span>';
-  var cStr = tieneCobro ? 'S/ '+cobrado.toFixed(2)  : '<span style="color:var(--color-text-tertiary)">S/ 0.00</span>';
-  var sStr = tieneCobro
-    ? (saldoO>0 ? '<span class="balance-pos">S/ '+saldoO.toFixed(2)+'</span>'
-      : saldoO<0 ? '<span class="balance-neg">− S/ '+Math.abs(saldoO).toFixed(2)+'</span>'
-      : '<span class="balance-zero">S/ 0.00</span>')
-    : '<span style="color:var(--color-text-tertiary)">S/ 0.00</span>';
+    ? 'S/ '+delivery.toFixed(2) + (adicional > 0 ? tag('+S/'+adicional.toFixed(2)) : '') + (k.prepago ? tag('prepagado') : '')
+    : cero;
+  var cStr = tieneCobro ? 'S/ '+(parseFloat(k.retenido)||0).toFixed(2) : cero;
+  var sStr = tieneCobro ? _saldoHTMLCli(parseFloat(k.saldo) || 0) : cero;
   return '<tr>' +
     (mostrarFecha ? '<td style="font-size:12px;color:var(--color-text-secondary)">' + _fechaDisplayCli(_diaCli(o)) + '</td>' : '') +
     /* Mismo ícono de foto que en "Todos los pedidos" (js/pedidos.js) */
@@ -513,22 +521,25 @@ function _filaOrdenDetalle(o, _ec, mostrarFecha) {
 
 /* Mini bloque de resumen (tarjetas + banner de saldo) para un conjunto de órdenes,
    reutilizado tanto por cada tab de día como por la vista agrupada por período */
-function _bloqueResumenPeriodoDetalle(titulo, ords, _ec) {
-  var deliv = ords.reduce(function(s,o){return s+(_ec.includes(o.estado)?parseFloat(o.delivery_total||0):0);},0);
-  var cobr  = ords.reduce(function(s,o){return s+(_ec.includes(o.estado)?parseFloat(o.monto_cobrado||0):0);},0);
-  var saldo = deliv - cobr;
-  var color = saldo > 0 ? 'var(--color-green)' : saldo < 0 ? 'var(--color-red-text)' : 'var(--color-text-secondary)';
-  var msg   = saldo > 0
-    ? 'En resumen debe la tienda a Velox: S/ ' + saldo.toFixed(2)
-    : saldo < 0
-    ? 'En resumen se le debe a la tienda: S/ ' + Math.abs(saldo).toFixed(2)
-    : 'Saldo en cero';
+function _bloqueResumenPeriodoDetalle(titulo, ords) {
+  var t = _totalesCajaCli(ords);
+  var deliv = t.delivery, cobr = t.retenido, saldo = t.saldo;
+  var color = _saldoColorCli(saldo);
+  var msg   = _saldoTextoCli(saldo);
+  /* Días ya liquidados ("Marcar pagado" de la Caja): la fecha, como en
+     el reporte en imagen */
+  var pagos = {};
+  ords.forEach(function(o) { if (o.caja && o.caja.fecha_pago) pagos[_diaCli(o)] = o.caja.fecha_pago; });
+  var dias = Object.keys(pagos);
+  var liq = !dias.length ? ''
+    : '<div style="font-size:12px;color:var(--color-green-text);margin-top:2px"><i class="ti ti-circle-check"></i> ' +
+        (dias.length === 1 ? 'Día liquidado el ' + _fechaDisplayCli(pagos[dias[0]]) : dias.length + ' días liquidados') + '</div>';
   return '<div class="resumen-dia" style="grid-template-columns:repeat(5,1fr);margin-bottom:12px">' +
       '<div class="resumen-item"><div class="resumen-label">Total</div><div class="resumen-val blue">' + ords.length + '</div></div>' +
       '<div class="resumen-item"><div class="resumen-label">Entregados</div><div class="resumen-val green">' + ords.filter(function(o){return o.estado==='entregado';}).length + '</div></div>' +
       '<div class="resumen-item"><div class="resumen-label">Reprogramados</div><div class="resumen-val purple">' + ords.filter(function(o){return o.estado==='reprogramado';}).length + '</div></div>' +
       '<div class="resumen-item"><div class="resumen-label">Delivery cobrable</div><div class="resumen-val blue">S/ ' + deliv.toFixed(2) + '</div></div>' +
-      '<div class="resumen-item"><div class="resumen-label">Cobrado</div><div class="resumen-val green">S/ ' + cobr.toFixed(2) + '</div></div>' +
+      '<div class="resumen-item"><div class="resumen-label">Cobrado (lo tiene Velox)</div><div class="resumen-val green">S/ ' + cobr.toFixed(2) + '</div></div>' +
     '</div>' +
     '<div style="background:var(--color-bg-secondary);border-radius:var(--radius-lg);padding:14px 18px;' +
       'margin-bottom:14px;border-left:5px solid ' + color + ';display:flex;align-items:center;gap:12px">' +
@@ -538,6 +549,7 @@ function _bloqueResumenPeriodoDetalle(titulo, ords, _ec) {
       '<div>' +
         '<div style="font-size:11px;color:var(--color-text-secondary);font-weight:500;margin-bottom:1px">' + titulo + '</div>' +
         '<div style="font-size:14px;font-weight:700;color:' + color + '">' + msg + '</div>' +
+        liq +
       '</div>' +
     '</div>';
 }
@@ -564,16 +576,16 @@ window.renderDetalleTienda = async function(tiendaId) {
   var ordenes = await r.json();
   var esTiendaDet = _sesionEsTiendaCli();
 
-  /* Calcular totales generales solo con estados que generan cobro */
-  var _ec = ['entregado','ausente'];
+  /* Totales generales: la plata, del motor de la Caja (o.caja) */
+  var plata = _totalesCajaCli(ordenes);
   var tot = { total:ordenes.length,
     entregados:   ordenes.filter(function(o){return o.estado==='entregado';}).length,
     noEntregados: ordenes.filter(function(o){return o.estado==='no-entregado';}).length,
     reprog:       ordenes.filter(function(o){return o.estado==='reprogramado';}).length,
-    costoDeliv:   ordenes.reduce(function(s,o){return s+(_ec.includes(o.estado)?parseFloat(o.delivery_total||0):0);},0),
-    cobrado:      ordenes.reduce(function(s,o){return s+(_ec.includes(o.estado)?parseFloat(o.monto_cobrado||0):0);},0),
+    costoDeliv:   plata.delivery,
+    cobrado:      plata.retenido,
+    saldo:        plata.saldo,
   };
-  tot.saldo = tot.costoDeliv - tot.cobrado;
 
   /* Agrupar por fecha */
   var mapaFecha = {};
@@ -592,12 +604,8 @@ window.renderDetalleTienda = async function(tiendaId) {
 
   var estadoT  = tot.saldo > 0 ? 'Deuda' : tot.saldo < 0 ? 'Dev. pendiente' : 'Al día';
   var badgeEstadoMap = { 'Al día':'entregado', 'Dev. pendiente':'ausente', 'Deuda':'no-entregado' };
-  var saldoColor = tot.saldo > 0 ? 'var(--color-green)' : tot.saldo < 0 ? 'var(--color-red-text)' : 'var(--color-text-secondary)';
-  var saldoMsg   = tot.saldo > 0
-    ? 'En resumen debe la tienda a Velox: S/ ' + tot.saldo.toFixed(2)
-    : tot.saldo < 0
-    ? 'En resumen se le debe a la tienda: S/ ' + Math.abs(tot.saldo).toFixed(2)
-    : 'Saldo en cero';
+  var saldoColor = _saldoColorCli(tot.saldo);
+  var saldoMsg   = _saldoTextoCli(tot.saldo);
 
   /* Encabezado */
   var html =
@@ -626,8 +634,8 @@ window.renderDetalleTienda = async function(tiendaId) {
       '<div class="resumen-item"><div class="resumen-label">Total órdenes</div><div class="resumen-val blue">' + tot.total + '</div></div>' +
       '<div class="resumen-item"><div class="resumen-label">Entregados</div><div class="resumen-val green">' + tot.entregados + '</div></div>' +
       '<div class="resumen-item"><div class="resumen-label">No entregados</div><div class="resumen-val red">' + tot.noEntregados + '</div></div>' +
-      '<div class="resumen-item"><div class="resumen-label">Costo delivery</div><div class="resumen-val blue">S/ ' + tot.costoDeliv.toFixed(2) + '</div></div>' +
-      '<div class="resumen-item"><div class="resumen-label">Cobrado</div><div class="resumen-val green">S/ ' + tot.cobrado.toFixed(2) + '</div></div>' +
+      '<div class="resumen-item"><div class="resumen-label">Delivery cobrable</div><div class="resumen-val blue">S/ ' + tot.costoDeliv.toFixed(2) + '</div></div>' +
+      '<div class="resumen-item"><div class="resumen-label">Cobrado (lo tiene Velox)</div><div class="resumen-val green">S/ ' + tot.cobrado.toFixed(2) + '</div></div>' +
     '</div>' +
 
     /* Banner resumen financiero */
@@ -683,7 +691,7 @@ window.renderDetalleTienda = async function(tiendaId) {
         html += '<div style="font-size:12px;color:var(--color-text-secondary);margin-bottom:10px">' +
           '<i class="ti ti-info-circle"></i> El reporte y el WhatsApp son de un día: tocá "Últimos 7 días".</div>';
       }
-      html += _bloqueResumenPeriodoDetalle('RESUMEN DEL PERÍODO', ordsPeriodo, _ec);
+      html += _bloqueResumenPeriodoDetalle('RESUMEN DEL PERÍODO', ordsPeriodo);
       html +=
         '<div class="card"><div class="card-head">' +
           '<span class="card-title">Órdenes — ' + descPeriodo + '</span>' +
@@ -692,7 +700,7 @@ window.renderDetalleTienda = async function(tiendaId) {
           '<th>Fecha</th><th>Código</th><th>Destinatario</th><th>Distrito</th><th>Motorizado</th>' +
           '<th>Estado</th><th>Delivery</th><th>Cobrado</th><th>Saldo</th>' +
         '</tr></thead><tbody>' +
-        ordsPeriodo.map(function(o){ return _filaOrdenDetalle(o, _ec, true); }).join('') +
+        ordsPeriodo.map(function(o){ return _filaOrdenDetalle(o, true); }).join('') +
         '</tbody></table></div></div>';
     }
   } else {
@@ -713,7 +721,7 @@ window.renderDetalleTienda = async function(tiendaId) {
         html += '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px">' +
           _cliBotonWA(tienda, fecha, true) + '</div>';
       }
-      html += _bloqueResumenPeriodoDetalle('RESUMEN DEL DÍA', ordsDia, _ec);
+      html += _bloqueResumenPeriodoDetalle('RESUMEN DEL DÍA', ordsDia);
       html +=
         '<div class="card"><div class="card-head">' +
           '<span class="card-title">Órdenes del ' + _fechaDisplayCli(fecha) + '</span>' +
@@ -722,7 +730,7 @@ window.renderDetalleTienda = async function(tiendaId) {
           '<th>Código</th><th>Destinatario</th><th>Distrito</th><th>Motorizado</th>' +
           '<th>Estado</th><th>Delivery</th><th>Cobrado</th><th>Saldo</th>' +
         '</tr></thead><tbody>' +
-        ordsDia.map(function(o){ return _filaOrdenDetalle(o, _ec, false); }).join('') +
+        ordsDia.map(function(o){ return _filaOrdenDetalle(o, false); }).join('') +
         '</tbody></table></div></div>';
       html += '</div>'; /* /tabla-dia-tienda */
     });

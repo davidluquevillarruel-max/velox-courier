@@ -7,6 +7,7 @@ const express = require('express');
 const router  = express.Router();
 const { getPool, sql } = require('../db');
 const { requireAuth, requireRol } = require('../middleware/auth');
+const { calcularOrdenCaja, aSoles } = require('../caja-motor');
 
 router.use(requireAuth);
 const GESTORES = ['admin', 'operador'];
@@ -122,28 +123,37 @@ router.get('/resumen', async (req, res) => {
       filtroTienda += ' AND t.id = @yo';
     }
 
+    /* La plata sale del motor de la Caja (calcularOrdenCaja), en vivo,
+       igual que Caja → Tienda, el reporte en imagen y el WhatsApp: antes
+       era la regla vieja (entregado / ausente, delivery − cobrado), que
+       no miraba el medio de pago ni el prepago. Un día ya liquidado se
+       cuenta igual en vivo (como el reporte); la Caja muestra el saldo
+       guardado y avisa "difiere" si alguien editó una orden después. */
     const result = await request.query(`
-      SELECT
-        t.id AS id_tienda,
-        COUNT(o.id) AS total,
-        SUM(CASE WHEN o.estado = 'entregado'    THEN 1 ELSE 0 END) AS entregados,
-        SUM(CASE WHEN o.estado = 'no-entregado' THEN 1 ELSE 0 END) AS no_entregados,
-        SUM(CASE WHEN o.estado = 'reprogramado' THEN 1 ELSE 0 END) AS reprogramados,
-        SUM(CASE WHEN o.estado = 'ausente'      THEN 1 ELSE 0 END) AS ausentes,
-        SUM(CASE WHEN o.estado IN ('entregado','ausente')
-                      AND (o.delivery_base + o.monto_adicional) > o.monto_cobrado
-                 THEN (o.delivery_base + o.monto_adicional) - o.monto_cobrado
-                 ELSE 0 END) AS por_cobrar,
-        SUM(CASE WHEN o.estado IN ('entregado','ausente')
-                      AND o.monto_cobrado > (o.delivery_base + o.monto_adicional)
-                 THEN o.monto_cobrado - (o.delivery_base + o.monto_adicional)
-                 ELSE 0 END) AS por_devolver
+      SELECT t.id AS id_tienda, o.id, o.estado, o.metodo_pago, o.medio_pago, o.pago_velox,
+             o.pago_velox_metodo, o.delivery_total, o.pago_moto_total, o.monto_cobrado, o.id_motorizado
       FROM tiendas t
       LEFT JOIN ordenes o ON o.id_tienda = t.id AND o.estado <> 'anulado' ${filtroFecha}
       ${filtroTienda}
-      GROUP BY t.id
     `);
-    res.json(result.recordset);
+    const CONTAR = { 'entregado': 'entregados', 'no-entregado': 'no_entregados',
+                     'reprogramado': 'reprogramados', 'ausente': 'ausentes' };
+    const porTienda = new Map();
+    for (const o of result.recordset) {
+      if (!porTienda.has(o.id_tienda)) {
+        porTienda.set(o.id_tienda, { id_tienda: o.id_tienda, total: 0, entregados: 0, no_entregados: 0,
+          reprogramados: 0, ausentes: 0, delivery: 0, retenido: 0, saldo: 0 });
+      }
+      if (!o.id) continue; /* tienda sin órdenes en el período */
+      const s = porTienda.get(o.id_tienda);
+      const c = calcularOrdenCaja(o);
+      s.total++;
+      if (CONTAR[o.estado]) s[CONTAR[o.estado]]++;
+      s.delivery += c.delivery; s.retenido += c.retenido; s.saldo += c.saldo_tienda;
+    }
+    res.json([...porTienda.values()].map(s => ({
+      ...s, delivery: aSoles(s.delivery), retenido: aSoles(s.retenido), saldo: aSoles(s.saldo),
+    })));
   } catch (err) {
     console.error('GET /tiendas/resumen:', err.message);
     res.status(500).json({ error: 'Error al generar el resumen' });
@@ -295,9 +305,9 @@ router.get('/:id/ordenes', async (req, res) => {
       SELECT o.id, o.codigo, CONVERT(varchar,o.fecha,23) AS fecha,
              CONVERT(varchar,o.fecha_reparto,23) AS fecha_reparto,
              d.nombre AS distrito, m.nombre AS motorizado,
-             o.dest_nombre, o.estado, o.metodo_pago,
+             o.dest_nombre, o.estado, o.metodo_pago, o.medio_pago, o.pago_velox, o.pago_velox_metodo,
              o.delivery_total, o.monto_adicional, o.monto_cobrado, o.monto_producto,
-             o.pago_moto_total, o.producto_especial,
+             o.pago_moto_total, o.producto_especial, o.id_motorizado,
              (SELECT TOP 1 url FROM ordenes_fotos WHERE id_orden = o.id AND tipo = 'foto_producto' ORDER BY subido_en DESC) AS foto_producto_url
       FROM ordenes o
       JOIN distritos d ON d.id = o.id_distrito
@@ -314,8 +324,29 @@ router.get('/:id/ordenes', async (req, res) => {
       request.input('fecha', sql.Date, fecha);
     }
     query += ` ORDER BY o.fecha_reparto DESC, o.id`;
-    const result = await request.query(query);
-    res.json(result.recordset);
+    const [result, pagados] = await Promise.all([
+      request.query(query),
+      pool.request().input('id', sql.Int, req.params.id).query(`
+        SELECT CONVERT(varchar, fecha_ciclo, 23) AS dia, CONVERT(varchar, fecha_pago, 23) AS fecha_pago
+        FROM caja_pagos_tiendas WHERE id_tienda = @id AND pagado = 1`),
+    ]);
+    /* La plata de cada orden, del motor de la Caja (lo mismo que Caja →
+       Tienda, el reporte en imagen y el WhatsApp): el navegador solo suma
+       y pinta. caja.fecha_pago = el día de esa orden ya se liquidó. */
+    const pagoDe = new Map(pagados.recordset.map(p => [p.dia, p.fecha_pago]));
+    res.json(result.recordset.map(o => {
+      const c = calcularOrdenCaja(o);
+      const { medio_pago, pago_velox, pago_velox_metodo, id_motorizado, ...resto } = o;
+      return {
+        ...resto,
+        medio_pago,
+        caja: {
+          cobrable: c.cobrable, prepago: c.es_prepago,
+          delivery: aSoles(c.delivery), retenido: aSoles(c.retenido), saldo: aSoles(c.saldo_tienda),
+          fecha_pago: pagoDe.get(o.fecha_reparto) || null,
+        },
+      };
+    }));
   } catch (err) {
     console.error('GET /tiendas/:id/ordenes:', err.message);
     res.status(500).json({ error: 'Error al listar las órdenes de la tienda' });

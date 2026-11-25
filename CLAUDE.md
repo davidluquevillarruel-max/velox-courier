@@ -16,8 +16,10 @@ Velox Courier — internal management system for a courier/delivery company in L
   producción: `bc30158`. **Sin migración.** Deploy: revisar que el `.env` del servidor tenga
   `DB_PASSWORD` (sin eso ya no arranca, D-028) → `git pull` → `pm2 restart velox` (toca el
   servidor) → abrir `https://sistema.veloxcourierperu.com/server/package.json` y ver 404. Motos y
-  tiendas tienen que recargar la app. Nada del lote escribe en la base al arrancar. Entra (detalle
-  de cada uno más abajo y en `DECISIONES.md`, D-024 a D-028):
+  tiendas tienen que recargar la app. Nada del lote escribe en la base al arrancar. **Si el usuario
+  ya desplegó parte del lote**, el `git pull` trae además el arreglo del encabezado del detalle de
+  la tienda (`b138c92` lo había dejado vacío). Entra (detalle de cada uno más abajo y en
+  `DECISIONES.md`, D-024 a D-029):
   - Cambios chicos del 19/11: ráfaga que vuelve a "Todos los pedidos" con confirmación (`783802a`,
     `4a09622`), "Por cobrar" en 0 (`b4dbf95`), chip "Sin asignar" (`b8e786b`), tabla de
     Motorizados en el celular (`742ef2b`).
@@ -27,9 +29,11 @@ Velox Courier — internal management system for a courier/delivery company in L
   - Cambios 8 y 8b, autogestión del moto y datos por rol (`d481b61`, `b138c92`); Cambio 9, tarifas
     y búsqueda por id (`fa7fb17`, `6d3ab30`); Cambio 10, recorte del margen (`b3a30a2`) (D-026, D-027).
   - Cambio 11, lista blanca de archivos y `db.js` sin contraseña (`17d9c1b`), y fuera del repo los
-    scripts con contraseñas (D-028).
-- **WhatsApp del reporte a las tiendas, recuperado y rehecho (25/11, después del push: commit en
-  local, sin push; va en el mismo deploy). Toca el servidor: hay que reiniciarlo. Sin migración.**
+    scripts con contraseñas (`31b71ea`; D-028).
+  - Subidos después, el mismo 25/11: el WhatsApp del reporte a las tiendas y el arreglo del
+    encabezado (`b0b53cc`), y Clientes / Tiendas con el motor de la Caja (D-029).
+- **WhatsApp del reporte a las tiendas, recuperado y rehecho (25/11, `b0b53cc`, subido el 25/11;
+  va en el mismo deploy). Toca el servidor: hay que reiniciarlo. Sin migración.**
   `js/clientes.js`, `server/routes/caja.js`.
   - **La causa (bug de `b138c92`):** en el encabezado del detalle de la tienda quedó
     `… + botonesReporte… + _sesionEsTiendaCli() ? '' : (…Enviar resumen…) + '</div>' + …` sin
@@ -64,10 +68,36 @@ Velox Courier — internal management system for a courier/delivery company in L
     tienda y moto (Evidencias, Gestión con Delivery / Generar / Ver imagen / Actualizar, Actualizar
     orden con montos, Tarifas, Asignación libre) y las pruebas de API anteriores siguen (40, 8, 32,
     36). `window.open` se reemplazó solo en la prueba: falta ver que WhatsApp abra en un celular real.
-  - **Ojo, queda distinto:** los **cuadros y el banner de Clientes / Tiendas** (lista y detalle)
-    siguen con la regla vieja (`server/routes/tiendas.js` y el cálculo en `js/clientes.js`). Ej.
-    PRUEBA CAJA 01/10: la pestaña dice delivery S/ 100, cobrado S/ 430, "se le debe S/ 330"; la Caja,
-    el reporte y el WhatsApp dicen S/ 110 / 260 / −180. Ya estaba en "Pendiente"; ahora se nota más.
+  - Los cuadros y el banner de Clientes / Tiendas, que seguían con la regla vieja, pasaron al motor
+    en el punto de abajo.
+- **Clientes / Tiendas con el motor de la Caja (25/11, D-029; subido el 25/11 junto con el
+  de arriba). Toca el servidor: hay que reiniciarlo. Sin migración.** `server/routes/tiendas.js`,
+  `js/clientes.js`, `pages/clientes.html`.
+  - **Servidor:** `GET /tiendas/resumen` (lista y KPIs) ya no suma con SQL la regla vieja
+    (entregado / ausente, delivery − cobrado): trae las órdenes del período y las pasa por
+    `calcularOrdenCaja`; devuelve por tienda los conteos de siempre + `delivery`, `retenido` y
+    `saldo` (se fueron `por_cobrar` / `por_devolver`). `GET /tiendas/:id/ordenes` (detalle) devuelve
+    en cada orden `caja = { cobrable, prepago, delivery, retenido, saldo, fecha_pago }` (`fecha_pago` =
+    el día de esa orden ya se liquidó, de `caja_pagos_tiendas`). Se sacaron de esa respuesta
+    `pago_velox`, `pago_velox_metodo` e `id_motorizado` (solo hacían falta para el cálculo).
+  - **Navegador: no calcula plata.** Solo suma `o.caja` en céntimos (`_totalesCajaCli`) y pinta:
+    fila de cada orden (delivery con "+adicional" / "prepagado", cobrado = lo que tiene Velox, saldo),
+    bloque de cada día y del período (con "Día liquidado el dd/mm" / "N días liquidados"), totales
+    generales, la lista y los KPIs (total a cobrar = suma de saldos positivos por tienda, a devolver =
+    negativos). Se borraron `_calcularStatsTienda` (sin uso) y todos los `_ec` / `delivery_total` /
+    `monto_cobrado` / `monto_producto` del archivo. "Cobrado" pasó a "Cobrado (lo tiene Velox)" y
+    "Costo delivery" a "Delivery cobrable"; la tarjeta "Lógica de saldo" explica la regla nueva.
+  - **Igual que el reporte, en vivo:** un día ya liquidado se muestra con lo que dan hoy sus
+    pedidos y la marca de liquidado. La Caja muestra el saldo guardado y "difiere" si alguien editó
+    una orden después del pago (ej. PRB-15, 02/10): solo en ese caso no coinciden.
+  - **Probado el 25/11** (servidor en el 3001; usuarios de prueba borrados): 38 de 38 en la API con
+    los mismos 9 días de 6 tiendas que el WhatsApp: lista = Caja (delivery, cobrado, saldo), detalle
+    = Caja en totales y orden por orden, la marca de liquidado, 3 períodos (octubre de PRUEBA CAJA y
+    de la tienda 64, y sep–nov) y la tienda = el admin en su fila y en la `caja` de cada orden, sin
+    pago al moto. Siguen pasando 25 (WhatsApp), 40, 8, 32 y 36. A 375 px como admin y como tienda:
+    lista del 01/10 − S/ 180, octubre − S/ 290, la pestaña del 01/10 S/ 110 / 260 / "se le debe S/
+    180" (antes 100 / 430 / 330), cada orden con su saldo, "Día liquidado el 05 Oct 2026" en 02 y
+    03/10, período con "2 días liquidados"; los mismos números para los dos roles, sin errores.
 - **PENDIENTE — ROTAR CONTRASEÑAS** (quedaron en el historial de git, que se pudo bajar del sitio
   hasta este deploy): la de la base (`velox_user`, y `sa` si es la misma) en el servidor y su `.env`;
   la del admin si sigue siendo la del script de creación; las de tiendas y motos con la contraseña de
@@ -1384,9 +1414,10 @@ Velox Courier — internal management system for a courier/delivery company in L
   base vacía, sus órdenes saldrían desde C-1001, y las siguientes seguirían desde ahí. Cambiarlo antes
   de importar.
 - **Fotos huérfanas en R2:** la limpieza del 7/11 borró las filas, no los archivos del bucket.
-- **Clientes / Tiendas sigue con la regla vieja** (`server/routes/tiendas.js:119`: entregado /
-  ausente). Quedó fuera de las 3 cajas: sus **cuadros y su banner** (lista y detalle) pueden no
-  coincidir con la Caja. El **WhatsApp** a la tienda ya usa el motor (25/11, igual que la imagen).
+- **Evidencias todavía calcula plata en el navegador con la regla vieja** (`js/charts.js`,
+  `_EC_EV = entregado / ausente`): "Ingreso delivery", "Saldo por cobrar", "Pago a motorizados" y el
+  detalle por moto. Lo ven gestores y tienda. Clientes / Tiendas y su WhatsApp ya usan el motor
+  (25/11, D-029).
 - **Vistas de la tienda y del moto para ver su propia caja:** próximo paso; el motor ya sirve,
   falta construirlas con el alcance por sesión (`filtroPorRol`).
 - **"Marcar pagado" de tiendas sigue liquidando días con órdenes en proceso** (después no se pueden

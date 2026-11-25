@@ -75,9 +75,11 @@
 <div class="card" style="margin-top:16px">
   <div class="card-head"><span class="card-title">Lógica de saldo</span></div>
   <div class="saldo-info">
-    <strong>Costo cero:</strong> El cliente pagó el delivery directamente → saldo S/ 0.00.<br>
-    <strong>Saldo a cobrar:</strong> Delivery no pagado → se cobra al cliente.<br>
-    <strong>Devolución:</strong> El cliente pagó el producto y hay diferencia a favor → se devuelve el excedente.
+    <!-- La misma regla que la Caja, el reporte en imagen y el WhatsApp
+         (server/caja-motor.js, calcularOrdenCaja) -->
+    <strong>Delivery cobrable:</strong> el de los pedidos entregados, ausentes o devueltos.<br>
+    <strong>Cobrado (lo tiene Velox):</strong> lo que el cliente pagó en efectivo o Yape al motorizado, o por Pago Velox. Con "Pago tienda" la plata la tiene la tienda y no cuenta.<br>
+    <strong>Saldo:</strong> delivery − cobrado (si la tienda ya pagó el delivery por adelantado, solo − cobrado). Positivo: la tienda le debe a Velox; negativo: Velox le devuelve a la tienda.
   </div>
 </div>
 

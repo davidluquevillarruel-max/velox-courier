@@ -486,8 +486,8 @@ si difiere.
 
 **Límites aceptados.** `/estado`, `/completo` y `/medio-pago` no bloquean por día pagado (lo pagado no
 cambia y queda "Difiere"). Las fechas de pago viejas de motos, en UTC, no se corrigieron. "Marcar
-pagado" de tiendas sigue liquidando días con órdenes en proceso. Clientes / Tiendas sigue con la regla
-vieja.
+pagado" de tiendas sigue liquidando días con órdenes en proceso. Clientes / Tiendas seguía con la regla
+vieja; pasó al motor el 25/11/2026 (D-029).
 
 ---
 
@@ -963,6 +963,34 @@ la mitad que le falta:
 - Pantallas: sin la columna Delivery ni esos montos para el moto, sin "Pago a motorizados" para la
   tienda; la imagen del moto dice "Tu pago del día". Admin, operador y visor ven todo igual.
 
+## D-029 · Clientes / Tiendas y su WhatsApp leen la plata del motor de la Caja
+
+**Estado:** subido el 25/11/2026, falta el deploy (`b0b53cc` y el commit de Clientes con el motor).
+Sin migración.
+
+**Problema.** Clientes / Tiendas calculaba la plata en el navegador (y `/tiendas/resumen` en SQL)
+con la regla vieja: entregado / ausente, delivery − cobrado, sin mirar el medio de pago ni el
+prepago. Su pantalla y su WhatsApp de texto podían no coincidir con Caja → Tienda ni con el
+reporte en imagen (ej. un día: S/ 100 / 430 / "se le debe 330" contra S/ 110 / 260 / −180). Además,
+en el lote anterior (`b138c92`) un `cond ? '' : …` sin paréntesis dentro de una suma de textos dejó
+vacío el encabezado del detalle de la tienda para todos los roles, y con él el WhatsApp.
+
+**Decisión.**
+- **El navegador no calcula plata.** `/tiendas/resumen` y `/tiendas/:id/ordenes` pasan cada orden
+  por `calcularOrdenCaja` (D-012) y devuelven delivery, cobrado (lo que tiene Velox), saldo y si el
+  día está liquidado; la pantalla solo suma en céntimos y pinta. Así Clientes, la Caja, el reporte
+  en imagen y el WhatsApp dicen lo mismo, para el admin y para la tienda.
+- **En vivo, como el reporte:** un día ya liquidado se muestra con lo que dan hoy sus pedidos y la
+  marca de liquidado; la Caja muestra el saldo guardado y "difiere" si se editó después del pago.
+- **WhatsApp a la tienda igual que al moto (D-024):** por tienda y día, con cada orden, los totales del
+  motor y la URL de la imagen del reporte; el admin la genera si falta, el operador manda la que hay;
+  marca de enviado por tienda y día; apagado con un período. El JSON del reporte de tienda pasa a
+  admin y operador; generar la imagen sigue siendo solo del admin. La tienda no lo ve.
+- **Regla de código:** un `cond ? a : b` dentro de una suma de textos va siempre entre paréntesis.
+
+**Queda:** Evidencias (`js/charts.js`) todavía calcula "Ingreso delivery", "Saldo por cobrar" y
+"Pago a motorizados" en el navegador con la regla vieja.
+
 ## D-028 · El servidor publica solo el frontend; contraseñas fuera del código
 
 **Estado:** subido el 25/11/2026, falta el deploy (`17d9c1b` y el commit que saca los scripts con
@@ -1015,8 +1043,8 @@ downtime). El dominio se traspasa aparte en Namecheap.
 - [ ] **Cambiar contraseña del admin** desde el propio sistema (ahora que el flujo es seguro).
 - [ ] **Monitoreo:** alertas de DigitalOcean por RAM > 85 % y disco > 80 %.
 - [ ] **Caja:** las 3 cajas (D-012) y el fix del motorizado (D-013) ya están en producción.
-      Clientes / Tiendas sigue con la regla
-      vieja. El moto ya ve su propia gestión (D-026); la vista de la caja de la tienda, próximo paso. Detalle en `CLAUDE.md` → "Pendiente".
+      Clientes / Tiendas ya usa el motor (D-029); Evidencias todavía no. El moto ya ve su propia
+      gestión (D-026); la vista de la caja de la tienda, próximo paso. Detalle en `CLAUDE.md` → "Pendiente".
 - [x] **Rediseño de la vista del motorizado** ("Mis entregas de hoy": botón EMPEZAR + flujo
       de entrega con fotos por el pipeline único de D-003). **Desplegado en producción** el
       28–29/10/2026 junto con las fotos de devolución y la foto del pago con Efectivo +
@@ -1068,6 +1096,8 @@ downtime). El dominio se traspasa aparte en Namecheap.
       - El moto ve su propia gestión; datos por rol y por id (D-026).
       - Margen: tarifas por rol y recorte de campos (D-027).
       - Lista blanca de archivos y `db.js` sin contraseña (D-028).
+      - Subidos después, el mismo 25/11: el arreglo del encabezado del detalle de la tienda y el
+        WhatsApp del reporte a las tiendas (`b0b53cc`), y Clientes / Tiendas con el motor (D-029).
 
       Los motorizados y las tiendas con la app abierta tienen que recargarla.
 - [ ] **Control de concurrencia (409) roto desde el 14/10** (commit `f47d676`). `SELECT_ORDEN`

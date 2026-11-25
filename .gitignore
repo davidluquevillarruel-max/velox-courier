@@ -5,3 +5,5 @@ credenciales_*.md
 video/
 velox_agregar_*.sql
 server/uploads_local/
+# Scripts con contraseñas (en texto o hash): solo en esta PC, nunca en el repo
+velox_crear_usuario*.sql

@@ -198,7 +198,7 @@ contraseña del admin desde la consola del navegador.
 7. **Frontend:** `login.js` valida sesión contra `/auth/me`; interceptor global de `fetch` en
    `utils.js` (manda cookie + redirige a login en 401); `cerrarSesion()` llama a `/auth/logout`.
 8. **CORS restringido** a `localhost:3000` y `sistema.veloxcourierperu.com`.
-9. **Clave de eliminación** sacada del cliente (era `AlexVelox2026!` hardcodeada en
+9. **Clave de eliminación** sacada del cliente (era una clave fija hardcodeada en
    `validators.js`). Ahora se confirma escribiendo el nombre del registro; la seguridad real la
    da `requireRol('admin')` en el backend.
 10. **Usuario de BD dedicado** `velox_app` (db_datareader + db_datawriter + EXECUTE), en vez de
@@ -239,7 +239,7 @@ se borró.
 
 **Estado:** Pendiente, ya NO urgente.
 
-Las 108 contraseñas se derivan del nombre (`AlizzeVelox2026!`) y la del SA está en el historial
+Las 108 contraseñas se derivan del nombre (nombre + un sufijo común) y la del SA está en el historial
 de git. **Deben rotarse**, pero el riesgo bajó mucho tras la Fase 2: las rutas ya no se exponen
 (todo pide sesión) y hay freno a fuerza bruta.
 
@@ -253,8 +253,9 @@ entregar una sola vez y forzar cambio en el primer login; borrar los `.md` de cr
 Tiendas y en Usuarios (solo admin, por fila o en masa) pone a cada usuario una contraseña
 aleatoria de 12 caracteres y la muestra una sola vez con Copiar / CSV. Para la Fase 4 alcanza con
 elegir las tiendas que van a usar el sistema y resetearlas. Falta todavía:
-- **Sacar el secreto de `server/db.js`** (`DB_PASSWORD || 'Velox2026!'`): sin valor por defecto, y
-  rotar esa contraseña en el servidor porque está en el historial de git.
+- ~~Sacar el secreto de `server/db.js`~~ **HECHO** (D-028, 25/11/2026): sin valor por defecto; si
+  falta `DB_PASSWORD`, el servidor no arranca. **Falta rotar** esa contraseña en el servidor: está
+  en el historial de git y se pudo bajar del sitio (D-028).
 - Opcional: que el reseteo corte las sesiones abiertas (hoy siguen hasta 12 h); necesita migración.
 - "Forzar cambio en el primer login" no está hecho (también necesitaría una columna nueva).
 
@@ -895,6 +896,96 @@ guarda igual, pero no llega ningún aviso.
 
 ---
 
+## D-024 · "Gestión / Motorizado": una página por pregunta, y un período es la suma de sus días
+
+**Estado:** subido a `origin/main` el 25/11/2026, falta el deploy (commits `040aa95`, `16e1b62`,
+`2e2137a`). Sin migración.
+
+**Problema.** La página Motorizados mezclaba "quiénes son" (alta, edición, accesos) con "qué hicieron
+y cuánto", y la plata del día de un moto se calculaba en varios lugares.
+
+**Decisión.**
+- **Motorizados = quiénes son; "Gestión / Motorizado" = qué hicieron y cuánto**, con los mismos
+  filtros, chips, WhatsApp y detalle que Clientes / Tiendas.
+- **Una sola cuenta del día de un moto:** `armarDiaMoto()` en `server/routes/caja.js` (sobre
+  `calcularOrdenCaja`, D-012). **Un período no tiene cuenta propia: es la suma de sus días** (en
+  céntimos). Así la lista, el detalle, el reporte en imagen y Caja → Motorizados no pueden dar distinto.
+- **WhatsApp al moto con SU reporte en imagen** (D-017): si el día no tiene imagen, el admin la
+  genera antes; el operador manda la que hay o avisa. La pestaña se abre con el toque (si se abre
+  después de esperar al servidor, el celular la bloquea).
+- **"Enviado" en el navegador** (`localStorage`, por moto y día), igual que tiendas: sin tabla.
+- **Diferencia a propósito:** en un día liquidado, la Caja muestra el saldo guardado y esta página el
+  de ahora (con "difiere").
+
+## D-025 · Las imágenes se ven dentro del sistema, nunca en otra pestaña
+
+**Estado:** subido el 25/11/2026, falta el deploy (`37df5bb`). Solo frontend.
+
+**Decisión.** Un solo visor (`js/visor-imagen.js`) para todas las fotos y reportes: se abre encima,
+lo de atrás no se pierde (un modal con datos escritos sigue igual), se cierra con ✕, Esc, tocando
+afuera o el botón atrás del celular (`pushState`), con flechas / teclado / deslizar entre las fotos
+de un mismo grupo, y "Copiar URL" con respaldo seleccionable. Se activa con atributos
+(`data-visor-url`) y un listener global en captura, así sobrevive a los repintados y el clic no llega
+a la fila de atrás. Se borraron los tres visores viejos. No se tocaron WhatsApp ni la exportación.
+
+## D-026 · El motorizado ve su propia gestión; cada rol recibe solo lo suyo, por id
+
+**Estado:** subido el 25/11/2026, falta el deploy (`d481b61`, `b138c92`, `6d3ab30`). Sin migración.
+
+**Decisión.**
+- **El moto entra a "Gestión / Motorizado" directo a SU detalle** (días, período, cuadros, órdenes),
+  sin lista, WhatsApp, generar reporte ni acciones sobre las órdenes; del reporte, solo "Ver imagen".
+  En Motorizados le quedan "Mis entregas de hoy" y su tarjeta (su historial repetido se sacó).
+- **La Caja es lista blanca para el moto:** solo `GET /caja/motorizados/:id/dias` y `/reporte`, solo
+  con su id del token (otro id o cualquier otra ruta, 403), y del liquidado solo la fecha (el monto y
+  el "difiere" son control interno).
+- **Cada rol recibe solo lo suyo del servidor**, no se filtra en la pantalla: el moto, solo su
+  registro de `/motorizados` (para reasignar, `/motorizados/companeros` con id y nombre) y de las
+  tiendas solo id y nombre; la tienda, nada de motos ni de otras tiendas; ninguno de los dos, órdenes
+  de otros.
+- **Las pantallas identifican al moto y a la tienda por `id_motorizado` / `id_tienda` de la sesión**,
+  no por el nombre del usuario (si era distinto, veían vacío).
+- **La tienda no ve WhatsApp** en Clientes / Tiendas ("Enviar resumen" es de Velox a la tienda).
+
+## D-027 · Ni la tienda ni el motorizado pueden calcular el margen de Velox
+
+**Estado:** subido el 25/11/2026, falta el deploy (`fa7fb17`, `b3a30a2`). Sin migración.
+
+**Decisión.** Margen = lo que paga la tienda − lo que se le paga al moto. Ninguno de los dos recibe
+la mitad que le falta:
+- **Un filtro central** (`server/middleware/recortar-por-rol.js`) le saca a toda respuesta JSON de la
+  API, a cualquier profundidad, los campos prohibidos del rol: al **moto** el delivery, el adicional y
+  el valor del producto (cobrado − producto daría el delivery); a la **tienda** todo el pago al moto.
+  Se eligió un filtro de salida y no ruta por ruta para que una ruta nueva quede cubierta sola. Un
+  campo nuevo de plata se suma a `CAMPOS_PROHIBIDOS`.
+- **Tarifas por rol:** el moto, solo distritos (sin precios); la tienda, 403 (ninguna pantalla suya
+  las usa).
+- Pantallas: sin la columna Delivery ni esos montos para el moto, sin "Pago a motorizados" para la
+  tienda; la imagen del moto dice "Tu pago del día". Admin, operador y visor ven todo igual.
+
+## D-028 · El servidor publica solo el frontend; contraseñas fuera del código
+
+**Estado:** subido el 25/11/2026, falta el deploy (`17d9c1b` y el commit que saca los scripts con
+contraseñas). Sin migración. **Rotación de contraseñas: PENDIENTE.**
+
+**Problema.** `server.js` servía toda la carpeta del proyecto: sin sesión se podían bajar el código
+del servidor (con la contraseña de respaldo de la base en `db.js`), `.git/` (todo el repositorio con
+su historial), los `.md`, los `.sql` y las fotos de `uploads_local/`.
+
+**Decisión.**
+- **Lista blanca:** solo `index.html`, `login.html`, `css/`, `js/`, `pages/` e `img/`; todo lo demás,
+  404. Una carpeta pública nueva se suma a mano en `server.js`.
+- **`db.js` sin contraseña de respaldo:** si falta `DB_PASSWORD`, el servidor avisa y no arranca.
+- **Scripts con contraseñas fuera del repo** (`velox_crear_usuario*.sql`, en `.gitignore`): quedan
+  solo en la PC. Ninguno corre al arrancar el servidor.
+- **El historial no se reescribe.** Quedaron en él: `server/.env` y `.gitignore/.env` (commit
+  inicial, con la contraseña de la base), los `.md` de credenciales de tiendas y motos (con la
+  contraseña de fórmula) y los scripts de creación de usuarios. Por eso hay que **rotar**: la base,
+  el admin y las tiendas / motos con la fórmula (ver "Pendientes varios"). `JWT_SECRET` y las claves
+  de R2 nunca estuvieron en el repo.
+
+---
+
 ## Costos de operación
 
 | Concepto | Mensual |
@@ -925,7 +1016,7 @@ downtime). El dominio se traspasa aparte en Namecheap.
 - [ ] **Monitoreo:** alertas de DigitalOcean por RAM > 85 % y disco > 80 %.
 - [ ] **Caja:** las 3 cajas (D-012) y el fix del motorizado (D-013) ya están en producción.
       Clientes / Tiendas sigue con la regla
-      vieja; las vistas de la tienda y del moto, próximo paso. Detalle en `CLAUDE.md` → "Pendiente".
+      vieja. El moto ya ve su propia gestión (D-026); la vista de la caja de la tienda, próximo paso. Detalle en `CLAUDE.md` → "Pendiente".
 - [x] **Rediseño de la vista del motorizado** ("Mis entregas de hoy": botón EMPEZAR + flujo
       de entrega con fotos por el pipeline único de D-003). **Desplegado en producción** el
       28–29/10/2026 junto con las fotos de devolución y la foto del pago con Efectivo +
@@ -963,6 +1054,22 @@ downtime). El dominio se traspasa aparte en Namecheap.
       - La foto del pago solo con Pago Velox / Pago tienda (D-021, `f00c168`).
       - Las observaciones para el moto con su protección (D-022, `711a08d`, `69b5b1e`).
       - El aviso "X agregó una observación" y el botón ✓ (D-023, `48270a4`).
+- [ ] **Lote del 19 al 25/11/2026: subido a `origin/main` el 25/11, falta el deploy** (sin
+      migración; `git pull` + `pm2 restart velox`; antes, revisar que el `.env` del servidor tenga
+      `DB_PASSWORD`). Entra:
+      - Ráfaga: "Terminar" vuelve a "Todos los pedidos" con una confirmación (tienda + órdenes
+        creadas).
+      - "Pendiente": "Por cobrar" viene en 0 y se selecciona al entrar.
+      - Chip "Sin asignar (N)" en "Todos los pedidos".
+      - Tabla de Motorizados legible en el celular.
+      - "Gestión / Motorizado" con lista, detalle, historial, WhatsApp y marca de enviado (D-024).
+      - Visor de imágenes (D-025).
+      - Nombre del panel y título de la pestaña según el rol.
+      - El moto ve su propia gestión; datos por rol y por id (D-026).
+      - Margen: tarifas por rol y recorte de campos (D-027).
+      - Lista blanca de archivos y `db.js` sin contraseña (D-028).
+
+      Los motorizados y las tiendas con la app abierta tienen que recargarla.
 - [ ] **Control de concurrencia (409) roto desde el 14/10** (commit `f47d676`). `SELECT_ORDEN`
       devuelve la versión con `CONVERT(varchar(20), o.row_version, 1)`, que con `rowversion` da los
       bytes crudos y no `0x…`; `bufferDeVersion` la descarta y ningún guardado con `ifVersion` da
@@ -970,7 +1077,10 @@ downtime). El dominio se traspasa aparte en Namecheap.
       pero empezarían a salir 409 reales en todos los guardados. **Decidido no arreglarlo por ahora**
       (14/11) para no arriesgar lo que anda, sobre todo la cola de fotos. Las observaciones ya
       tienen su propia protección (D-022). Visto en local (SQL Server 2025); en producción, sin mirar.
-- [ ] **Fase 4:** rotar las 89 contraseñas de fórmula de las tiendas (con "Resetear
-      contraseñas") y sacar el secreto de `server/db.js`. Ver D-007.
+- [ ] **PENDIENTE — rotar contraseñas (D-007, D-028):** la de la base (`velox_user`, y `sa` si es
+      la misma) en el servidor y en su `.env`; la del admin si sigue siendo la del script de
+      creación; y las de tiendas y motos que sigan con la contraseña de fórmula (Tiendas / Usuarios
+      → "Resetear contraseñas"). Todas quedaron en el historial de git, que se pudo bajar del sitio
+      hasta el deploy de D-028. `JWT_SECRET` y R2 no hace falta.
 - [ ] **Opcional:** cortar las sesiones abiertas al resetear una contraseña (necesita
       migración). Ver D-007.

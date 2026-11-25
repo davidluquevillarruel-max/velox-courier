@@ -10,10 +10,35 @@ Velox Courier — internal management system for a courier/delivery company in L
 
 ## Estado actual
 
-Última actualización: 24 de noviembre de 2026.
+Última actualización: 25 de noviembre de 2026.
 
-- **Cambio 11 — el servidor ya no publica los archivos del proyecto (25 de noviembre de 2026, commit
-  en local, sin push; sin migración). Toca el servidor: hay que reiniciarlo.**
+- **LOTE DEL 19 AL 25/11: SUBIDO a `origin/main` el 25/11, FALTA EL DEPLOY.** Último commit en
+  producción: `bc30158`. **Sin migración.** Deploy: revisar que el `.env` del servidor tenga
+  `DB_PASSWORD` (sin eso ya no arranca, D-028) → `git pull` → `pm2 restart velox` (toca el
+  servidor) → abrir `https://sistema.veloxcourierperu.com/server/package.json` y ver 404. Motos y
+  tiendas tienen que recargar la app. Nada del lote escribe en la base al arrancar. Entra (detalle
+  de cada uno más abajo y en `DECISIONES.md`, D-024 a D-028):
+  - Cambios chicos del 19/11: ráfaga que vuelve a "Todos los pedidos" con confirmación (`783802a`,
+    `4a09622`), "Por cobrar" en 0 (`b4dbf95`), chip "Sin asignar" (`b8e786b`), tabla de
+    Motorizados en el celular (`742ef2b`).
+  - "Gestión / Motorizado": lista, detalle, historial, WhatsApp y marca de enviado (`040aa95`,
+    `16e1b62`, `2e2137a`; D-024).
+  - Cambio 6, visor de imágenes (`37df5bb`; D-025). Cambio 7, nombre del panel por rol (`7981ac8`).
+  - Cambios 8 y 8b, autogestión del moto y datos por rol (`d481b61`, `b138c92`); Cambio 9, tarifas
+    y búsqueda por id (`fa7fb17`, `6d3ab30`); Cambio 10, recorte del margen (`b3a30a2`) (D-026, D-027).
+  - Cambio 11, lista blanca de archivos y `db.js` sin contraseña (`17d9c1b`), y fuera del repo los
+    scripts con contraseñas (D-028).
+- **PENDIENTE — ROTAR CONTRASEÑAS** (quedaron en el historial de git, que se pudo bajar del sitio
+  hasta este deploy): la de la base (`velox_user`, y `sa` si es la misma) en el servidor y su `.env`;
+  la del admin si sigue siendo la del script de creación; las de tiendas y motos con la contraseña de
+  fórmula (Tiendas / Usuarios → "Resetear contraseñas"). Detalle en el Cambio 11, abajo.
+- **Scripts con contraseñas, fuera del repo** (25/11): `velox_crear_usuario_admin.sql` y
+  `velox_crear_usuarios_motorizados.sql` se sacaron con `git rm --cached` (siguen en esta PC) y
+  `.gitignore` ignora `velox_crear_usuario*.sql`. Ninguno corre al arrancar el servidor. Los demás
+  `.sql` versionados no tienen contraseñas ni hashes (`velox_sqlserver.sql` solo define la columna).
+
+- **Cambio 11 — el servidor ya no publica los archivos del proyecto (25 de noviembre de 2026,
+  subido el 25/11, falta el deploy; sin migración). Toca el servidor: hay que reiniciarlo.**
   - **El problema:** `server.js` hacía `express.static` de la raíz del proyecto: sin login se bajaban
     `server/` (código, `db.js` con la contraseña de respaldo de la base), `.git/` (todo el
     repositorio con su historial), los `.md`, los `.sql`, `iniciar_velox.bat` y las fotos de
@@ -48,7 +73,7 @@ Velox Courier — internal management system for a courier/delivery company in L
     no hace falta rotarlas: no están en el historial y `server/.env` nunca se sirvió (daba 404).
 
 - **Cambio 10 — ni la tienda ni el moto reciben con qué calcular el margen (25 de noviembre de 2026,
-  commit en local, sin push; sin migración). Toca el servidor: hay que reiniciarlo.**
+  subido el 25/11, falta el deploy; sin migración). Toca el servidor: hay que reiniciarlo.**
   - **Servidor, un solo lugar:** `server/middleware/recortar-por-rol.js` (montado en `server.js`
     antes de todas las rutas de `/api`) reemplaza `res.json` y le quita a TODA respuesta, a cualquier
     profundidad, los campos prohibidos del rol (`CAMPOS_PROHIBIDOS`): **motorizado** sin
@@ -75,8 +100,8 @@ Velox Courier — internal management system for a courier/delivery company in L
     moto guardado sin pisar montos (PRB-18 sigue con delivery 10 y pago 6), Evidencias de moto y
     tienda, el texto de la imagen del moto sin "delivery"; el operador ve todo igual.
 
-- **Cambio 9 — tarifas por rol y búsqueda por id (25 de noviembre de 2026, dos commits en local, sin
-  push; sin migración). Toca el servidor: hay que reiniciarlo.**
+- **Cambio 9 — tarifas por rol y búsqueda por id (25 de noviembre de 2026, dos commits, subidos el 25/11, falta el
+  deploy; sin migración). Toca el servidor: hay que reiniciarlo.**
   - **Tarifas (`server/routes/tarifas.js`):** ni la tienda ni el moto tienen que poder calcular el
     margen de Velox (`precio_delivery − pago_motorizado`). `GET /tarifas`: gestores y visor, todo
     (`v_tarifario`); motorizado, solo `id, distrito, activo` (el combo de distrito de su "Actualizar
@@ -98,7 +123,7 @@ Velox Courier — internal management system for a courier/delivery company in L
   - El margen que todavía salía de los datos de las órdenes se cerró en el Cambio 10 (arriba).
 
 - **Cambio 8b — qué datos le llegan al moto y a la tienda (25 de noviembre de 2026, commit aparte,
-  en local, sin push; sin migración). Toca el servidor: hay que reiniciarlo.**
+  subido el 25/11, falta el deploy; sin migración). Toca el servidor: hay que reiniciarlo.**
   `server/routes/motorizados.js`, `server/routes/tiendas.js`, `js/reasignaciones.js`,
   `js/clientes.js`, `pages/clientes.html`.
   - **`GET /motorizados`:** el motorizado recibe SOLO su registro; la tienda, `[]` (Evidencias lo
@@ -127,7 +152,7 @@ Velox Courier — internal management system for a courier/delivery company in L
     tienda en Clientes (9 columnas, sin WA), su detalle y Evidencias.
 
 - **Cambio 8 — el motorizado ve "Gestión / Motorizado", solo lo suyo (25 de noviembre de 2026,
-  commit en local, sin push; sin migración). Toca el servidor: hay que reiniciarlo.**
+  subido el 25/11, falta el deploy; sin migración). Toca el servidor: hay que reiniciarlo.**
   `server/routes/caja.js`, `server/routes/motorizados.js`, `js/gestion-motos.js`,
   `js/motorizados.js`, `js/entregas-moto.js`, `js/navigation.js`, `js/reporte-tienda.js`,
   `js/reporte-moto.js`, `pages/gestion-motos.html`, `pages/motorizados.html`, `css/responsive.css`.
@@ -166,7 +191,7 @@ Velox Courier — internal management system for a courier/delivery company in L
     liquidado el 05 Oct 2026", "Ver imagen" en el visor, "Mes pasado" agrupado, la red sin
     `/gestion`. El operador, igual que antes.
 
-- **Cambio 7 — nombre del panel según el rol (24 de noviembre de 2026, commit en local, sin push;
+- **Cambio 7 — nombre del panel según el rol (24 de noviembre de 2026, subido el 25/11, falta el deploy;
   solo frontend, sin servidor ni migración).** Arriba del menú: admin / operador / visor =
   "VeloxCourierAdmin", motorizado = "VeloxCourierMotorizado", tienda = "VeloxCourierTienda"; la
   pestaña sigue la misma regla ("Velox Courier - Motorizado"). `_aplicarNombrePanel()` en
@@ -180,8 +205,8 @@ Velox Courier — internal management system for a courier/delivery company in L
   px) y entre 769 y 1024 px (200 px) "VeloxCourierMotorizado" sale en dos líneas** ("VeloxCourier"
   / "Motorizado"), sin cortarse; Admin y Tienda, en una.
 
-- **Cambio 6 — visor de imágenes dentro del sistema (24 de noviembre de 2026, commit en local, sin
-  push; solo frontend, sin servidor ni migración: basta recargar la app).** Ninguna foto ni reporte
+- **Cambio 6 — visor de imágenes dentro del sistema (24 de noviembre de 2026, subido el 25/11, falta el
+  deploy; solo frontend, sin servidor ni migración: basta recargar la app).** Ninguna foto ni reporte
   abre otra pestaña: se abren encima de la pantalla y lo de atrás queda igual (un modal con datos
   escritos no pierde nada).
   - **Un solo componente:** `js/visor-imagen.js` (`<script>` después de `utils.js`) + estilos
@@ -241,7 +266,7 @@ Velox Courier — internal management system for a courier/delivery company in L
   `48270a4` (aviso "X agregó una observación" + botón ✓, D-023). El detalle de cada uno, abajo.
   **Último commit en producción: `bc30158`.** No quedan migraciones pendientes.
 
-- **Cambios chicos del 19/11 (commiteados en local, sin push; van juntos en un solo deploy).**
+- **Cambios chicos del 19/11 (subidos el 25/11, falta el deploy; van juntos en un solo deploy).**
   - **Ráfaga: "Terminar" ya no abre "Órdenes por completar"** (`js/pedidos.js`, `terminarRafaga`;
     sin servidor ni migración, commit `783802a`). Cierra la cámara y repinta "Todos los pedidos".
     Las órdenes siguen naciendo pendientes y se completan desde el botón "Pendiente" cuando se
@@ -980,7 +1005,7 @@ Velox Courier — internal management system for a courier/delivery company in L
     `motorizados-libres`, por el vínculo, no por el correo), con casillas; crea con el mismo
     `POST /auth/usuarios`, correo armado con el nombre (número si está tomado) y **contraseña
     aleatoria** de 12 caracteres, mostrada **una sola vez** con Copiar y Descargar CSV. Se borró el
-    masivo viejo de contraseña de fórmula (nombre + `Velox2026!`): los 89 usuarios de tienda que ya
+    masivo viejo de contraseña de fórmula (nombre + un sufijo común): los 89 usuarios de tienda que ya
     existen la siguen teniendo (Fase 4: se arregla con el reseteo, abajo).
     `POST /auth/usuarios` ahora rechaza un segundo usuario para la misma tienda.
   - **Resetear contraseña** (solo admin, mismo `js/accesos.js`: `abrirResetearAccesos` →
@@ -1335,7 +1360,7 @@ Velox Courier — internal management system for a courier/delivery company in L
 - Opcional, más adelante: conectar un dominio propio (`fotos.veloxcourierperu.com`) al bucket
   en vez de la URL `r2.dev`, que tiene límite de velocidad; después cambiar `R2_PUBLIC_URL`.
 - **Fase 4 — rotación de contraseñas y secretos** (ver D-007 en `DECISIONES.md`):
-  - Rotar las **89 contraseñas de fórmula** de los usuarios de tienda (nombre + `Velox2026!`): ya
+  - Rotar las **89 contraseñas de fórmula** de los usuarios de tienda (nombre + un sufijo común): ya
     se puede con Tiendas → "Resetear contraseñas" (en masa, buscador vacío → Todas) y entregar el
     CSV. Conviene hacerlo cuando se decida a qué tiendas se les da acceso.
   - **`server/db.js` ya no tiene la contraseña de respaldo** (Cambio 11). Falta rotarla en el

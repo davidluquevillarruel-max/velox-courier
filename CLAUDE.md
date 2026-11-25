@@ -12,16 +12,40 @@ Velox Courier — internal management system for a courier/delivery company in L
 
 Última actualización: 24 de noviembre de 2026.
 
-- **URGENTE (encontrado el 25/11, NO arreglado, espera el OK del usuario): el servidor publica los
-  archivos del proyecto.** `server.js` hace `express.static(path.join(__dirname, '..'))`, o sea sirve
-  TODA la carpeta del proyecto sin login. Probado en local (3001): `/server/db.js` (con la contraseña
-  de respaldo de la base), `/server/routes/*.js`, `/server/package.json`, `/CLAUDE.md`,
-  `/DECISIONES.md`, `/velox_sqlserver.sql`, `/server/scripts/*.sql`, `/credenciales_tiendas.md` (está
-  en esta PC; en el servidor solo si se copió) y `/.git/config` dan 200 (todo el repositorio con su
-  historial se puede bajar). `/server/.env` da 404. En producción pasa lo mismo salvo que Nginx lo
-  frene: no se pudo mirar desde acá. Arreglo propuesto: servir solo `index.html`, `login.html`,
-  `css/`, `js/`, `pages/`, `img/` (y lo que haga falta del frontend), y después rotar la contraseña
-  de la base.
+- **Cambio 11 — el servidor ya no publica los archivos del proyecto (25 de noviembre de 2026, commit
+  en local, sin push; sin migración). Toca el servidor: hay que reiniciarlo.**
+  - **El problema:** `server.js` hacía `express.static` de la raíz del proyecto: sin login se bajaban
+    `server/` (código, `db.js` con la contraseña de respaldo de la base), `.git/` (todo el
+    repositorio con su historial), los `.md`, los `.sql`, `iniciar_velox.bat` y las fotos de
+    `server/uploads_local/`. Solo `.env` daba 404.
+  - **Ahora (lista blanca en `server.js`):** `CARPETAS_PUBLICAS = css, js, pages, img` (con
+    `dotfiles: 'deny'`, sin índice de carpeta) y `PAGINAS_PUBLICAS = index.html, login.html`, más
+    `/` → `index.html`. Todo lo demás, 404. No hay favicon, manifest ni otra carpeta que la app use
+    (`video/` está vacía). **Una carpeta pública nueva se suma a esa lista.**
+  - **`server/db.js`:** sin contraseña de respaldo. Si falta `DB_PASSWORD` en `.env`, avisa "Falta
+    DB_PASSWORD en server/.env" y corta (`process.exit(1)`). **Antes del deploy: revisar que el
+    `.env` del servidor tenga `DB_PASSWORD`**, si no, PM2 no levanta.
+  - **Probado el 25/11** (3001): 28 pedidos sin sesión dan 404 (`/server/db.js`, `/.git/config`,
+    `/.git/HEAD`, `/CLAUDE.md`, `/velox_sqlserver.sql`, `/package.json`, `/credenciales_tiendas.md`,
+    `/server/.env`, `/.env`, `/node_modules/…`, `/server/uploads_local/` y variantes con `..`,
+    `%2e%2e`, `%2f` y mayúsculas); `/`, `/index.html`, `/login.html`, css, js, pages, el logo y
+    `/api/ping` dan 200. Login por el formulario; operador (11 páginas), moto (5) y tienda (3) sin
+    ningún archivo fallido ni error. Las pruebas de API de los cambios 8 a 10 siguen pasando (36, 32,
+    8, 40). `DB_PASSWORD` vacío → el aviso y salida 1.
+  - **Secretos que quedaron en el historial de git (no se reescribió):** el commit inicial
+    `b25d376` (9/6/2026) tenía `server/.env` y `.gitignore/.env` (`.gitignore` era una carpeta) con
+    `DB_SERVER`, `DB_DATABASE`, `DB_PORT`, `DB_USER` y **`DB_PASSWORD` = la misma del respaldo de
+    `db.js`**; `966cbd4` (12/7) tenía `credenciales_tiendas.md` (160 tiendas) y
+    `credenciales_motorizados.md` (17 motos) con correo y contraseña de fórmula. Se sacaron en
+    `6098508` (15/7), pero siguen en el historial. Los `.sql` versionados
+    (`velox_crear_usuario_admin.sql`, `velox_crear_usuarios_motorizados.sql`) tienen la contraseña
+    del admin y la fórmula en texto y sus hashes; `CLAUDE.md` / `DECISIONES.md` la nombran. **No**
+    aparecen en ninguna versión: `JWT_SECRET`, claves de R2 ni otras contraseñas.
+  - **PENDIENTE — rotar (lo hace el usuario):** la contraseña de la base (`velox_user`, y la de
+    `sa` si es la misma) y ponerla en el `.env` del servidor; la del admin si sigue siendo la del
+    `.sql`; las de tiendas y motos que sigan con la fórmula (Tiendas / Usuarios → "Resetear
+    contraseñas"). Revisar si el repositorio de GitHub es público. `JWT_SECRET` y las claves de R2
+    no hace falta rotarlas: no están en el historial y `server/.env` nunca se sirvió (daba 404).
 
 - **Cambio 10 — ni la tienda ni el moto reciben con qué calcular el margen (25 de noviembre de 2026,
   commit en local, sin push; sin migración). Toca el servidor: hay que reiniciarlo.**
@@ -1314,9 +1338,8 @@ Velox Courier — internal management system for a courier/delivery company in L
   - Rotar las **89 contraseñas de fórmula** de los usuarios de tienda (nombre + `Velox2026!`): ya
     se puede con Tiendas → "Resetear contraseñas" (en masa, buscador vacío → Todas) y entregar el
     CSV. Conviene hacerlo cuando se decida a qué tiendas se les da acceso.
-  - **Sacar el secreto de `server/db.js`:** tiene `process.env.DB_PASSWORD || 'Velox2026!'` como
-    respaldo. Quitar el valor por defecto (que falle claro si falta la variable) y, como esa
-    contraseña quedó en el historial de git, rotarla en el servidor. Rotar también la del `sa`.
+  - **`server/db.js` ya no tiene la contraseña de respaldo** (Cambio 11). Falta rotarla en el
+    servidor, porque quedó en el historial de git y se pudo bajar del sitio. Rotar también la de `sa`.
 - **Opcional — cortar las sesiones abiertas al resetear una contraseña.** Hoy el reseteo no
   cierra las sesiones ya abiertas (el JWT dura 12 h y no depende de la contraseña). Necesita
   **migración** (ej. columna `usuarios.sesion_version` que `requireAuth` compara con el token y

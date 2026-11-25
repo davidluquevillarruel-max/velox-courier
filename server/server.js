@@ -31,9 +31,23 @@ app.use(cors({
 app.use(express.json());
 app.use(cookieParser());
 
-/* ── Servir el frontend desde la carpeta raíz del proyecto ── */
-/* La carpeta server/ está dentro de courier-velox/           */
-app.use(express.static(path.join(__dirname, '..')));
+/* ── Frontend: SOLO una lista blanca ──
+   Antes se servía toda la carpeta del proyecto (express.static de la
+   raíz): cualquiera, sin sesión, podía bajar server/ (código, db.js),
+   .git/ (todo el repositorio), los .md, los .sql y las fotos de
+   server/uploads_local/. Ahora solo sale lo que el navegador necesita;
+   todo lo demás da 404. Una carpeta pública nueva se suma acá. */
+const RAIZ_FRONT = path.join(__dirname, '..');
+const CARPETAS_PUBLICAS = ['css', 'js', 'pages', 'img'];
+const PAGINAS_PUBLICAS  = ['index.html', 'login.html'];
+const opcionesEstaticas = { dotfiles: 'deny', index: false, redirect: false };
+for (const carpeta of CARPETAS_PUBLICAS) {
+  app.use('/' + carpeta, express.static(path.join(RAIZ_FRONT, carpeta), opcionesEstaticas));
+}
+for (const pagina of PAGINAS_PUBLICAS) {
+  app.get('/' + pagina, (req, res) => res.sendFile(path.join(RAIZ_FRONT, pagina)));
+}
+app.get('/', (req, res) => res.sendFile(path.join(RAIZ_FRONT, 'index.html')));
 
 /* ── Rutas de la API ── */
 /* Antes de todas: a la tienda y al motorizado no les sale ningún campo

@@ -8,6 +8,7 @@ const router  = express.Router();
 const { getPool, sql } = require('../db');
 const { requireAuth, requireRol } = require('../middleware/auth');
 const { calcularOrdenCaja, aSoles } = require('../caja-motor');
+const { sqlFotosDeOrdenes, agruparFotos } = require('../fotos-ordenes');
 
 router.use(requireAuth);
 const GESTORES = ['admin', 'operador'];
@@ -216,6 +217,15 @@ router.get('/:id/ordenes', async (req, res) => {
        (ordenes.fecha_reparto = fecha_asignacion o, si no tiene, la de
        creación; ver velox_agregar_fecha_reparto.sql). "fecha" sigue
        siendo la de creación, como dato histórico. */
+    /* Un período (desde + hasta, la vista agrupada del detalle de
+       "Gestión / Motorizado"); si no, un día ("fecha") o todo */
+    const FECHA_OK = /^\d{4}-\d{2}-\d{2}$/;
+    const desde = FECHA_OK.test(req.query.desde || '') ? req.query.desde : '';
+    const hasta = FECHA_OK.test(req.query.hasta || '') ? req.query.hasta : '';
+    const porRango = !!(desde && hasta);
+    let where = `o.id_motorizado = @id AND o.estado <> 'anulado'`;
+    if (porRango) where += ` AND o.fecha_reparto BETWEEN @desde AND @hasta`;
+    else if (fecha) where += ` AND o.fecha_reparto = @fecha`;
     let query = `
       SELECT o.id, o.codigo, CONVERT(varchar,o.fecha,23) AS fecha,
              CONVERT(varchar, o.fecha_reparto, 23) AS fecha_trabajo,
@@ -231,26 +241,28 @@ router.get('/:id/ordenes', async (req, res) => {
       FROM ordenes o
       JOIN tiendas   t ON t.id = o.id_tienda
       JOIN distritos d ON d.id = o.id_distrito
-      WHERE o.id_motorizado = @id AND o.estado <> 'anulado'
+      WHERE ${where}
     `;
-    /* Un período (desde + hasta, la vista agrupada del detalle de
-       "Gestión / Motorizado"); si no, un día ("fecha") o todo */
-    const FECHA_OK = /^\d{4}-\d{2}-\d{2}$/;
-    const desde = FECHA_OK.test(req.query.desde || '') ? req.query.desde : '';
-    const hasta = FECHA_OK.test(req.query.hasta || '') ? req.query.hasta : '';
-    const porRango = !!(desde && hasta);
-    if (porRango) query += ` AND o.fecha_reparto BETWEEN @desde AND @hasta`;
-    else if (fecha) query += ` AND o.fecha_reparto = @fecha`;
     /* Por día (el más reciente arriba) y, dentro del día, la última
        asignada arriba (asignada_en, hora de Lima). Las que no tienen
        hora (anteriores a la columna) van al final del día, por id. */
     query += ` ORDER BY o.fecha_reparto DESC, o.asignada_en DESC, o.id DESC`;
     /* El motorizado: siempre el id del token (arriba ya se frenó otro id) */
     const idMoto = req.usuario.rol === 'motorizado' ? req.usuario.id_motorizado : parseInt(req.params.id, 10);
-    const request = pool.request().input('id', sql.Int, idMoto);
-    if (porRango) request.input('desde', sql.Date, desde).input('hasta', sql.Date, hasta);
-    else if (fecha) request.input('fecha', sql.Date, fecha);
-    const result = await request.query(query);
+    /* Los mismos parámetros para las órdenes y para sus fotos */
+    const nuevoRequest = () => {
+      const r = pool.request().input('id', sql.Int, idMoto);
+      if (porRango) r.input('desde', sql.Date, desde).input('hasta', sql.Date, hasta);
+      else if (fecha) r.input('fecha', sql.Date, fecha);
+      return r;
+    };
+    /* Todas las fotos de estas órdenes, en UNA consulta y con el mismo
+       WHERE (server/fotos-ordenes.js) */
+    const [result, fotos] = await Promise.all([
+      nuevoRequest().query(query),
+      nuevoRequest().query(sqlFotosDeOrdenes(where)),
+    ]);
+    const fotosDe = agruparFotos(fotos.recordset);
     /* La plata de cada orden sale del motor de la Caja (calcularOrdenCaja),
        la misma cuenta que Caja → Motorizados. Antes el navegador tomaba el
        "por cobrar" de toda orden entregada o ausente como si el moto lo
@@ -263,6 +275,7 @@ router.get('/:id/ordenes', async (req, res) => {
       const c = calcularOrdenCaja(o);
       return {
         ...o,
+        fotos: fotosDe.get(Number(o.id)) || [],
         caja: {
           cobrable: c.cobrable,
           delivery: aSoles(c.delivery),

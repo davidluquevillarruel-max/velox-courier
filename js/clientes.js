@@ -507,15 +507,17 @@ function _filaOrdenDetalle(o, mostrarFecha) {
     : cero;
   var cStr = tieneCobro ? 'S/ '+(parseFloat(k.retenido)||0).toFixed(2) : cero;
   var sStr = tieneCobro ? _saldoHTMLCli(parseFloat(k.saldo) || 0) : cero;
-  return '<tr>' +
+  /* data-visor-grupo: todas las fotos de la orden en un juego de flechas.
+     Los íconos (iconosFotosOrdenColumna, js/motorizados.js): producto en
+     el Código, la del estado en Estado y la del pago en Cobrado */
+  return '<tr data-visor-grupo>' +
     (mostrarFecha ? '<td style="font-size:12px;color:var(--color-text-secondary)">' + _fechaDisplayCli(_diaCli(o)) + '</td>' : '') +
-    /* Mismo ícono de foto que en "Todos los pedidos" (js/pedidos.js) */
-    '<td><strong>#'+o.codigo+'</strong>'+_iconoFotoProducto(o.foto_producto_url, o.codigo)+'</td>' +
+    '<td style="white-space:nowrap"><strong>#'+o.codigo+'</strong>'+iconosFotosOrdenColumna(o, 'codigo')+'</td>' +
     '<td>'+(o.dest_nombre||'—')+'</td>' +
     '<td>'+o.distrito+'</td>' +
     '<td>'+(o.motorizado||'—')+'</td>' +
-    '<td>'+(badgeE[o.estado]||o.estado)+'</td>' +
-    '<td>'+dStr+'</td><td>'+cStr+'</td><td>'+sStr+'</td>' +
+    '<td style="white-space:nowrap">'+(badgeE[o.estado]||o.estado)+iconosFotosOrdenColumna(o, 'estado')+'</td>' +
+    '<td>'+dStr+'</td><td style="white-space:nowrap">'+cStr+iconosFotosOrdenColumna(o, 'cobrado')+'</td><td>'+sStr+'</td>' +
   '</tr>';
 }
 

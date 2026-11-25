@@ -506,23 +506,15 @@ router.get('/pendientes-datos/total', requireRol(...GESTORES), async (req, res) 
    del "Descargar Excel / CSV" de "Todos los pedidos"
    (js/exportar-pedidos.js). Body: { ids: [..] } (POST porque pueden
    ser miles y no entran en una URL). Devuelve { "<id>": [{tipo, url}] }
-   en el orden en que se subieron. Mismas reglas que GET /:id y
-   puedeVerFotoOrden: el alcance de órdenes sale de la sesión
-   (filtroPorRol); los gestores ven todos los tipos, el motorizado
-   todos menos los de devolución, la tienda solo la del producto y el
-   visor ninguna. */
+   en el orden en que se subieron. Regla de las fotos (25/11, igual que
+   GET /:id, puedeVerFotoOrden y server/fotos-ordenes.js): si ves la
+   orden, ves todas sus fotos. El alcance de órdenes sale de la sesión
+   (filtroPorRol). */
 /* Tope por pedido: el frontend manda de a 2000. Con express.json() el
    cuerpo no puede pasar de 100 KB (unos 14 000 ids), así que el tope
    tiene que quedar bien por debajo de eso. */
 const MAX_IDS_FOTOS_EXPORT = 5000;
 const IDS_POR_CONSULTA     = 1000;   /* SQL Server admite hasta 2100 parámetros */
-
-function tiposFotoVisiblesExport(rol) {
-  if (GESTORES.includes(rol)) return null;                       /* todos */
-  if (rol === 'motorizado') return TIPOS_FOTO.filter((t) => !TIPOS_FOTO_DEVOLUCION.includes(t));
-  if (rol === 'tienda') return [TIPO_FOTO_PRODUCTO];
-  return [];                                                     /* visor */
-}
 
 router.post('/fotos-export', async (req, res) => {
   const ids = [...new Set((Array.isArray(req.body && req.body.ids) ? req.body.ids : [])
@@ -530,9 +522,8 @@ router.post('/fotos-export', async (req, res) => {
   if (ids.length > MAX_IDS_FOTOS_EXPORT) {
     return res.status(400).json({ error: `Se pueden exportar hasta ${MAX_IDS_FOTOS_EXPORT} órdenes de una vez` });
   }
-  const tipos = tiposFotoVisiblesExport(req.usuario.rol);
   const resultado = {};
-  if (!ids.length || (tipos && !tipos.length)) return res.json(resultado);
+  if (!ids.length) return res.json(resultado);
 
   try {
     const pool = await getPool();
@@ -548,7 +539,6 @@ router.post('/fotos-export', async (req, res) => {
          ORDER BY f.id_orden, f.subido_en, f.id`
       );
       r.recordset.forEach((f) => {
-        if (tipos && !tipos.includes(f.tipo)) return;
         (resultado[f.id_orden] = resultado[f.id_orden] || []).push({ tipo: f.tipo, url: f.url });
       });
     }
@@ -574,22 +564,17 @@ router.get('/:id', async (req, res) => {
     }
     const orden = result.recordset[0];
 
-    /* Todas las fotos de la orden que ese rol puede ver, para la
-       sección "Fotos" de "Actualizar orden" (mismas reglas que
-       puedeVerFotoOrden): los gestores, todas; el motorizado (ya
-       filtrado a sus órdenes por filtroPorRol), todas menos las de
-       devolución de la oficina. La tienda y el visor no reciben la
-       lista (la tienda ya tiene foto_producto_url). */
-    const esGestor = GESTORES.includes(req.usuario.rol);
-    if (esGestor || req.usuario.rol === 'motorizado') {
-      const fotos = await pool.request()
-        .input('id', sql.BigInt, req.params.id)
-        .query(`SELECT id, tipo, url, CONVERT(varchar(16), subido_en, 120) AS subido_en
-                FROM ordenes_fotos
-                WHERE id_orden = @id AND url <> ''
-                ORDER BY subido_en, id`);
-      orden.fotos = fotos.recordset.filter((f) => esGestor || !TIPOS_FOTO_DEVOLUCION.includes(f.tipo));
-    }
+    /* Todas las fotos de la orden, para la sección "Fotos de la orden"
+       de "Actualizar orden". Regla (25/11, igual que puedeVerFotoOrden
+       y server/fotos-ordenes.js): si ves la orden (filtroPorRol, arriba),
+       ves todas sus fotos. */
+    const fotos = await pool.request()
+      .input('id', sql.BigInt, req.params.id)
+      .query(`SELECT id, tipo, url, CONVERT(varchar(16), subido_en, 120) AS subido_en
+              FROM ordenes_fotos
+              WHERE id_orden = @id AND url <> ''
+              ORDER BY subido_en, id`);
+    orden.fotos = fotos.recordset;
     res.json(orden);
   } catch (err) {
     console.error('GET /ordenes/:id:', err.message);
@@ -2234,25 +2219,18 @@ router.post('/:id/foto/local',
 );
 
 /* Permiso para VER una foto (distinto de puedeTocarOrden, que es
-   para modificar la orden):
-   · admin / operador → todas
-   · motorizado       → las de sus órdenes (igual que puedeTocarOrden)
-   · tienda           → solo la foto del producto, y solo de órdenes
-                        de SU tienda. La tienda sale de la sesión y la
-                        de la orden, de la BD: nada viene del cliente.
-   · visor            → ninguna
-   Las fotos de devolución, solo los gestores. */
+   para modificar la orden). Regla (25/11): si ves la orden, ves todas
+   sus fotos, de cualquier tipo — el mismo alcance que filtroPorRol:
+   · admin / operador / visor → todas
+   · motorizado → las de sus órdenes (no anuladas)
+   · tienda     → las de órdenes de SU tienda (no anuladas)
+   El id sale de la sesión y el de la orden, de la BD: nada viene del
+   cliente. "tipo" ya no cambia el permiso (queda por compatibilidad). */
 async function puedeVerFotoOrden(usuario, ordenId, tipo, pool) {
-  if (TIPOS_FOTO_DEVOLUCION.includes(tipo)) return GESTORES.includes(usuario.rol);
-  if (usuario.rol === 'tienda') {
-    if (!usuario.id_tienda || tipo !== TIPO_FOTO_PRODUCTO) return false;
-    const r = await pool.request()
-      .input('id', sql.BigInt, ordenId)
-      .query('SELECT id_tienda FROM ordenes WHERE id = @id');
-    const fila = r.recordset[0];
-    return !!fila && fila.id_tienda === usuario.id_tienda;
-  }
-  return puedeTocarOrden(usuario, ordenId, pool);
+  const request = pool.request().input('id', sql.BigInt, ordenId);
+  const r = await request.query(
+    `SELECT 1 AS ok FROM ordenes o WHERE o.id = @id ${filtroPorRol(usuario, request).sql}`);
+  return r.recordset.length > 0;
 }
 
 /* ── GET /api/ordenes/:id/foto/:fotoId — sirve la foto local ────

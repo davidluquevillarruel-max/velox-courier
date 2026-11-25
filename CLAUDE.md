@@ -32,6 +32,38 @@ Velox Courier — internal management system for a courier/delivery company in L
     scripts con contraseñas (`31b71ea`; D-028).
   - Subidos después, el mismo 25/11: el WhatsApp del reporte a las tiendas y el arreglo del
     encabezado (`b0b53cc`), y Clientes / Tiendas con el motor de la Caja (D-029).
+- **Fotos en las tablas de órdenes de Clientes / Tiendas y Gestión / Motorizado (25/11, commit
+  en local, SIN push; sin migración). Toca el servidor: hay que reiniciarlo.**
+  `server/fotos-ordenes.js` (nuevo), `server/routes/tiendas.js`, `server/routes/motorizados.js`,
+  `server/routes/ordenes.js`, `js/motorizados.js`, `js/clientes.js`, `js/pedidos.js` (comentario).
+  - **Servidor:** `GET /tiendas/:id/ordenes` y `GET /motorizados/:id/ordenes` devuelven en cada
+    orden `fotos = [{tipo, url}]` (orden de subida). **Una sola consulta por pantalla** con el
+    MISMO `WHERE` y los mismos parámetros que la de las órdenes (`sqlFotosDeOrdenes(where)` +
+    `agruparFotos`): la tienda y el moto usan el id del token, así nunca reciben fotos ajenas.
+    `foto_producto_url` de la tienda ahora sale de esa lista (se fue la subconsulta por fila).
+  - **Regla nueva de fotos, una sola en todo el servidor: si ves la orden, ves todas sus fotos**
+    (todos los tipos, todos los roles, con el alcance de `filtroPorRol`). Cambió también
+    `puedeVerFotoOrden` (ruta de la foto local: el visor y la tienda ya no reciben 403; la tienda,
+    todas las de sus órdenes; el moto, también las de devolución), `POST /fotos-export` (se fue
+    `tiposFotoVisiblesExport`) y `GET /ordenes/:id` (`fotos` para todos los roles). Antes: tienda
+    solo la del producto, visor ninguna, devolución solo gestores. `recortar-por-rol.js` sin cambios.
+  - **Pantalla:** `iconosFotosOrdenColumna(o, columna)` (`js/motorizados.js`, al lado de
+    `_GRUPOS_FOTOS_ORDEN`, que ahora tiene `columna`): Código = producto (y cualquier tipo sin
+    columna), Estado = entrega, cambio, reprogramado, ausente, cancelado, no entregado y
+    devoluciones (primero la del estado actual, `_FOTOS_DEL_ESTADO`), Cobrado = evidencia del
+    pago. Un ícono azul por columna con el número si hay varias (las demás, nodos ocultos); sin
+    fotos, nada. Cada `<tr>` lleva `data-visor-grupo`: las flechas del visor pasan por todas las
+    fotos de la orden. Lo usan `_filaOrdenDetalle` (Clientes: pestañas y período) y
+    `_renderTablaOrdenesDetalle` (Gestión / Motorizado). **Un tipo de foto nuevo lleva su
+    `columna` en `_GRUPOS_FOTOS_ORDEN`.** "Todos los pedidos" sigue con `_iconoFotoProducto`.
+  - **Probado el 25/11** (3001; 14 fotos de prueba apuntando al logo, en órdenes de PRUEBA CAJA,
+    de otro moto y de otra tienda; usuarios admin, operador, visor, tienda y moto; todo borrado):
+    43 de 43 en la API (cada rol recibe exactamente las de lo que ve: tienda 12 con las de otro
+    moto en su tienda, moto 10 sin las de otro moto, nada de la tienda 64; día y período; 403 de
+    siempre; export y `GET /:id` con la misma regla; recorte de plata igual) y siguen 38, 25, 40,
+    8, 32 y 36. A 375 px y en PC: admin y tienda en Clientes (día y período) y admin y moto en
+    Gestión: íconos solo donde hay foto, ausente abre "Foto de ausente · #PRB-10 · 2 de 3" y las
+    flechas recorren producto / ausente / reprogramado; mismos números de plata.
 - **WhatsApp del reporte a las tiendas, recuperado y rehecho (25/11, `b0b53cc`, subido el 25/11;
   va en el mismo deploy). Toca el servidor: hay que reiniciarlo. Sin migración.**
   `js/clientes.js`, `server/routes/caja.js`.
@@ -1448,8 +1480,6 @@ Velox Courier — internal management system for a courier/delivery company in L
   se apaga al subir; indicador y panel (Reintentar/Descartar) con fotos atascadas; reabrir
   Velox con fotos en cola. Incluye la ráfaga: fotos tomadas sin señal que crean sus
   órdenes en orden al volver, sin duplicados.
-- El visor sigue recibiendo 403 al abrir fotos aunque ve todas las órdenes en las listas
-  (se dejó así a propósito; revisar si algún día debe verlas).
 - Más adelante, opcional: Background Sync (service worker; solo Chrome Android).
 
 ## Running it locally

@@ -8,6 +8,7 @@ const router  = express.Router();
 const { getPool, sql } = require('../db');
 const { requireAuth, requireRol } = require('../middleware/auth');
 const { calcularOrdenCaja, aSoles } = require('../caja-motor');
+const { sqlFotosDeOrdenes, agruparFotos } = require('../fotos-ordenes');
 
 router.use(requireAuth);
 const GESTORES = ['admin', 'operador'];
@@ -301,35 +302,40 @@ router.get('/:id/ordenes', async (req, res) => {
     const fecha = req.query.fecha;
     const desde = req.query.desde;
     const hasta = req.query.hasta;
-    let query = `
+    /* La tienda: siempre la del token (arriba ya se frenó otra) */
+    const idTienda = req.usuario.rol === 'tienda' ? req.usuario.id_tienda : parseInt(req.params.id, 10);
+    let where = `o.id_tienda = @id AND o.estado <> 'anulado'`;
+    if (desde && hasta) where += ` AND o.fecha_reparto BETWEEN @desde AND @hasta`;
+    else if (fecha) where += ` AND o.fecha_reparto = @fecha`;
+    /* Los mismos parámetros para las órdenes y para sus fotos */
+    const nuevoRequest = () => {
+      const r = pool.request().input('id', sql.Int, idTienda);
+      if (desde && hasta) r.input('desde', sql.Date, desde).input('hasta', sql.Date, hasta);
+      else if (fecha) r.input('fecha', sql.Date, fecha);
+      return r;
+    };
+    const query = `
       SELECT o.id, o.codigo, CONVERT(varchar,o.fecha,23) AS fecha,
              CONVERT(varchar,o.fecha_reparto,23) AS fecha_reparto,
              d.nombre AS distrito, m.nombre AS motorizado,
              o.dest_nombre, o.estado, o.metodo_pago, o.medio_pago, o.pago_velox, o.pago_velox_metodo,
              o.delivery_total, o.monto_adicional, o.monto_cobrado, o.monto_producto,
-             o.pago_moto_total, o.producto_especial, o.id_motorizado,
-             (SELECT TOP 1 url FROM ordenes_fotos WHERE id_orden = o.id AND tipo = 'foto_producto' ORDER BY subido_en DESC) AS foto_producto_url
+             o.pago_moto_total, o.producto_especial, o.id_motorizado
       FROM ordenes o
       JOIN distritos d ON d.id = o.id_distrito
       LEFT JOIN motorizados m ON m.id = o.id_motorizado
-      WHERE o.id_tienda = @id AND o.estado <> 'anulado'
-    `;
-    const request = pool.request().input('id', sql.Int, req.params.id);
-    if (desde && hasta) {
-      query += ` AND o.fecha_reparto BETWEEN @desde AND @hasta`;
-      request.input('desde', sql.Date, desde);
-      request.input('hasta', sql.Date, hasta);
-    } else if (fecha) {
-      query += ` AND o.fecha_reparto = @fecha`;
-      request.input('fecha', sql.Date, fecha);
-    }
-    query += ` ORDER BY o.fecha_reparto DESC, o.id`;
-    const [result, pagados] = await Promise.all([
-      request.query(query),
-      pool.request().input('id', sql.Int, req.params.id).query(`
+      WHERE ${where}
+      ORDER BY o.fecha_reparto DESC, o.id`;
+    const [result, pagados, fotos] = await Promise.all([
+      nuevoRequest().query(query),
+      pool.request().input('id', sql.Int, idTienda).query(`
         SELECT CONVERT(varchar, fecha_ciclo, 23) AS dia, CONVERT(varchar, fecha_pago, 23) AS fecha_pago
         FROM caja_pagos_tiendas WHERE id_tienda = @id AND pagado = 1`),
+      /* Todas las fotos de estas órdenes, en UNA consulta y con el mismo
+         WHERE (server/fotos-ordenes.js) */
+      nuevoRequest().query(sqlFotosDeOrdenes(where)),
     ]);
+    const fotosDe = agruparFotos(fotos.recordset);
     /* La plata de cada orden, del motor de la Caja (lo mismo que Caja →
        Tienda, el reporte en imagen y el WhatsApp): el navegador solo suma
        y pinta. caja.fecha_pago = el día de esa orden ya se liquidó. */
@@ -337,9 +343,13 @@ router.get('/:id/ordenes', async (req, res) => {
     res.json(result.recordset.map(o => {
       const c = calcularOrdenCaja(o);
       const { medio_pago, pago_velox, pago_velox_metodo, id_motorizado, ...resto } = o;
+      const deEsta = fotosDe.get(Number(o.id)) || [];
+      const producto = deEsta.filter(f => f.tipo === 'foto_producto').pop();
       return {
         ...resto,
         medio_pago,
+        foto_producto_url: producto ? producto.url : null,   /* la última, como antes */
+        fotos: deEsta,
         caja: {
           cobrable: c.cobrable, prepago: c.es_prepago,
           delivery: aSoles(c.delivery), retenido: aSoles(c.retenido), saldo: aSoles(c.saldo_tienda),

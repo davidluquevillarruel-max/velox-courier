@@ -335,17 +335,18 @@ function _renderTablaOrdenesDetalle(ordenes, opciones) {
         : sinDelivery ? '<span style="color:var(--color-amber-text);font-weight:600">Sí</span>'
         : '<span style="color:var(--color-amber-text);font-weight:600">+S/ ' + parseFloat(o.monto_adicional||0).toFixed(2) + '</span>';
 
-      return '<tr style="border-bottom:1px solid var(--color-border-tertiary)">' +
-        '<td style="padding:8px 12px"><strong>#' + o.codigo + '</strong>' + _iconoEvidenciaPendiente(o) + '</td>' +
+      /* data-visor-grupo: todas las fotos de la orden en un juego de flechas */
+      return '<tr data-visor-grupo style="border-bottom:1px solid var(--color-border-tertiary)">' +
+        '<td style="padding:8px 12px;white-space:nowrap"><strong>#' + o.codigo + '</strong>' + iconosFotosOrdenColumna(o, 'codigo') + _iconoEvidenciaPendiente(o) + '</td>' +
         '<td style="padding:8px 12px">' + o.tienda + '</td>' +
         '<td style="padding:8px 12px">' + (o.dest_nombre||'—') + '</td>' +
         '<td style="padding:8px 12px">' + _botonWhatsApp(o.dest_telefono, o.dest_nombre, o.dest_telefono_2) + '</td>' +
         '<td style="padding:8px 12px">' + o.distrito + '</td>' +
-        '<td style="padding:8px 12px">' + (badgeMap[o.estado]||o.estado) + '</td>' +
+        '<td style="padding:8px 12px;white-space:nowrap">' + (badgeMap[o.estado]||o.estado) + iconosFotosOrdenColumna(o, 'estado') + '</td>' +
         '<td style="padding:8px 12px;font-size:11px">' + (metodoLabel[o.metodo_pago]||o.metodo_pago||'—') + '</td>' +
         '<td style="padding:8px 12px;font-size:11px;white-space:nowrap">' + _medioPagoMotoHTML(o) + '</td>' +
         (sinDelivery ? '' : '<td style="padding:8px 12px;font-weight:500">' + deliveryStr + '</td>') +
-        '<td style="padding:8px 12px">' + _cobradoMotoHTML(o) + '</td>' +
+        '<td style="padding:8px 12px">' + _cobradoMotoHTML(o) + iconosFotosOrdenColumna(o, 'cobrado') + '</td>' +
         '<td style="padding:8px 12px;color:var(--color-amber-text);font-weight:600">' + pagoMotoStr + '</td>' +
         '<td style="padding:8px 12px">' + deudaStr + '</td>' +
         '<td style="padding:8px 12px">' + especial + '</td>' +
@@ -1343,18 +1344,75 @@ function _fotosDevolucionHTML(fotos, codigo) {
    igual, en "Otras", para que ninguna foto quede escondida. Las que este
    rol no puede ver ya no vienen del servidor (GET /ordenes/:id). */
 /* titulo = el del visor (js/visor-imagen.js), + " · #C-1412" */
+/* columna = dónde va su ícono en las tablas de órdenes de Clientes /
+   Tiendas y Gestión / Motorizado (iconosFotosOrdenColumna, abajo):
+   'codigo', 'estado' o 'cobrado'. Un tipo sin columna va en el Código. */
 var _GRUPOS_FOTOS_ORDEN = [
-  { tipo: 'foto_producto',          label: 'Producto',          titulo: 'Foto del producto' },
-  { tipo: 'foto_entrega',           label: 'Entrega',           titulo: 'Foto de entrega' },
-  { tipo: 'foto_cambio',            label: 'Cambio',            titulo: 'Foto del cambio' },
-  { tipo: 'evidencia_medio_pago',   label: 'Pago',              titulo: 'Foto del pago' },
-  { tipo: 'foto_reprogramado',      label: 'Reprogramado',      titulo: 'Foto de reprogramado' },
-  { tipo: 'foto_ausente',           label: 'Ausente',           titulo: 'Foto de ausente' },
-  { tipo: 'foto_cancelado',         label: 'Cancelado',         titulo: 'Foto de cancelado' },
-  { tipo: 'foto_no_entregado',      label: 'No entregado',      titulo: 'Foto de no entregado' },
-  { tipo: 'foto_devolucion',        label: 'Devolución',        titulo: 'Foto de devolución' },
-  { tipo: 'foto_devolucion_tienda', label: 'Devolución tienda', titulo: 'Foto de la entrega a la tienda' },
+  { tipo: 'foto_producto',          label: 'Producto',          titulo: 'Foto del producto',              columna: 'codigo' },
+  { tipo: 'foto_entrega',           label: 'Entrega',           titulo: 'Foto de entrega',                columna: 'estado' },
+  { tipo: 'foto_cambio',            label: 'Cambio',            titulo: 'Foto del cambio',                columna: 'estado' },
+  { tipo: 'evidencia_medio_pago',   label: 'Pago',              titulo: 'Foto del pago',                  columna: 'cobrado' },
+  { tipo: 'foto_reprogramado',      label: 'Reprogramado',      titulo: 'Foto de reprogramado',           columna: 'estado' },
+  { tipo: 'foto_ausente',           label: 'Ausente',           titulo: 'Foto de ausente',                columna: 'estado' },
+  { tipo: 'foto_cancelado',         label: 'Cancelado',         titulo: 'Foto de cancelado',              columna: 'estado' },
+  { tipo: 'foto_no_entregado',      label: 'No entregado',      titulo: 'Foto de no entregado',           columna: 'estado' },
+  { tipo: 'foto_devolucion',        label: 'Devolución',        titulo: 'Foto de devolución',             columna: 'estado' },
+  { tipo: 'foto_devolucion_tienda', label: 'Devolución tienda', titulo: 'Foto de la entrega a la tienda', columna: 'estado' },
 ];
+
+/* En la columna Estado, primero la foto del estado en que está la orden
+   (una entregada que antes fue reprogramada abre en la de la entrega) */
+var _FOTOS_DEL_ESTADO = {
+  'entregado':    ['foto_entrega', 'foto_cambio'],
+  'ausente':      ['foto_ausente'],
+  'reprogramado': ['foto_reprogramado'],
+  'cancelado':    ['foto_cancelado'],
+  'no-entregado': ['foto_no_entregado'],
+  'devolucion':   ['foto_devolucion_tienda', 'foto_devolucion'],
+};
+
+/* Ícono azul de cámara de una columna de la fila (o.fotos = [{tipo, url}],
+   de GET /tiendas/:id/ordenes y GET /motorizados/:id/ordenes; el servidor
+   manda solo las de órdenes que ese rol ve). Sin fotos de esa columna,
+   ''. Con varias, un solo ícono con el número y las demás como nodos
+   ocultos: la fila lleva data-visor-grupo, así el visor
+   (js/visor-imagen.js) pasa con las flechas por TODAS las fotos de la
+   orden, en el orden de las columnas. */
+function iconosFotosOrdenColumna(o, columna) {
+  var fotos = Array.isArray(o.fotos) ? o.fotos
+    : (o.foto_producto_url ? [{ tipo: 'foto_producto', url: o.foto_producto_url }] : []);
+  var grupo = {};
+  _GRUPOS_FOTOS_ORDEN.forEach(function(g) { grupo[g.tipo] = g; });
+  var orden = _GRUPOS_FOTOS_ORDEN.map(function(g) { return g.tipo; });
+  var primero = columna === 'estado' ? (_FOTOS_DEL_ESTADO[o.estado] || []) : [];
+  var rango = function(tipo) {
+    var i = primero.indexOf(tipo);
+    if (i !== -1) return i - 100;
+    var j = orden.indexOf(tipo);
+    return j === -1 ? 99 : j;
+  };
+  var deCol = fotos
+    .filter(function(f) { return f && f.url && ((grupo[f.tipo] && grupo[f.tipo].columna) || 'codigo') === columna; })
+    .map(function(f, i) { return { f: f, i: i }; })
+    .sort(function(a, b) { return rango(a.f.tipo) - rango(b.f.tipo) || a.i - b.i; })
+    .map(function(x) { return x.f; });
+  if (!deCol.length) return '';
+
+  var codigo = o.codigo ? ' · #' + o.codigo : '';
+  var titulo = function(f) { return ((grupo[f.tipo] && grupo[f.tipo].titulo) || 'Foto') + codigo; };
+  var nombres = [];
+  deCol.forEach(function(f) {
+    var n = (grupo[f.tipo] && grupo[f.tipo].label) || 'Otra';
+    if (nombres.indexOf(n) === -1) nombres.push(n);
+  });
+  var primera = deCol[0];
+  return ' <a href="' + _escFoto(primera.url) + '"' + atributosVisor(primera.url, titulo(primera)) +
+      ' title="' + _escFoto((deCol.length > 1 ? deCol.length + ' fotos: ' : 'Foto: ') + nombres.join(', ')) + '"' +
+      ' style="color:var(--color-blue);text-decoration:none;white-space:nowrap"><i class="ti ti-camera"></i>' +
+      (deCol.length > 1 ? '<sup style="font-size:9px;font-weight:600">' + deCol.length + '</sup>' : '') +
+    '</a>' +
+    deCol.slice(1).map(function(f) { return '<span hidden' + atributosVisor(f.url, titulo(f)) + '></span>'; }).join('');
+}
 
 function _grupoFotosOrdenHTML(label, deEste, codigo, titulo) {
   return '<div class="fotos-orden-grupo">' +

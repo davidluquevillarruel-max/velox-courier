@@ -148,8 +148,9 @@ window.confirmarDevolucionDesdeTabla = function(ordenId, btnEl) {
 
 /* Ícono de cámara: abre la foto del producto en el visor
    (js/visor-imagen.js), sin salir de la página. Sin foto devuelve ''
-   (no muestra nada). Lo comparten la tabla de "Todos los pedidos" y el
-   detalle de la tienda en js/clientes.js. */
+   (no muestra nada). Lo usa la tabla de "Todos los pedidos"; las tablas
+   de Clientes / Tiendas y Gestión / Motorizado muestran TODAS las fotos
+   de la orden por columna (iconosFotosOrdenColumna, js/motorizados.js). */
 function _iconoFotoProducto(url, codigo) {
   if (!url) return '';
   var href = String(url).replace(/&/g, '&amp;').replace(/"/g, '&quot;');

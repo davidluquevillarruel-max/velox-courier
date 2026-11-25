@@ -7,6 +7,19 @@ var _filtroDesdeClientes = '';
 var _filtroHastaClientes = '';
 var _filtroTiendaClientes = '';
 
+/* Escapa texto para meterlo en HTML */
+function _escCli(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function(c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+  });
+}
+
+/* La sesión es de una tienda (solo pantalla: el alcance lo pone el servidor) */
+function _sesionEsTiendaCli() {
+  try { return (JSON.parse(localStorage.getItem('velox_usuario')) || {}).rol === 'tienda'; }
+  catch (e) { return false; }
+}
+
 /* ── Filtro de período dentro del detalle de una tienda (agrupado) ── */
 var _filtroDesdeDetalle    = '';
 var _filtroHastaDetalle    = '';
@@ -109,6 +122,8 @@ window.renderClientes = async function() {
 
   var tbody = document.getElementById('tbody-clientes');
   if (!tbody) return;
+  var thWa = document.getElementById('th-wa-clientes');
+  if (thWa) thWa.style.display = _sesionEsTiendaCli() ? 'none' : '';
 
   /* Detectar rol */
   var _sesionCli  = (function(){ var r=localStorage.getItem('velox_usuario'); if(!r) return null; try{return JSON.parse(r);}catch(e){return null;} })();
@@ -160,7 +175,13 @@ window.renderClientes = async function() {
 
     /* Botón WA resumen — el check de al lado avisa si ya se le mandó
        hoy (ver _yaEnviadoWaHoy / _marcarWaEnviado) */
-    var btnWA = t.telefono
+    /* La tienda no manda resúmenes por WhatsApp (a sí misma): ni la
+       columna WA ni el link de su teléfono */
+    if (_esTienda) {
+      telHTML = t.telefono ? _escCli(t.telefono) : '<span style="color:var(--color-text-tertiary)">—</span>';
+      if (t.yape) telHTML += '<br><span style="font-size:11px;color:var(--color-text-secondary)"><i class="ti ti-currency-sol"></i> Yape: ' + _escCli(t.yape) + '</span>';
+    }
+    var btnWA = _esTienda ? '' : t.telefono
       ? '<td><button class="btn btn-sm" onclick="enviarResumenRapidoWP(this)" data-tel="'+t.telefono+'" data-id="'+t.id+'" data-nombre="'+t.nombre.replace(/"/g,' ')+'" title="Enviar resumen WA" style="background:#25D366;color:#fff;border-color:#25D366;padding:4px 8px"><i class="ti ti-brand-whatsapp"></i></button>' +
           (_yaEnviadoWaHoy(t.id)
             ? ' <i class="ti ti-circle-check wa-enviado-check" title="Ya se le envió el resumen hoy" style="color:var(--color-green);font-size:14px;vertical-align:middle"></i>'
@@ -562,7 +583,8 @@ window.renderDetalleTienda = async function(tiendaId) {
       '</div>' +
       '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">' +
         (typeof botonesReporteTiendaHTML === 'function' ? botonesReporteTiendaHTML(tienda.id, fechaReporte, tienda.nombre) : '') +
-        (tienda.telefono
+        /* "Enviar resumen" es de Velox a la tienda: la tienda no lo ve */
+        _sesionEsTiendaCli() ? '' : (tienda.telefono
           ? '<button class="btn btn-sm" style="background:#25D366;color:#fff;border-color:#25D366;font-weight:600" ' +
               'onclick="enviarResumenWP(\'' + tienda.telefono + '\',\'' + tienda.nombre.replace(/'/g,"\\'") + '\')">' +
               '<i class="ti ti-brand-whatsapp"></i> Enviar resumen' +

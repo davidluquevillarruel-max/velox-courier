@@ -12,6 +12,40 @@ Velox Courier — internal management system for a courier/delivery company in L
 
 Última actualización: 24 de noviembre de 2026.
 
+- **Cambio 8b — qué datos le llegan al moto y a la tienda (25 de noviembre de 2026, commit aparte,
+  en local, sin push; sin migración). Toca el servidor: hay que reiniciarlo.**
+  `server/routes/motorizados.js`, `server/routes/tiendas.js`, `js/reasignaciones.js`,
+  `js/clientes.js`, `pages/clientes.html`.
+  - **`GET /motorizados`:** el motorizado recibe SOLO su registro; la tienda, `[]` (Evidencias lo
+    pide y con un 403 se rompería); gestores y visor, todos como siempre. **Nuevo `GET
+    /motorizados/companeros`** (gestores y moto; tienda 403): activos, solo `id` y `nombre`, sin el
+    propio moto. Lo usa la ventana "Reasignar" del moto (`js/reasignaciones.js`; la inicial del
+    avatar se calcula con `_initiales`). Asignación del moto sigue con su propio registro (el combo
+    está fijo en él).
+  - **`GET /motorizados/:id/ordenes`:** la tienda, 403 (antes podía leer las órdenes de cualquier
+    moto, con clientes de otras tiendas).
+  - **`GET /tiendas`:** el motorizado recibe solo `id, nombre, activa` (antes RUC, contacto,
+    teléfono, Yape y dirección de todas). `GET /tiendas/resumen`: motorizado 403 (antes veía la plata
+    de todas las tiendas). `GET /tiendas/:id/ordenes`: motorizado 403 (`tiendaAutorizada`; antes
+    podía leer las órdenes de cualquier tienda).
+  - **Clientes / Tiendas, rol tienda:** sin la columna WA (`#th-wa-clientes`), su teléfono sin link a
+    WhatsApp y sin "Enviar resumen" en el detalle.
+  - **Revisado y sin cambios:** `/ordenes`, `/ordenes/:id`, `/para-asignacion`, `/fotos-export`
+    (ya con `filtroPorRol`; a la tienda no le llegan campos personales del moto, solo su nombre),
+    `/auth/usuarios` (cada uno el suyo), `/reasignaciones` (tienda 403), `/notificaciones` y la Caja
+    (tienda 403).
+  - **Queda para decidir:** `GET /tarifas` (`SELECT * FROM v_tarifario`) lo lee cualquier rol: la
+    tienda ve el pago al moto de cada distrito y el moto, el delivery. No son datos de otra tienda ni
+    personales; no se tocó.
+  - **Frágil, de antes:** Asignación, Evidencias y la lista de Clientes buscan al moto / la tienda por
+    el **nombre del usuario** (`sesion.nombre`), no por `id_motorizado` / `id_tienda`. Si el usuario
+    se llama distinto que su moto o su tienda, ven vacío (pasó con los usuarios de prueba).
+  - **Probado el 25/11** (servidor en el 3001; moto, tienda y operador de prueba, borrados): 32 de 32
+    mirando la respuesta real (claves exactas de `/companeros` y `/tiendas` del moto, 403 en cada
+    ruta cerrada, el operador igual que antes) y los 36 de la parte A otra vez. A 375 px sin errores:
+    moto en Motorizados, Asignación, Evidencias, Reasignar (25 compañeros) y Actualizar orden;
+    tienda en Clientes (9 columnas, sin WA), su detalle y Evidencias.
+
 - **Cambio 8 — el motorizado ve "Gestión / Motorizado", solo lo suyo (25 de noviembre de 2026,
   commit en local, sin push; sin migración). Toca el servidor: hay que reiniciarlo.**
   `server/routes/caja.js`, `server/routes/motorizados.js`, `js/gestion-motos.js`,

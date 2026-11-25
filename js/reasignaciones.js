@@ -95,12 +95,18 @@ window.abrirPedirReasignacion = async function(idOrden) {
   modal.innerHTML = '<div class="rsg-caja"><div class="rsg-cargando"><i class="ti ti-loader"></i> Cargando…</div></div>';
   modal.style.display = 'flex';
   try {
-    var res = await Promise.all([fetch(API + '/ordenes/' + idOrden), fetch(API + '/motorizados')]);
+    /* El motorizado no recibe los datos de los demás: sus compañeros
+       salen de /motorizados/companeros (solo id y nombre, activos) */
+    var esMoto = typeof _esSesionMotorizado === 'function' && _esSesionMotorizado();
+    var res = await Promise.all([
+      fetch(API + '/ordenes/' + idOrden),
+      fetch(API + (esMoto ? '/motorizados/companeros' : '/motorizados')),
+    ]);
     if (!res[0].ok) throw new Error('No se pudo cargar la orden');
     var orden = await res[0].json();
     var motos = res[1].ok ? await res[1].json() : [];
     _rsgOrdenPedido = orden;
-    var otros = motos.filter(function(m) { return m.activo && m.nombre !== orden.motorizado; });
+    var otros = motos.filter(function(m) { return (esMoto || m.activo) && m.nombre !== orden.motorizado; });
     _pintarModalRsg(orden, otros);
   } catch (err) {
     modal.innerHTML = '<div class="rsg-caja"><div class="rsg-cargando" style="color:var(--color-red-text)">' + _escRsg(err.message) + '</div>' +
@@ -112,7 +118,8 @@ function _pintarModalRsg(o, motos) {
   var lista = motos.length
     ? motos.map(function(m) {
         return '<button type="button" class="rsg-moto" data-id="' + m.id + '" onclick="elegirMotoReasignacion(' + m.id + ')">' +
-          '<span class="avatar ' + _escRsg(m.color_avatar || 'av-blue') + ' rsg-avatar">' + _escRsg(m.iniciales || '?') + '</span>' +
+          '<span class="avatar ' + _escRsg(m.color_avatar || 'av-blue') + ' rsg-avatar">' +
+            _escRsg(m.iniciales || (typeof _initiales === 'function' ? _initiales(m.nombre) : '?')) + '</span>' +
           '<span class="rsg-moto-nombre">' + _escRsg(m.nombre) +
             (m.zona ? '<small>' + _escRsg(m.zona) + '</small>' : '') + '</span>' +
           '<i class="ti ti-circle-check rsg-check"></i>' +

@@ -45,8 +45,10 @@ function esNombreDuplicado(err) {
   return err && (err.number === 2627 || err.number === 2601);
 }
 
-/* Una tienda solo puede consultar su propia tienda */
+/* Una tienda solo puede consultar su propia tienda; el motorizado,
+   ninguna (serían órdenes y clientes de toda la tienda) */
 function tiendaAutorizada(usuario, idTiendaPedida) {
+  if (usuario.rol === 'motorizado') return false;
   if (usuario.rol !== 'tienda') return true;
   return usuario.id_tienda === parseInt(idTiendaPedida, 10);
 }
@@ -62,6 +64,14 @@ router.get('/', async (req, res) => {
     if (req.usuario.rol === 'tienda') {
       request.input('yo', sql.Int, req.usuario.id_tienda || -1);
       filtro += ' AND id = @yo';
+    }
+
+    /* El motorizado necesita solo los nombres (filtro de Asignación,
+       Evidencias, "Actualizar orden"): sin RUC, contacto, teléfono,
+       Yape ni dirección de las tiendas */
+    if (req.usuario.rol === 'motorizado') {
+      const r = await request.query(`SELECT id, nombre, activa FROM tiendas ${filtro} ORDER BY nombre`);
+      return res.json(r.recordset);
     }
 
     const result = await request.query(`
@@ -86,6 +96,10 @@ router.get('/', async (req, res) => {
    GET /api/tiendas/resumen?desde=YYYY-MM-DD&hasta=YYYY-MM-DD */
 router.get('/resumen', async (req, res) => {
   try {
+    /* La plata de las tiendas no es del motorizado */
+    if (req.usuario.rol === 'motorizado') {
+      return res.status(403).json({ error: 'Acceso denegado para este rol' });
+    }
     const pool    = await getPool();
     const fecha   = req.query.fecha;
     const desde   = req.query.desde;

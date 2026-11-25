@@ -1,7 +1,7 @@
 /* ============================================================
    routes/motorizados.js
    Protegido: requiere sesión. Escritura solo para gestores.
-   Un motorizado solo consulta sus propias órdenes.
+   Un motorizado solo ve su registro y sus órdenes; la tienda, nada.
    ============================================================ */
 const express = require('express');
 const router  = express.Router();
@@ -15,19 +15,54 @@ const GESTORES = ['admin', 'operador'];
 /* GET /api/motorizados — cualquier usuario autenticado puede leer el catálogo */
 router.get('/', async (req, res) => {
   try {
-    const pool   = await getPool();
-    const result = await pool.request().query(`
+    /* Alcance por rol (datos personales: DNI, placa, Yape, teléfono):
+       · tienda: ninguno (no le corresponde ver a los motorizados; su
+         pantalla Evidencias recibe la lista vacía y no se rompe);
+       · motorizado: SOLO su propio registro. Los compañeros, para
+         reasignar, salen de /companeros (solo id y nombre);
+       · gestores y visor: todos, como siempre. */
+    if (req.usuario.rol === 'tienda') return res.json([]);
+    const pool    = await getPool();
+    const request = pool.request();
+    let filtro = '';
+    if (req.usuario.rol === 'motorizado') {
+      request.input('yo', sql.Int, req.usuario.id_motorizado || -1);
+      filtro = 'WHERE m.id = @yo';
+    }
+    const result = await request.query(`
       SELECT m.id, m.nombre, m.iniciales, m.telefono, m.yape, m.dni, m.placa,
              m.color_avatar, m.activo, m.referencia,
              CONVERT(varchar,m.fecha_ingreso,23) AS fecha_ingreso,
              z.nombre AS zona
       FROM motorizados m
       LEFT JOIN zonas z ON z.id = m.id_zona
+      ${filtro}
       ORDER BY m.nombre
     `);
     res.json(result.recordset);
   } catch (err) {
     console.error('GET /motorizados:', err.message);
+    res.status(500).json({ error: 'Error al listar motorizados' });
+  }
+});
+
+/* GET /api/motorizados/companeros — a quién se le puede pasar una orden
+   (ventana "Reasignar", js/reasignaciones.js): los activos, SOLO id y
+   nombre. Al motorizado no se lo incluye a él mismo. Gestores y moto. */
+router.get('/companeros', requireRol(...GESTORES, 'motorizado'), async (req, res) => {
+  try {
+    const pool    = await getPool();
+    const request = pool.request();
+    let filtro = '';
+    if (req.usuario.rol === 'motorizado') {
+      request.input('yo', sql.Int, req.usuario.id_motorizado || -1);
+      filtro = 'AND id <> @yo';
+    }
+    const result = await request.query(`
+      SELECT id, nombre FROM motorizados WHERE activo = 1 ${filtro} ORDER BY nombre`);
+    res.json(result.recordset);
+  } catch (err) {
+    console.error('GET /motorizados/companeros:', err.message);
     res.status(500).json({ error: 'Error al listar motorizados' });
   }
 });
@@ -166,6 +201,10 @@ router.delete('/:id/permanente', requireRol('admin'), async (req, res) => {
 /* GET /api/motorizados/:id/ordenes — motorizado solo ve las suyas */
 router.get('/:id/ordenes', async (req, res) => {
   try {
+    /* La tienda no: serían órdenes (y clientes) de otras tiendas */
+    if (req.usuario.rol === 'tienda') {
+      return res.status(403).json({ error: 'Acceso denegado para este rol' });
+    }
     if (req.usuario.rol === 'motorizado' &&
         req.usuario.id_motorizado !== parseInt(req.params.id, 10)) {
       return res.status(403).json({ error: 'No puedes ver las órdenes de otro motorizado' });

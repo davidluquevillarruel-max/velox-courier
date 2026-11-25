@@ -36,6 +36,9 @@ app.use(cookieParser());
 app.use(express.static(path.join(__dirname, '..')));
 
 /* ── Rutas de la API ── */
+/* Antes de todas: a la tienda y al motorizado no les sale ningún campo
+   con el que puedan calcular el margen (middleware/recortar-por-rol.js) */
+app.use('/api', require('./middleware/recortar-por-rol').recortarPorRol);
 app.use('/api/auth',         require('./routes/auth'));
 app.use('/api/ordenes',      require('./routes/ordenes'));
 app.use('/api/motorizados',  require('./routes/motorizados'));

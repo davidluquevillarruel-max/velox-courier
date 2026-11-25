@@ -626,7 +626,7 @@ async function _gmPintarOrdenes(desde, hasta, idCont) {
         '<span style="font-size:12px;color:var(--color-text-secondary)">' + ordenes.length + ' registros</span></div>' +
         /* El moto, sin Actualizar ni Reasignar: sus órdenes las trabaja
            en "Mis entregas de hoy" */
-        '<div style="padding:0 16px 16px">' + _renderTablaOrdenesDetalle(ordenes, { sinAcciones: esMoto }) + '</div></div>'
+        '<div style="padding:0 16px 16px">' + _renderTablaOrdenesDetalle(ordenes, { sinAcciones: esMoto, sinDelivery: esMoto }) + '</div></div>'
     : '<div style="padding:24px;text-align:center;color:var(--color-text-tertiary)">Sin órdenes.</div>';
 }
 

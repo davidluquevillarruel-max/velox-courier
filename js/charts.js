@@ -9,6 +9,12 @@ var _EC_EV  = ['entregado', 'ausente']; /* estados que generan cobro */
 /* Filtro de rango activo en evidencias */
 var _filtroEvidenciaDesde = '';
 var _filtroEvidenciaHasta = '';
+/* El motorizado no recibe el delivery (lo que paga la tienda): sin
+   "Ingreso delivery", "Saldo por cobrar" ni la columna "Ingreso
+   generado". La tienda no recibe el pago al moto: sin "Pago a
+   motorizados". El servidor ya no les manda esos campos
+   (server/middleware/recortar-por-rol.js); esto es la pantalla. */
+var _evSinDelivery = false;
 var _filtroEvidenciaMoto  = ''; /* nombre del motorizado (de su registro, por id) si la sesión es motorizado */
 
 function _obtenerSesionEv() {
@@ -231,7 +237,7 @@ function _renderTablaMotorizadosEv() {
       '<td style="color:var(--color-purple-text);font-weight:600">' + reprog + '</td>' +
       '<td style="color:var(--color-amber-text);font-weight:600">' + ausentes + '</td>' +
       '<td><span style="color:' + tasaColor + ';font-weight:700">' + tasa + '%</span></td>' +
-      '<td style="font-weight:600">S/ ' + ingreso.toFixed(2) + '</td>' +
+      (_evSinDelivery ? '' : '<td style="font-weight:600">S/ ' + ingreso.toFixed(2) + '</td>') +
       '<td><button class="btn btn-sm btn-primary" onclick="verDetalleMotoEv(\'' + m.nombre + '\')"><i class="ti ti-chart-pie"></i> Ver detalle</button></td>' +
     '</tr>';
   }).filter(Boolean);
@@ -308,6 +314,17 @@ window.initEvidencias = async function() {
   var sesionEv = _obtenerSesionEv();
   var esMotoEv = !!(sesionEv && sesionEv.rol === 'motorizado');
   _filtroEvidenciaMoto = '';
+  _evSinDelivery = esMotoEv;
+  var ocultarCard = function(id, ocultar) {
+    var el = document.getElementById(id);
+    var card = el && el.closest('.ev-card, .metric');
+    if (card) card.style.display = ocultar ? 'none' : '';
+  };
+  ocultarCard('ev-pagomotos', !!(sesionEv && sesionEv.rol === 'tienda'));
+  ocultarCard('ev-ingreso', esMotoEv);
+  ocultarCard('ev-saldo', esMotoEv);
+  var thIngreso = document.getElementById('th-ev-ingreso');
+  if (thIngreso) thIngreso.style.display = esMotoEv ? 'none' : '';
 
   /* Mostrar estado de carga */
   var tbM = document.getElementById('tbody-ev-motos');
@@ -488,7 +505,7 @@ window.verDetalleMotoEv = function(nombreMoto) {
     '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px">' +
       _kpiCardEv('Pedidos totales', ords.length, 'blue', 'ti-package') +
       _kpiCardEv('Tasa de entrega', tasa+'%', tasa>=75?'green':tasa>=50?'amber':'red', 'ti-target-arrow') +
-      _kpiCardEv('Ingreso generado', 'S/ '+ingreso.toFixed(2), 'blue', 'ti-truck') +
+      (_evSinDelivery ? '' : _kpiCardEv('Ingreso generado', 'S/ '+ingreso.toFixed(2), 'blue', 'ti-truck')) +
       _kpiCardEv('Pago a motorizado', 'S/ '+pagoMoto.toFixed(2), 'amber', 'ti-wallet') +
       _kpiCardEv('Total cobrado', 'S/ '+cobrado.toFixed(2), 'green', 'ti-cash') +
       _kpiCardEv('Total moto', 'S/ '+totalMoto.toFixed(2), totalMoto>=0?'green':'red', 'ti-calculator') +

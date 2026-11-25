@@ -12,6 +12,45 @@ Velox Courier — internal management system for a courier/delivery company in L
 
 Última actualización: 24 de noviembre de 2026.
 
+- **URGENTE (encontrado el 25/11, NO arreglado, espera el OK del usuario): el servidor publica los
+  archivos del proyecto.** `server.js` hace `express.static(path.join(__dirname, '..'))`, o sea sirve
+  TODA la carpeta del proyecto sin login. Probado en local (3001): `/server/db.js` (con la contraseña
+  de respaldo de la base), `/server/routes/*.js`, `/server/package.json`, `/CLAUDE.md`,
+  `/DECISIONES.md`, `/velox_sqlserver.sql`, `/server/scripts/*.sql`, `/credenciales_tiendas.md` (está
+  en esta PC; en el servidor solo si se copió) y `/.git/config` dan 200 (todo el repositorio con su
+  historial se puede bajar). `/server/.env` da 404. En producción pasa lo mismo salvo que Nginx lo
+  frene: no se pudo mirar desde acá. Arreglo propuesto: servir solo `index.html`, `login.html`,
+  `css/`, `js/`, `pages/`, `img/` (y lo que haga falta del frontend), y después rotar la contraseña
+  de la base.
+
+- **Cambio 10 — ni la tienda ni el moto reciben con qué calcular el margen (25 de noviembre de 2026,
+  commit en local, sin push; sin migración). Toca el servidor: hay que reiniciarlo.**
+  - **Servidor, un solo lugar:** `server/middleware/recortar-por-rol.js` (montado en `server.js`
+    antes de todas las rutas de `/api`) reemplaza `res.json` y le quita a TODA respuesta, a cualquier
+    profundidad, los campos prohibidos del rol (`CAMPOS_PROHIBIDOS`): **motorizado** sin
+    `delivery_base`, `delivery_total`, `monto_adicional`, `monto_producto` (cobrado − delivery lo
+    delataría), `delivery` (el de `caja`), `precio_delivery`, `margen`; **tienda** sin
+    `pago_moto_base / _adicional / _total`, `pago_moto`, `pago_motorizado`, `saldo_moto`, `margen`.
+    Admin, operador y visor, sin tocar. Así cubre órdenes, detalle, Caja, reasignaciones y cualquier
+    ruta nueva. **Un campo nuevo con plata de la tienda o del moto se suma a esa lista.**
+  - **Pantallas:** Gestión / Motorizado del moto sin la columna Delivery y "Especial" = "Sí" sin el
+    monto (`_renderTablaOrdenesDetalle(…, { sinDelivery })`). "Actualizar orden" del moto esconde
+    Valor producto, Delivery base y Adicional (`#celda-producto-update`, `#fila-delivery-update`);
+    los campos quedan vacíos en la página porque el guardado los lee, y `/completo` ya usaba los
+    montos de la base para el moto (probado: guardar no cambia nada). Evidencias: el moto sin
+    "Ingreso delivery", "Saldo por cobrar" ni la columna "Ingreso generado" (`_evSinDelivery`,
+    `#th-ev-ingreso`); la tienda sin "Pago a motorizados". Imagen del moto: "Tu delivery del día"
+    pasó a "Tu pago del día" (era su pago). La imagen de la tienda no tenía pago al moto. La
+    exportación es solo de "Todos los pedidos" (gestores); notificaciones, 403 para los dos.
+  - **Probado el 25/11** (servidor en el 3001; moto, tienda y operador de prueba, borrados): 40 de
+    40 comparando campo por campo contra el operador (respuesta del rol = la del gestor menos los
+    campos prohibidos, en `/motorizados/:id/ordenes`, `/ordenes`, `/ordenes/:id`, `/caja/…/dias`,
+    `/reporte`, `/tiendas/:id/ordenes`, `/tiendas`…; ninguna clave prohibida en otras 12 rutas; el
+    moto conserva su pago, lo cobrado y su deuda; la tienda, su delivery, adicional y producto) + 8,
+    32 y 36 de los cambios 9, 8b y 8. A 375 px: Gestión del moto sin Delivery, "Actualizar orden" del
+    moto guardado sin pisar montos (PRB-18 sigue con delivery 10 y pago 6), Evidencias de moto y
+    tienda, el texto de la imagen del moto sin "delivery"; el operador ve todo igual.
+
 - **Cambio 9 — tarifas por rol y búsqueda por id (25 de noviembre de 2026, dos commits en local, sin
   push; sin migración). Toca el servidor: hay que reiniciarlo.**
   - **Tarifas (`server/routes/tarifas.js`):** ni la tienda ni el moto tienen que poder calcular el
@@ -32,11 +71,7 @@ Velox Courier — internal management system for a courier/delivery company in L
     de los cambios 8b y 8 otra vez. A 375 px sin errores: moto con Asignación en su moto, Evidencias
     con sus 17 órdenes (antes 0) y Actualizar orden con los 62 distritos sin "NaN"; tienda con su fila
     en Clientes (antes "Sin tiendas registradas"), su detalle y Evidencias.
-  - **PENDIENTE (para decidir):** el margen todavía se puede sacar de los datos de las **órdenes**.
-    La tienda recibe `pago_moto_base / _adicional / _total` en `/ordenes` y `/tiendas/:id/ordenes`, y
-    Evidencias le muestra "Pago a motorizados" (`#ev-pagomotos`, probado: S/ 78.00) junto a
-    "Ingreso generado". El moto recibe `delivery_base / _total` en sus órdenes y ve la columna
-    "Delivery" en Gestión / Motorizado y el campo en "Actualizar orden" (bloqueado).
+  - El margen que todavía salía de los datos de las órdenes se cerró en el Cambio 10 (arriba).
 
 - **Cambio 8b — qué datos le llegan al moto y a la tienda (25 de noviembre de 2026, commit aparte,
   en local, sin push; sin migración). Toca el servidor: hay que reiniciarlo.**

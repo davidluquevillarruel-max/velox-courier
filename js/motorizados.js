@@ -286,8 +286,11 @@ function _botonWhatsApp(telefono, nombreDest, telefono2) {
 /* opciones.sinAcciones: sin la columna Actualizar / Reasignar (el
    motorizado en "Gestión / Motorizado": sus órdenes las trabaja en
    "Mis entregas de hoy") */
+/* opciones.sinDelivery: sin la columna Delivery y con "Especial" sin el
+   monto adicional (el motorizado no recibe lo que paga la tienda) */
 function _renderTablaOrdenesDetalle(ordenes, opciones) {
   var sinAcciones = !!(opciones && opciones.sinAcciones);
+  var sinDelivery = !!(opciones && opciones.sinDelivery);
   var badgeMap = {
     'entregado':    '<span class="badge entregado">Entregado</span>',
     'no-entregado': '<span class="badge no-entregado">No entregado</span>',
@@ -307,8 +310,9 @@ function _renderTablaOrdenesDetalle(ordenes, opciones) {
 
   /* La plata de cada fila sale de o.caja (motor de la Caja, en el
      servidor): Cobrado = en mano, Deuda moto = en mano − su pago */
-  var cols = ['Código','Tienda','Destinatario','','Distrito','Estado','Método','Medio de pago',
-              'Delivery','Cobrado','Pago moto','Deuda moto','Especial','Fecha'];
+  var cols = ['Código','Tienda','Destinatario','','Distrito','Estado','Método','Medio de pago']
+    .concat(sinDelivery ? [] : ['Delivery'])
+    .concat(['Cobrado','Pago moto','Deuda moto','Especial','Fecha']);
   if (!sinAcciones) cols.push('');
 
   return '<div class="tabla-moto-aviso"><i class="ti ti-arrows-horizontal"></i> Desliza la tabla a los lados para ver todas las columnas</div>' +
@@ -327,9 +331,9 @@ function _renderTablaOrdenesDetalle(ordenes, opciones) {
       var pagoMotoStr = k.pago_moto ? 'S/ ' + k.pago_moto.toFixed(2) : cero;
       var deudaStr    = k.cobrable ? _deudaMotoHTML(k.saldo_moto) : cero;
 
-      var especial = o.producto_especial
-        ? '<span style="color:var(--color-amber-text);font-weight:600">+S/ ' + parseFloat(o.monto_adicional||0).toFixed(2) + '</span>'
-        : '—';
+      var especial = !o.producto_especial ? '—'
+        : sinDelivery ? '<span style="color:var(--color-amber-text);font-weight:600">Sí</span>'
+        : '<span style="color:var(--color-amber-text);font-weight:600">+S/ ' + parseFloat(o.monto_adicional||0).toFixed(2) + '</span>';
 
       return '<tr style="border-bottom:1px solid var(--color-border-tertiary)">' +
         '<td style="padding:8px 12px"><strong>#' + o.codigo + '</strong>' + _iconoEvidenciaPendiente(o) + '</td>' +
@@ -340,7 +344,7 @@ function _renderTablaOrdenesDetalle(ordenes, opciones) {
         '<td style="padding:8px 12px">' + (badgeMap[o.estado]||o.estado) + '</td>' +
         '<td style="padding:8px 12px;font-size:11px">' + (metodoLabel[o.metodo_pago]||o.metodo_pago||'—') + '</td>' +
         '<td style="padding:8px 12px;font-size:11px;white-space:nowrap">' + _medioPagoMotoHTML(o) + '</td>' +
-        '<td style="padding:8px 12px;font-weight:500">' + deliveryStr + '</td>' +
+        (sinDelivery ? '' : '<td style="padding:8px 12px;font-weight:500">' + deliveryStr + '</td>') +
         '<td style="padding:8px 12px">' + _cobradoMotoHTML(o) + '</td>' +
         '<td style="padding:8px 12px;color:var(--color-amber-text);font-weight:600">' + pagoMotoStr + '</td>' +
         '<td style="padding:8px 12px">' + deudaStr + '</td>' +
@@ -959,12 +963,12 @@ function _renderModalActualizarOrden(orden, tiendas, distritos, motorizados) {
             '<label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px">Por cobrar</label>' +
             '<input id="f-orden-cobrado-update" type="number" step="0.01" min="0" class="search-box" style="width:100%;background:var(--color-green-bg)" value="' + (orden.monto_cobrado||0) + '" oninput="_recalcularValorProductoUpdate()" />' +
           '</div>' +
-          '<div>' +
+          '<div id="celda-producto-update">' +
             '<label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px">Valor producto <span style="font-weight:400;color:var(--color-text-tertiary)">(automático)</span></label>' +
             '<input id="f-orden-producto-update" type="number" step="0.01" min="0" class="search-box" style="width:100%;background:var(--color-bg-secondary)" value="' + (orden.monto_producto||0) + '" readonly />' +
           '</div>' +
         '</div>' +
-        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">' +
+        '<div id="fila-delivery-update" style="display:grid;grid-template-columns:1fr 1fr;gap:12px">' +
           '<div>' +
             '<label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px">Delivery base</label>' +
             '<input id="f-orden-delivery-update" type="number" step="0.01" min="0" class="search-box" style="width:100%" value="' + (orden.delivery_base||0) + '" oninput="_recalcularValorProductoUpdate()" />' +
@@ -1107,6 +1111,15 @@ function _renderModalActualizarOrden(orden, tiendas, distritos, motorizados) {
      'f-orden-tiene-condicion-update', 'f-orden-condicion-update'].forEach(function(id) {
       var el = document.getElementById(id);
       if (el) el.disabled = true;
+    });
+
+    /* Lo que paga la tienda (delivery, adicional) y el valor del producto
+       no le llegan del servidor (recortar-por-rol.js): se esconden, no se
+       muestran en 0. Los campos quedan en la página (vacíos) porque el
+       guardado los lee; el servidor ignora los montos del motorizado. */
+    ['celda-producto-update', 'fila-delivery-update'].forEach(function(id) {
+      var el = document.getElementById(id);
+      if (el) el.style.display = 'none';
     });
 
     /* No debe ver "Pago del delivery en oficina" — se oculta entero,

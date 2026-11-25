@@ -156,7 +156,8 @@ function dibujarReporteMoto(datos, generadoEn) {
   var xv = M + 20 + mitad + 20;
   _repRect(ctx, xv, yb, mitad, 150, 16, c.verdeFondo);
   _repTexto(ctx, 'VELOX TE PAGA', xv + 24, yb + 42, 20, c.verde, 700);
-  _repTexto(ctx, 'Tu delivery del día', xv + 24, yb + 70, 17, c.verde, 400);
+  /* "Tu pago", no "tu delivery": el delivery es lo que paga la tienda */
+  _repTexto(ctx, 'Tu pago del día', xv + 24, yb + 70, 17, c.verde, 400);
   _repTexto(ctx, _repSoles(tot.pago_moto), xv + 24, yb + 126, 48, c.verde, 800);
 
   /* Neto: lo que entrega después de su pago */

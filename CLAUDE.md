@@ -60,7 +60,7 @@ Velox Courier — internal management system for a courier/delivery company in L
     (ya con `filtroPorRol`; a la tienda no le llegan campos personales del moto, solo su nombre),
     `/auth/usuarios` (cada uno el suyo), `/reasignaciones` (tienda 403), `/notificaciones` y la Caja
     (tienda 403).
-  - **Tarifas y búsqueda por nombre:** resueltos en el Cambio 9 (abajo de este punto, arriba).
+  - **Tarifas y búsqueda por nombre:** resueltos en el Cambio 9 (el punto de arriba).
   - **Probado el 25/11** (servidor en el 3001; moto, tienda y operador de prueba, borrados): 32 de 32
     mirando la respuesta real (claves exactas de `/companeros` y `/tiendas` del moto, 403 en cada
     ruta cerrada, el operador igual que antes) y los 36 de la parte A otra vez. A 375 px sin errores:

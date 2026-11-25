@@ -28,6 +28,46 @@ Velox Courier — internal management system for a courier/delivery company in L
     y búsqueda por id (`fa7fb17`, `6d3ab30`); Cambio 10, recorte del margen (`b3a30a2`) (D-026, D-027).
   - Cambio 11, lista blanca de archivos y `db.js` sin contraseña (`17d9c1b`), y fuera del repo los
     scripts con contraseñas (D-028).
+- **WhatsApp del reporte a las tiendas, recuperado y rehecho (25/11, después del push: commit en
+  local, sin push; va en el mismo deploy). Toca el servidor: hay que reiniciarlo. Sin migración.**
+  `js/clientes.js`, `server/routes/caja.js`.
+  - **La causa (bug de `b138c92`):** en el encabezado del detalle de la tienda quedó
+    `… + botonesReporte… + _sesionEsTiendaCli() ? '' : (…Enviar resumen…) + '</div>' + …` sin
+    paréntesis. El `+` va antes que `? :`, así que todo lo anterior era la condición (un texto, o sea
+    verdadera) y la línea entera valía `''`: **para todos los roles** desaparecían el encabezado
+    (nombre, Volver, botones del reporte, "Enviar resumen"), los 5 cuadros y el banner del saldo.
+    Revisado el resto del lote: era el único ternario sin paréntesis dentro de una suma de textos.
+    **Regla: un `cond ? a : b` dentro de una suma de textos va siempre entre paréntesis.**
+  - **Ahora, igual que Gestión / Motorizado (D-024):** botón verde por tienda en la lista (columna
+    WA) con el día del filtro, y "Enviar reporte dd/mm" en cada pestaña de día del detalle
+    (`_cliBotonWA`); con un período (lista o detalle agrupado), apagado o con el aviso "el reporte es
+    de un día". `enviarReporteTiendaWA(idTienda, fecha, btn)`: lee `GET /caja/tiendas/:id/reporte`
+    (los números del motor, `calcularOrdenCaja`: los mismos de Caja → Tienda y de la imagen), arma el
+    mensaje (`_cliMensajeWA`: cada orden con cliente, distrito, estado y su delivery / cobrado si
+    cuenta en la Caja; totales del día: delivery, cobrado al cliente y saldo; liquidado si lo está; y
+    la URL de la imagen). Sin imagen: el admin la genera antes (`_repGenerarYSubir`); el operador
+    manda la que hay o recibe "lo tiene que generar un admin". La pestaña de WhatsApp se abre con el
+    toque. Marca ✓ por tienda **y día** en este navegador (`localStorage` `velox_wa_tiendas`, 60
+    días; reemplaza a `velox_wa_enviados`, que era solo "hoy"). La tienda no ve nada de esto.
+    `GET /caja/tiendas/:id/reporte` pasó a admin **y operador** (como el de motos); generar sigue
+    solo admin. Se borraron `_construirMensajeResumenTienda` (la regla vieja), `enviarResumenWP`,
+    `enviarResumenRapidoWP` y la marca vieja.
+  - **Probado el 25/11** (servidor en el 3001; admin, operador, tienda y moto de prueba, borrados; a
+    "PRUEBA CAJA" se le puso un teléfono de prueba y se le sacó): 25 de 25 en la API, el reporte =
+    Caja → Tienda pedido por pedido y en totales en 9 días de 6 tiendas (incluidos 2 días pagados, con
+    su liquidado), permisos (admin y operador leen; tienda y moto 403; el operador no sube). A 375 px:
+    lista con un día (activo) y con período (apagado), mensaje completo (14 órdenes, S/ 110 / 260 /
+    −180, URL de la imagen), ✓ guardada por tienda y día; detalle con su encabezado de vuelta,
+    "Enviar reporte" por pestaña, toque real; día sin imagen → el admin la genera (simulado, para no
+    subir al bucket real); operador: con imagen manda, sin imagen avisa, no genera, cierra la pestaña
+    y no marca; tienda sin WhatsApp (y con su encabezado de vuelta). El admin ve todo lo escondido a
+    tienda y moto (Evidencias, Gestión con Delivery / Generar / Ver imagen / Actualizar, Actualizar
+    orden con montos, Tarifas, Asignación libre) y las pruebas de API anteriores siguen (40, 8, 32,
+    36). `window.open` se reemplazó solo en la prueba: falta ver que WhatsApp abra en un celular real.
+  - **Ojo, queda distinto:** los **cuadros y el banner de Clientes / Tiendas** (lista y detalle)
+    siguen con la regla vieja (`server/routes/tiendas.js` y el cálculo en `js/clientes.js`). Ej.
+    PRUEBA CAJA 01/10: la pestaña dice delivery S/ 100, cobrado S/ 430, "se le debe S/ 330"; la Caja,
+    el reporte y el WhatsApp dicen S/ 110 / 260 / −180. Ya estaba en "Pendiente"; ahora se nota más.
 - **PENDIENTE — ROTAR CONTRASEÑAS** (quedaron en el historial de git, que se pudo bajar del sitio
   hasta este deploy): la de la base (`velox_user`, y `sa` si es la misma) en el servidor y su `.env`;
   la del admin si sigue siendo la del script de creación; las de tiendas y motos con la contraseña de
@@ -1345,9 +1385,8 @@ Velox Courier — internal management system for a courier/delivery company in L
   de importar.
 - **Fotos huérfanas en R2:** la limpieza del 7/11 borró las filas, no los archivos del bucket.
 - **Clientes / Tiendas sigue con la regla vieja** (`server/routes/tiendas.js:119`: entregado /
-  ausente). Quedó fuera de las 3 cajas. El **texto** de "Enviar resumen" por WhatsApp
-  (`_construirMensajeResumenTienda`) también usa la regla vieja, así que su saldo puede no coincidir
-  con la Caja ni con el reporte en imagen, que sí usa el motor.
+  ausente). Quedó fuera de las 3 cajas: sus **cuadros y su banner** (lista y detalle) pueden no
+  coincidir con la Caja. El **WhatsApp** a la tienda ya usa el motor (25/11, igual que la imagen).
 - **Vistas de la tienda y del moto para ver su propia caja:** próximo paso; el motor ya sirve,
   falta construirlas con el alcance por sesión (`filtroPorRol`).
 - **"Marcar pagado" de tiendas sigue liquidando días con órdenes en proceso** (después no se pueden

@@ -295,8 +295,11 @@ async function leerTiendaYFecha(req, res, pool, fechaCruda) {
   return { idTienda, fecha, tienda: t.recordset[0].nombre };
 }
 
-/* GET /api/caja/tiendas/:id/reporte?fecha=YYYY-MM-DD */
-router.get('/tiendas/:id/reporte', requireRol('admin'), async (req, res) => {
+/* GET /api/caja/tiendas/:id/reporte?fecha=YYYY-MM-DD
+   Admin y operador (el WhatsApp del reporte en Clientes / Tiendas lo
+   usa, igual que el de motos); generar la imagen (/reporte/subida)
+   sigue siendo solo admin. La tienda no llega acá (403 del router). */
+router.get('/tiendas/:id/reporte', async (req, res) => {
   try {
     const pool = await getPool();
     const base = await leerTiendaYFecha(req, res, pool, req.query.fecha);

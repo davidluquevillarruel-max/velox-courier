@@ -39,32 +39,74 @@ function _badgeEstadoTienda(est) {
 }
 
 /* ════════════════════════════════════════════
-   "YA ENVIADO" — check junto al ícono de WhatsApp
-   Vive en este navegador (localStorage), separado por día: así
-   podés recargar o volver a entrar y seguís viendo a quién ya le
-   mandaste el resumen hoy, pero mañana arranca de cero solo.
+   "ENVIADO" — igual que Gestión / Motorizado: vive en este navegador
+   (localStorage). Va por tienda Y día del reporte: mandarle el del 18
+   no marca el del 19. Se guardan los últimos 60 días.
 ════════════════════════════════════════════ */
-function _waEnviadosHoy() {
-  var hoy = _hoyCli();
+var _CLI_WA_CLAVE = 'velox_wa_tiendas';
+
+function _cliWaLeer() {
   var data = null;
-  try { data = JSON.parse(localStorage.getItem('velox_wa_enviados')); } catch (e) { data = null; }
-  if (!data || data.fecha !== hoy) {
-    data = { fecha: hoy, tiendas: [] };
-    try { localStorage.setItem('velox_wa_enviados', JSON.stringify(data)); } catch (e) { /* ignorar: solo afecta el check visual */ }
-  }
-  return data;
+  try { data = JSON.parse(localStorage.getItem(_CLI_WA_CLAVE)); } catch (e) { data = null; }
+  return data && typeof data === 'object' ? data : {};
 }
 
-function _yaEnviadoWaHoy(idTienda) {
-  return _waEnviadosHoy().tiendas.indexOf(idTienda) !== -1;
+function _cliEnviado(idTienda, fecha) {
+  return !!(fecha && _cliWaLeer()[idTienda + '|' + fecha]);
 }
 
-function _marcarWaEnviado(idTienda) {
-  var data = _waEnviadosHoy();
-  if (data.tiendas.indexOf(idTienda) === -1) {
-    data.tiendas.push(idTienda);
-    try { localStorage.setItem('velox_wa_enviados', JSON.stringify(data)); } catch (e) { /* ignorar */ }
+function _cliMarcarEnviado(idTienda, fecha) {
+  var data = _cliWaLeer();
+  data[idTienda + '|' + fecha] = _hoyCli();
+  var d = new Date(); d.setDate(d.getDate() - 60);
+  var limite = d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
+  Object.keys(data).forEach(function(k) { if (k.split('|')[1] < limite) delete data[k]; });
+  try { localStorage.setItem(_CLI_WA_CLAVE, JSON.stringify(data)); } catch (e) { /* solo afecta la marca */ }
+}
+
+/* dd/mm para los textos */
+function _cliDiaMes(fecha) {
+  var p = String(fecha || '').split('-');
+  return p.length === 3 ? p[2] + '/' + p[1] : fecha;
+}
+
+function _cliCheckEnviadoHTML(idTienda, fecha) {
+  return _cliEnviado(idTienda, fecha)
+    ? ' <i class="ti ti-circle-check wa-enviado-check" title="Ya se le envió el reporte del ' + _escCli(_cliDiaMes(fecha)) + '" ' +
+        'style="color:var(--color-green);font-size:14px;vertical-align:middle"></i>'
+    : '';
+}
+
+/* Un solo día elegido en el filtro de la lista ('' con un período o "Ver todos") */
+function _cliDiaUnico() {
+  return _filtroDesdeClientes && _filtroDesdeClientes === _filtroHastaClientes ? _filtroDesdeClientes : '';
+}
+
+/* Botón de WhatsApp del reporte de un día de una tienda (lista y
+   detalle). Sin un solo día, apagado: el reporte es de un día. La
+   tienda no lo ve (lo decide quien lo llama). */
+function _cliBotonWA(t, fecha, conTexto) {
+  if (!t.telefono) return '<span style="color:var(--color-text-tertiary);font-size:12px">Sin teléfono</span>';
+  if (!fecha) {
+    return '<button class="btn btn-sm" disabled title="El reporte es de un día: filtrá un solo día" ' +
+      'style="padding:4px 8px"><i class="ti ti-brand-whatsapp"></i>' + (conTexto ? ' Enviar reporte' : '') + '</button>';
   }
+  return '<span class="cli-wa" data-tienda="' + Number(t.id) + '" data-fecha="' + _escCli(fecha) + '" style="white-space:nowrap">' +
+    '<button class="btn btn-sm" onclick="enviarReporteTiendaWA(' + Number(t.id) + ',\'' + _escCli(fecha) + '\',this)" ' +
+      'title="Mandarle por WhatsApp su reporte del ' + _escCli(_cliDiaMes(fecha)) + '" ' +
+      'style="background:#25D366;color:#fff;border-color:#25D366;padding:4px 8px' + (conTexto ? ';font-weight:600' : '') + '">' +
+      '<i class="ti ti-brand-whatsapp"></i>' + (conTexto ? ' Enviar reporte ' + _escCli(_cliDiaMes(fecha)) : '') + '</button>' +
+    _cliCheckEnviadoHTML(t.id, fecha) +
+  '</span>';
+}
+
+/* Repinta la marca de una tienda y día donde esté (lista y detalle) */
+function _cliRepintarMarcas(idTienda, fecha) {
+  document.querySelectorAll('.cli-wa[data-tienda="' + idTienda + '"][data-fecha="' + fecha + '"]').forEach(function(cont) {
+    if (!cont.querySelector('.wa-enviado-check')) {
+      cont.insertAdjacentHTML('beforeend', _cliCheckEnviadoHTML(idTienda, fecha));
+    }
+  });
 }
 
 /* ── Cargar tiendas desde API ── */
@@ -173,21 +215,14 @@ window.renderClientes = async function() {
     }
     if (t.yape) telHTML += '<br><span style="font-size:11px;color:var(--color-text-secondary)"><i class="ti ti-currency-sol"></i> Yape: '+t.yape+'</span>';
 
-    /* Botón WA resumen — el check de al lado avisa si ya se le mandó
-       hoy (ver _yaEnviadoWaHoy / _marcarWaEnviado) */
-    /* La tienda no manda resúmenes por WhatsApp (a sí misma): ni la
-       columna WA ni el link de su teléfono */
+    /* WhatsApp del reporte del día elegido (enviarReporteTiendaWA), con
+       su marca de enviado. La tienda no manda resúmenes (a sí misma): ni
+       la columna WA ni el link de su teléfono */
     if (_esTienda) {
       telHTML = t.telefono ? _escCli(t.telefono) : '<span style="color:var(--color-text-tertiary)">—</span>';
       if (t.yape) telHTML += '<br><span style="font-size:11px;color:var(--color-text-secondary)"><i class="ti ti-currency-sol"></i> Yape: ' + _escCli(t.yape) + '</span>';
     }
-    var btnWA = _esTienda ? '' : t.telefono
-      ? '<td><button class="btn btn-sm" onclick="enviarResumenRapidoWP(this)" data-tel="'+t.telefono+'" data-id="'+t.id+'" data-nombre="'+t.nombre.replace(/"/g,' ')+'" title="Enviar resumen WA" style="background:#25D366;color:#fff;border-color:#25D366;padding:4px 8px"><i class="ti ti-brand-whatsapp"></i></button>' +
-          (_yaEnviadoWaHoy(t.id)
-            ? ' <i class="ti ti-circle-check wa-enviado-check" title="Ya se le envió el resumen hoy" style="color:var(--color-green);font-size:14px;vertical-align:middle"></i>'
-            : '') +
-        '</td>'
-      : '<td style="color:var(--color-text-tertiary);font-size:12px">—</td>';
+    var btnWA = _esTienda ? '' : '<td>' + _cliBotonWA(t, _cliDiaUnico(), false) + '</td>';
 
     /* Acciones: solo ver el detalle. Editar / desactivar está en el
        catálogo (página "Tiendas", js/tiendas.js) */
@@ -527,10 +562,7 @@ window.renderDetalleTienda = async function(tiendaId) {
 
   var r = await fetch(API + '/tiendas/' + tiendaId + '/ordenes');
   var ordenes = await r.json();
-  window._detalleOrdenesCache    = ordenes;   /* referencia para enviarResumenWP */
-  window._detalleTiendaNombre    = tienda.nombre;
-  window._detalleTiendaTelefono  = tienda.telefono || '';
-  window._detalleMapaFechaCache  = null;       /* se llena después de agrupar */
+  var esTiendaDet = _sesionEsTiendaCli();
 
   /* Calcular totales generales solo con estados que generan cobro */
   var _ec = ['entregado','ausente'];
@@ -554,9 +586,8 @@ window.renderDetalleTienda = async function(tiendaId) {
   if (_filtroDesdeClientes && _filtroDesdeClientes === _filtroHastaClientes && mapaFecha[_filtroDesdeClientes]) {
     fechas = [_filtroDesdeClientes].concat(fechas.filter(function(f){ return f !== _filtroDesdeClientes; }));
   }
-  window._detalleMapaFechaCache = mapaFecha; /* para enviarResumenWP */
-  /* Día del reporte en imagen (js/reporte-tienda.js): el mismo que usa
-     "Enviar resumen" (la primera pestaña); sin órdenes, el del filtro */
+  /* Día del reporte en imagen (js/reporte-tienda.js): la primera
+     pestaña; sin órdenes, el del filtro */
   var fechaReporte = fechas[0] || _filtroDesdeClientes || _hoyCli();
 
   var estadoT  = tot.saldo > 0 ? 'Deuda' : tot.saldo < 0 ? 'Dev. pendiente' : 'Al día';
@@ -582,14 +613,11 @@ window.renderDetalleTienda = async function(tiendaId) {
         '</div>' +
       '</div>' +
       '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">' +
+        /* El WhatsApp del reporte va en cada día (abajo, en su pestaña).
+           Ojo: un "cond ? a : b" dentro de una suma de textos va SIEMPRE
+           entre paréntesis; sin ellos el + se come todo lo anterior y la
+           línea entera vale '' (pasó en b138c92: se perdía este encabezado) */
         (typeof botonesReporteTiendaHTML === 'function' ? botonesReporteTiendaHTML(tienda.id, fechaReporte, tienda.nombre) : '') +
-        /* "Enviar resumen" es de Velox a la tienda: la tienda no lo ve */
-        _sesionEsTiendaCli() ? '' : (tienda.telefono
-          ? '<button class="btn btn-sm" style="background:#25D366;color:#fff;border-color:#25D366;font-weight:600" ' +
-              'onclick="enviarResumenWP(\'' + tienda.telefono + '\',\'' + tienda.nombre.replace(/'/g,"\\'") + '\')">' +
-              '<i class="ti ti-brand-whatsapp"></i> Enviar resumen' +
-            '</button>'
-          : '<span style="font-size:12px;color:var(--color-text-tertiary)">Sin teléfono registrado</span>') +
       '</div>' +
     '</div>' +
 
@@ -651,6 +679,10 @@ window.renderDetalleTienda = async function(tiendaId) {
     if (ordsPeriodo.length === 0) {
       html += '<div style="padding:40px;text-align:center;color:var(--color-text-tertiary)">Sin órdenes en este período.</div>';
     } else {
+      if (!esTiendaDet) {
+        html += '<div style="font-size:12px;color:var(--color-text-secondary);margin-bottom:10px">' +
+          '<i class="ti ti-info-circle"></i> El reporte y el WhatsApp son de un día: tocá "Últimos 7 días".</div>';
+      }
       html += _bloqueResumenPeriodoDetalle('RESUMEN DEL PERÍODO', ordsPeriodo, _ec);
       html +=
         '<div class="card"><div class="card-head">' +
@@ -677,6 +709,10 @@ window.renderDetalleTienda = async function(tiendaId) {
       var ordsDia = mapaFecha[fecha] || [];
 
       html += '<div class="tabla-dia-tienda tabla-dia' + (i===0?' active':'') + '">';
+      if (!esTiendaDet) {
+        html += '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px">' +
+          _cliBotonWA(tienda, fecha, true) + '</div>';
+      }
       html += _bloqueResumenPeriodoDetalle('RESUMEN DEL DÍA', ordsDia, _ec);
       html +=
         '<div class="card"><div class="card-head">' +
@@ -727,133 +763,106 @@ window.initClientes = function() {
 };
 
 /* ════════════════════════════════════════════
-   ENVIAR RESUMEN POR WHATSAPP
-   Genera un mensaje de texto formateado con el
-   resumen del día activo (o de todas las fechas)
-   y abre WhatsApp con ese mensaje pre-cargado.
+   WHATSAPP DEL REPORTE DE UNA TIENDA (igual que el de motos,
+   enviarReporteMotoWA en js/gestion-motos.js)
+   Los números salen de GET /caja/tiendas/:id/reporte, o sea del motor
+   de la Caja (calcularOrdenCaja): los mismos de Caja → Tienda y del
+   reporte en imagen. El mensaje lleva cada orden del día, los totales
+   y la URL de la imagen; si el día todavía no tiene imagen, el admin
+   la genera antes y el operador manda la que haya (o recibe el aviso).
 ════════════════════════════════════════════ */
-/* Arma el mismo mensaje (mismos íconos, misma información completa)
-   para los dos botones de WhatsApp de esta página — el de la lista
-   principal (enviarResumenRapidoWP) y el de "Enviar resumen" dentro
-   de "Ver detalle" (enviarResumenWP). Antes decían cosas distintas;
-   ahora comparten este único armado para no volver a desincronizarse. */
-function _construirMensajeResumenTienda(nombreTienda, fechaLabel, ordenes) {
-  var _ec = ['entregado', 'ausente'];
+var _CLI_ESTADOS_WA = {
+  'entregado':    ['✅', 'Entregado'],
+  'ausente':      ['⚠️', 'Ausente'],
+  'devolucion':   ['↩️', 'Devolución'],
+  'reprogramado': ['🔄', 'Reprogramado'],
+  'no-entregado': ['❌', 'No entregado'],
+  'cancelado':    ['🚫', 'Cancelado'],
+  'en-proceso':   ['🚚', 'En camino'],
+};
 
-  var deliv = ordenes.reduce(function(s,o){ return s+(_ec.includes(o.estado)?parseFloat(o.delivery_total||0):0); }, 0);
-  var cobr  = ordenes.reduce(function(s,o){ return s+(_ec.includes(o.estado)?parseFloat(o.monto_cobrado||0):0);  }, 0);
-  var saldo = deliv - cobr;
+function _cliSolesWA(v) {
+  return 'S/ ' + (parseFloat(v) || 0).toFixed(2);
+}
 
-  var entregados    = ordenes.filter(function(o){ return o.estado === 'entregado'; }).length;
-  var ausentes       = ordenes.filter(function(o){ return o.estado === 'ausente'; }).length;
-  var reprogramados = ordenes.filter(function(o){ return o.estado === 'reprogramado'; }).length;
-  var noEntregados  = ordenes.filter(function(o){ return o.estado === 'no-entregado'; }).length;
-
-  var emojiSaldo = saldo > 0 ? '🟢' : saldo < 0 ? '🔴' : '⚪';
-  var saldoTexto = saldo > 0
-    ? 'Deuda pendiente: S/ ' + saldo.toFixed(2)
-    : saldo < 0
-    ? 'A devolver a tienda: S/ ' + Math.abs(saldo).toFixed(2)
-    : 'Saldo en cero ✅';
-
-  var msg = '📦 *Velox Courier — ' + nombreTienda + '*\n';
-  msg    += '📅 ' + fechaLabel + '\n';
-  msg    += '-----------------------\n';
-  msg    += '✅ Entregados: *' + entregados + '*\n';
-  if (ausentes      > 0) msg += '⚠️ Ausentes: *' + ausentes + '*\n';
-  if (reprogramados > 0) msg += '🔄 Reprogramados: *' + reprogramados + '*\n';
-  if (noEntregados  > 0) msg += '❌ No entregados: *' + noEntregados + '*\n';
-  msg    += '-----------------------\n';
-  msg    += '💰 Delivery cobrable: *S/ ' + deliv.toFixed(2) + '*\n';
-  msg    += '💵 Cobrado: *S/ ' + cobr.toFixed(2) + '*\n';
-  msg    += emojiSaldo + ' ' + saldoTexto + '\n';
-  msg    += '-----------------------\n';
-  msg    += '_Detalle de órdenes:_\n';
-
-  var estadoEmojiMap = {
-    'entregado':    '✅',
-    'reprogramado': '🔄',
-    'no-entregado': '❌',
-    'ausente':      '⚠️',
-    'cancelado':    '🚫',
-    'en-proceso':   '🚚',
-  };
-  ordenes.forEach(function(o) {
-    var estadoEmoji = estadoEmojiMap[o.estado] || '📋';
-    var linea = estadoEmoji + ' #' + o.codigo + ' · ' + (o.dest_nombre || '—') + ' · ' + o.distrito;
-    if (_ec.includes(o.estado) && parseFloat(o.delivery_total||0) > 0) {
-      linea += ' · S/' + parseFloat(o.delivery_total).toFixed(2);
+function _cliMensajeWA(nombre, fecha, datos, url) {
+  var t = datos.totales || {};
+  var saldo = parseFloat(t.saldo) || 0;
+  var msg = 'Hola ' + nombre + ' 👋\n';
+  msg += '*Velox Courier* · tu reporte del ' + _fechaDisplayCli(fecha) + ':\n';
+  msg += url + '\n';
+  msg += '-----------------------\n';
+  (datos.pedidos || []).forEach(function(p) {
+    var e = _CLI_ESTADOS_WA[p.estado] || ['📋', p.estado];
+    var linea = e[0] + ' #' + p.codigo + ' · ' + (p.dest_nombre || '—') + ' · ' + (p.distrito || '—') + ' · ' + e[1];
+    /* Su monto: lo que cuenta en la Caja (los no cobrables, nada) */
+    if (p.cobrable) {
+      linea += ' · delivery ' + _cliSolesWA(p.delivery) + (p.prepago ? ' (prepagado)' : '');
+      if (parseFloat(p.retenido) > 0) linea += ' · cobrado ' + _cliSolesWA(p.retenido);
     }
     msg += linea + '\n';
   });
-
-  msg += '\n_Enviado desde Velox Courier_';
+  msg += '-----------------------\n';
+  msg += '🚚 Delivery del día: *' + _cliSolesWA(t.delivery) + '*\n';
+  msg += '💵 Cobrado al cliente (lo tiene Velox): *' + _cliSolesWA(t.retenido) + '*\n';
+  msg += (saldo > 0 ? '🟢 Saldo: nos debés *' + _cliSolesWA(saldo) + '*'
+        : saldo < 0 ? '🟠 Saldo: te devolvemos *' + _cliSolesWA(Math.abs(saldo)) + '*'
+        : '⚪ Saldo en cero') + '\n';
+  if (datos.liquidado) msg += '✔️ Día liquidado el ' + _fechaDisplayCli(datos.liquidado.fecha_pago) + '\n';
   return msg;
 }
 
-window.enviarResumenWP = function(telefono, nombreTienda) {
-  var ordenes  = window._detalleOrdenesCache || [];
-  var mapaFecha = window._detalleMapaFechaCache || {};
+function _cliTelefono51(tel) {
+  var t = String(tel || '').replace(/[^0-9]/g, '');
+  return t.length === 9 ? '51' + t : t;
+}
 
-  /* Determinar qué fecha mostrar — la activa en el tab, o todas */
-  var fechas = Object.keys(mapaFecha).sort().reverse();
-  if (_filtroDesdeClientes && _filtroDesdeClientes === _filtroHastaClientes && mapaFecha[_filtroDesdeClientes]) {
-    fechas = [_filtroDesdeClientes].concat(fechas.filter(function(f){ return f !== _filtroDesdeClientes; }));
-  }
+var _cliEnviando = false;
 
-  /* Usar solo la fecha activa (primera tab) si existe */
-  var fechaActiva = fechas[0];
-  var ordsDia = fechaActiva ? (mapaFecha[fechaActiva] || []) : ordenes;
-  var fechaLabel = fechaActiva ? _fechaDisplayCli(fechaActiva) : 'Período completo';
+window.enviarReporteTiendaWA = async function(idTienda, fecha, btn) {
+  if (_cliEnviando) return;
+  var t = TIENDAS_REGISTRO.find(function(x) { return x.id == idTienda; });
+  var tel = t && _cliTelefono51(t.telefono);
+  if (!tel) { if (typeof showNotif === 'function') showNotif('Esa tienda no tiene teléfono cargado'); return; }
 
-  var msg = _construirMensajeResumenTienda(nombreTienda || window._detalleTiendaNombre, fechaLabel, ordsDia);
+  /* La pestaña se abre YA, con el toque: si se abre después de esperar
+     al servidor, el celular la bloquea como ventana emergente */
+  var ventana = null;
+  try { ventana = window.open('', '_blank'); } catch (e) { ventana = null; }
+  _cliEnviando = true;
+  var htmlBtn = btn ? btn.innerHTML : '';
+  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="ti ti-loader"></i>'; }
 
-  /* Normalizar teléfono: código Perú 51 + 9 dígitos */
-  var tel = (telefono || window._detalleTiendaTelefono || '').replace(/[^0-9]/g, '');
-  if (tel.length === 9) tel = '51' + tel;
-
-  var url = tel
-    ? 'https://api.whatsapp.com/send?phone=' + tel + '&text=' + encodeURIComponent(msg)
-    : 'https://api.whatsapp.com/send?text=' + encodeURIComponent(msg);
-
-  window.open(url, '_blank');
-};
-
-/* ── WhatsApp rápido desde tabla ── */
-window.enviarResumenRapidoWP = async function(btn) {
-  var telefono     = btn.getAttribute('data-tel');
-  var nombreTienda = btn.getAttribute('data-nombre');
   try {
-    var t = TIENDAS_REGISTRO.find(function(x){ return x.nombre === nombreTienda; });
-    if (!t) return;
-    var desde = _filtroDesdeClientes || _hoyCli();
-    var hasta = _filtroHastaClientes || desde;
-    var r = await fetch(API + '/tiendas/' + t.id + '/ordenes?desde=' + desde + '&hasta=' + hasta);
-    var ordenes = await r.json();
-    if (!ordenes.length) {
-      if (typeof showNotif==='function') showNotif('Sin ordenes para ' + nombreTienda + ' en ese rango');
-      return;
-    }
-    var fechaLabel = desde === hasta ? _fechaDisplayCli(desde) : _fechaDisplayCli(desde) + ' al ' + _fechaDisplayCli(hasta);
-    var msg = _construirMensajeResumenTienda(nombreTienda, fechaLabel, ordenes);
+    var r = await fetch(API + '/caja/tiendas/' + idTienda + '/reporte?fecha=' + fecha);
+    var datos = await r.json().catch(function() { return {}; });
+    if (!r.ok) throw new Error(datos.error || 'No se pudieron traer los datos del día');
+    if (!(datos.pedidos || []).length) throw new Error('la tienda no tiene órdenes el ' + _cliDiaMes(fecha));
 
-    var tel = (telefono||'').replace(/[^0-9]/g,'');
-    if (tel.length===9) tel='51'+tel;
-    window.open('https://api.whatsapp.com/send?phone='+tel+'&text='+encodeURIComponent(msg),'_blank');
-
-    /* Marca el check al lado del ícono sin esperar al próximo
-       repintado de la tabla (que igual lo mostraría solo, pero así
-       se ve al instante) */
-    _marcarWaEnviado(t.id);
-    if (!(btn.nextElementSibling && btn.nextElementSibling.classList.contains('wa-enviado-check'))) {
-      var check = document.createElement('i');
-      check.className = 'ti ti-circle-check wa-enviado-check';
-      check.title = 'Ya se le envió el resumen hoy';
-      check.style.cssText = 'color:var(--color-green);font-size:14px;vertical-align:middle;margin-left:4px';
-      btn.insertAdjacentElement('afterend', check);
+    var url = datos.reporte && datos.reporte.url;
+    if (!url) {
+      if (!datos.r2) throw new Error('las fotos y reportes (R2) no están configurados en este servidor');
+      if (!(typeof _repEsAdmin === 'function' && _repEsAdmin())) {
+        throw new Error('todavía no hay reporte del ' + _cliDiaMes(fecha) + ': lo tiene que generar un admin');
+      }
+      if (typeof showNotif === 'function') showNotif('Generando el reporte del ' + _cliDiaMes(fecha) + '…', 3000);
+      var hecho = await _repGenerarYSubir('tienda', idTienda, fecha, datos);
+      url = hecho.url;
+      _repAvisarGenerado('tienda', idTienda, fecha, hecho.url, hecho.generadoEn);
     }
-  } catch(err) {
-    console.error('Error WA:',err);
-    if (typeof showNotif==='function') showNotif('Error al generar resumen');
+
+    var waUrl = 'https://api.whatsapp.com/send?phone=' + tel + '&text=' + encodeURIComponent(_cliMensajeWA(t.nombre, fecha, datos, url));
+    if (ventana && !ventana.closed) ventana.location.href = waUrl;
+    else window.open(waUrl, '_blank');
+
+    _cliMarcarEnviado(idTienda, fecha);
+    _cliRepintarMarcas(idTienda, fecha);
+  } catch (err) {
+    console.error('WhatsApp del reporte de la tienda:', err);
+    if (ventana && !ventana.closed) ventana.close();
+    if (typeof showNotif === 'function') showNotif('No se mandó: ' + (err && err.message ? err.message : 'error'), 6000);
+  } finally {
+    _cliEnviando = false;
+    if (btn) { btn.disabled = false; btn.innerHTML = htmlBtn; }
   }
 };

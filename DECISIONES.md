@@ -965,7 +965,7 @@ la mitad que le falta:
 
 ## D-029 · Clientes / Tiendas y su WhatsApp leen la plata del motor de la Caja
 
-**Estado:** subido el 25/11/2026, falta el deploy (`b0b53cc` y el commit de Clientes con el motor).
+**Estado:** subido el 25/11/2026, falta el deploy (`b0b53cc` y `624077b`).
 Sin migración.
 
 **Problema.** Clientes / Tiendas calculaba la plata en el navegador (y `/tiendas/resumen` en SQL)
@@ -990,6 +990,44 @@ vacío el encabezado del detalle de la tienda para todos los roles, y con él el
 
 **Queda:** Evidencias (`js/charts.js`) todavía calcula "Ingreso delivery", "Saldo por cobrar" y
 "Pago a motorizados" en el navegador con la regla vieja.
+
+## D-030 · Si ves la orden, ves todas sus fotos
+
+**Estado:** subido el 25/11/2026 (`b053e95`), falta el deploy. Sin migración. Toca el servidor.
+
+**Problema.** Las tablas de órdenes de Clientes / Tiendas y de Gestión / Motorizado no mostraban
+fotos (solo la del producto en Clientes), y cada lugar del servidor tenía su propia regla de qué
+fotos ve cada rol: la tienda solo la del producto, el visor ninguna, las de devolución solo los
+gestores, y la exportación con otra lista más.
+
+**Decisión.**
+- **Una sola regla para todo el servidor:** si un rol puede ver la orden (`filtroPorRol`: la tienda,
+  las de su tienda; el moto, las suyas; gestores y visor, todas), ve **todas** sus fotos, de
+  cualquier tipo. La aplican las tablas nuevas, `puedeVerFotoOrden` (foto local),
+  `POST /ordenes/fotos-export` y `GET /ordenes/:id`.
+- **Las fotos viajan con la lista, en una consulta por pantalla** (`server/fotos-ordenes.js`): el
+  mismo `WHERE` y los mismos parámetros (id del token) que la consulta de las órdenes. Así nunca
+  puede haber una foto de una orden que ese rol no ve, ni una consulta por orden.
+- **En pantalla, por columna:** Código = producto, Estado = las del intento / entrega / devolución
+  (primero la del estado actual), Cobrado = la del pago. Un ícono por columna (con el número si hay
+  varias) y, en el visor (D-025), las flechas recorren todas las fotos de la orden. La columna de
+  cada tipo vive en `_GRUPOS_FOTOS_ORDEN`: un tipo nuevo se suma ahí.
+- El recorte de campos de plata (D-027) no cambia.
+
+## D-031 · La tienda entra a "Mi cuenta"; los cuadros entran en el celular
+
+**Estado:** subido el 25/11/2026 (`b2f2019`, `99642c2`), falta el deploy. Solo frontend.
+
+**Decisión.**
+- **"Mi cuenta":** la tienda ya no pasa por la lista "Balance por tienda cliente" (una fila, o "Sin
+  tiendas registradas"): entra directo a su detalle, como el moto a su Gestión (D-026). Sin la
+  lista, los KPIs, Exportar ni "← Volver"; con la tarjeta "Lógica de saldo" abajo. Se llama "Mi
+  cuenta" en el título y en el menú, porque para ella no hay "clientes" ni otras "tiendas". Sin
+  órdenes, un mensaje claro y los filtros a mano. El id es solo pantalla: lo manda el token.
+- **Cuadros en el celular, 2 columnas siempre:** varias páginas fijaban sus columnas en el HTML y le
+  ganaban a la regla del celular (los cuadros se salían de pantalla). Hasta 768 px, una sola regla
+  al final de `css/responsive.css` los deja en 2 columnas, con etiqueta y monto apilados. En PC y
+  tablet, sin cambios.
 
 ## D-028 · El servidor publica solo el frontend; contraseñas fuera del código
 
@@ -1042,6 +1080,15 @@ downtime). El dominio se traspasa aparte en Namecheap.
 - [ ] **2FA en Namecheap:** activar (la cuenta controla el dominio).
 - [ ] **Cambiar contraseña del admin** desde el propio sistema (ahora que el flujo es seguro).
 - [ ] **Monitoreo:** alertas de DigitalOcean por RAM > 85 % y disco > 80 %.
+- [ ] **Rotar contraseñas (D-028):** la de la base (`velox_user`) y la de `sa` (y el `.env` del
+      servidor), la del admin si sigue siendo la del script de creación, y las de tiendas y motos
+      con la contraseña de fórmula ("Resetear contraseñas").
+- [ ] **Reiniciar el Droplet** por el aviso "System restart required" de Ubuntu, en un horario sin
+      uso, revisando antes que PM2 y SQL Server vuelvan solos.
+- [ ] **Log de producción:** errores viejos "Validation failed for parameter 'id'" en
+      `PATCH /ordenes/:id/completo` y `/medio-pago` (probable id vacío desde la pantalla; detalle
+      en `CLAUDE.md` → "Pendiente").
+- [ ] **Evidencias** todavía calcula la plata en el navegador con la regla vieja (D-029).
 - [ ] **Caja:** las 3 cajas (D-012) y el fix del motorizado (D-013) ya están en producción.
       Clientes / Tiendas ya usa el motor (D-029); Evidencias todavía no. El moto ya ve su propia
       gestión (D-026); la vista de la caja de la tienda, próximo paso. Detalle en `CLAUDE.md` → "Pendiente".

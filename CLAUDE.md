@@ -31,9 +31,33 @@ Velox Courier — internal management system for a courier/delivery company in L
   - Cambio 11, lista blanca de archivos y `db.js` sin contraseña (`17d9c1b`), y fuera del repo los
     scripts con contraseñas (`31b71ea`; D-028).
   - Subidos después, el mismo 25/11: el WhatsApp del reporte a las tiendas y el arreglo del
-    encabezado (`b0b53cc`), y Clientes / Tiendas con el motor de la Caja (D-029).
-- **La tienda entra directo a su detalle: "Mi cuenta" (25/11, commit en local, SIN push; solo
-  frontend, sin servidor ni migración: basta recargar la app).** `js/clientes.js`,
+    encabezado (`b0b53cc`), y Clientes / Tiendas con el motor de la Caja (`624077b`; D-029).
+  - Y al final del 25/11: fotos en las tablas de órdenes de Clientes / Tiendas y Gestión /
+    Motorizado con la regla "si ves la orden, ves sus fotos" (`b053e95`; D-030), la tienda entra
+    directo a "Mi cuenta" (`b2f2019`; D-031) y KPIs en 2 columnas en el celular (`99642c2`; D-031).
+  - **Antes del push final** (25/11) pasaron todas las pruebas de API del lote contra el 3001:
+    fotos 43, Clientes = Caja 38, WhatsApp de tiendas 25, margen 40, tarifas 8, datos por rol 32,
+    autogestión del moto 36 (222 de 222), y los archivos del servidor siguen dando 404.
+- **KPIs y cuadros en 2 columnas en el celular (25/11, `99642c2`, subido el 25/11; solo CSS, basta
+  recargar la app).** `css/responsive.css` (bloque al final, hasta 768 px).
+  - **El problema:** Clientes (4 KPIs), Caja → Liquidez (4), Caja → Tienda y → Motorizados
+    (`.caja-kpis-tiendas`, 5), Evidencias (5 + las tarjetas `.evidencia-grid`, 4) y Tarifas (5)
+    fijan las columnas en el HTML (`style="grid-template-columns:…"`) o en el `<style>` de la
+    página, y eso le ganaba a las reglas del celular: a 375 px los cuadros se salían de pantalla
+    (la página entera se deslizaba de costado).
+  - **Ahora:** hasta 768 px, `.metrics` y `.evidencia-grid` van en `repeat(2, minmax(0, 1fr))
+    !important` (como `.resumen-dia`); los cuadros que tienen etiqueta, monto y nota sueltos (sin
+    `.metric-body`) van apilados (`flex-wrap` + `flex-basis: 100%`); el número de Evidencias baja
+    a 22 px; un monto solo se parte si no entra en su renglón (`overflow-wrap: break-word`; con
+    `anywhere` se partía letra por letra). "Todos los pedidos" (que hasta 480 px iba en 1 columna)
+    también queda en 2. En PC y tablet, sin cambios.
+  - **Probado el 25/11** (3001): un recorrido automático a 375 px que busca elementos fuera de
+    pantalla, cuadros desbordados y montos partidos, por todas las páginas de admin (con las 3
+    pestañas de la Caja, el detalle de una tienda y el de un moto), operador, tienda (con "Mi
+    cuenta" en un período) y moto (con Gestión en un período): antes, 11 cuadros fuera de pantalla
+    en Clientes, Caja, Evidencias y Tarifas; después, ninguno. En PC, las mismas 4 / 5 columnas.
+- **La tienda entra directo a su detalle: "Mi cuenta" (25/11, `b2f2019`, subido el 25/11; solo
+  frontend, sin servidor ni migración: basta recargar la app; D-031).** `js/clientes.js`,
   `pages/clientes.html`, `js/navigation.js`.
   - `initClientes` → si el rol es tienda, `_initMiCuentaTienda(id_tienda de la sesión)`: título
     "Mi cuenta" (subtítulo "Tu saldo con Velox y tus órdenes, día por día"), esconde los KPIs
@@ -52,8 +76,8 @@ Velox Courier — internal management system for a courier/delivery company in L
     pasado" = 18 órdenes y − S/ 290 con 2 días liquidados, Evidencias → "Mi cuenta" vuelve a su
     detalle; la tienda vacía ve el mensaje y los filtros ("Por mes" → "Sin órdenes en este
     período"); el admin, igual que antes.
-- **Fotos en las tablas de órdenes de Clientes / Tiendas y Gestión / Motorizado (25/11, commit
-  en local, SIN push; sin migración). Toca el servidor: hay que reiniciarlo.**
+- **Fotos en las tablas de órdenes de Clientes / Tiendas y Gestión / Motorizado (25/11,
+  `b053e95`, subido el 25/11; sin migración; D-030). Toca el servidor: hay que reiniciarlo.**
   `server/fotos-ordenes.js` (nuevo), `server/routes/tiendas.js`, `server/routes/motorizados.js`,
   `server/routes/ordenes.js`, `js/motorizados.js`, `js/clientes.js`, `js/pedidos.js` (comentario).
   - **Servidor:** `GET /tiendas/:id/ordenes` y `GET /motorizados/:id/ordenes` devuelven en cada
@@ -1458,6 +1482,21 @@ Velox Courier — internal management system for a courier/delivery company in L
   quien llama es motorizado), no solo visual.
 
 **Pendiente:**
+- **ROTAR CONTRASEÑAS** (quedaron en el historial de git, que se pudo bajar del sitio hasta el
+  deploy de D-028; lo hace el usuario): la de la base (`velox_user`) y la de `sa` en el servidor, y
+  la nueva en el `.env` del servidor; la del admin si sigue siendo la del script de creación; las
+  de tiendas y motos que sigan con la contraseña de fórmula (Tiendas / Usuarios → "Resetear
+  contraseñas"). Revisar si el repositorio de GitHub es público.
+- **Reiniciar el servidor de producción por "System restart required"** (aviso de Ubuntu al entrar
+  por SSH: actualizaciones del sistema que piden reiniciar). Hacerlo en un horario sin uso y
+  revisar antes que PM2 vuelva solo (`pm2 startup` + `pm2 save`) y que SQL Server arranque como
+  servicio; después del reinicio, `pm2 status` y abrir el sistema.
+- **Errores viejos en el log de producción: "Validation failed for parameter 'id'" en
+  `PATCH /ordenes/:id/completo` y `/medio-pago`.** Sin investigar contra el log real. Hipótesis:
+  esas rutas pasan `req.params.id` directo a `sql.BigInt`; si "Actualizar orden" manda
+  `/ordenes/undefined/…` o `/null/…` (`_ordenActualizarId` vacío, ej. modal cerrado o doble
+  guardado en `js/motorizados.js`), `mssql` tira ese error y responde 500. Revisar con la hora de
+  esos errores y, si es eso, validar el id (400) en el servidor y no mandar el PATCH sin id.
 - **Control de concurrencia (409) roto** desde el 14/10: `row_version` no llega en hex y ningún
   `ifVersion` se compara (el último que guarda pisa). Decidido no arreglarlo por ahora (14/11);
   detalle y arreglo en la nota de arriba.

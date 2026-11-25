@@ -92,10 +92,13 @@ window.initAsignacion = async function() {
   /* Si es motorizado, pre-seleccionar su nombre, bloquear el campo, y
      ocultar "Autoasignar todos" (acción de gestores — ver PATCH /asignar) */
   var sesion = _obtenerSesionAsig();
-  if (sesion && sesion.rol === 'motorizado' && sesion.nombre) {
+  if (sesion && sesion.rol === 'motorizado') {
+    /* Por su id_motorizado (no por el nombre del usuario, que puede ser
+       distinto): el servidor ya le manda solo su registro */
+    var mio = MOTORIZADOS_ASIG.find(function(m) { return m.id == sesion.id_motorizado; });
     var sel = document.getElementById('moto-select');
     if (sel) {
-      if (_comboMotoAsig) _comboMotoAsig.setValor(sesion.nombre);
+      if (_comboMotoAsig && mio) _comboMotoAsig.setValor(mio.nombre);
       sel.disabled = true; /* no puede cambiar a otro motorizado */
     }
     var btnAuto = document.getElementById('btn-autoasignar');

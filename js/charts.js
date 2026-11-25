@@ -9,7 +9,7 @@ var _EC_EV  = ['entregado', 'ausente']; /* estados que generan cobro */
 /* Filtro de rango activo en evidencias */
 var _filtroEvidenciaDesde = '';
 var _filtroEvidenciaHasta = '';
-var _filtroEvidenciaMoto  = ''; /* nombre del motorizado si sesión es motorizado */
+var _filtroEvidenciaMoto  = ''; /* nombre del motorizado (de su registro, por id) si la sesión es motorizado */
 
 function _obtenerSesionEv() {
   var raw = localStorage.getItem('velox_usuario');
@@ -306,7 +306,8 @@ function _renderEvidenciasCompleto() {
 window.initEvidencias = async function() {
   /* Detectar si es motorizado y filtrar solo sus órdenes */
   var sesionEv = _obtenerSesionEv();
-  _filtroEvidenciaMoto = (sesionEv && sesionEv.rol === 'motorizado') ? sesionEv.nombre : '';
+  var esMotoEv = !!(sesionEv && sesionEv.rol === 'motorizado');
+  _filtroEvidenciaMoto = '';
 
   /* Mostrar estado de carga */
   var tbM = document.getElementById('tbody-ev-motos');
@@ -314,7 +315,7 @@ window.initEvidencias = async function() {
   if (tbM) tbM.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:20px;color:var(--color-text-tertiary)"><i class="ti ti-loader"></i> Cargando...</td></tr>';
   /* Si es motorizado, ocultar sección de tiendas */
   var seccionTiendas = document.getElementById('seccion-ev-tiendas');
-  if (seccionTiendas) seccionTiendas.style.display = _filtroEvidenciaMoto ? 'none' : '';
+  if (seccionTiendas) seccionTiendas.style.display = esMotoEv ? 'none' : '';
 
   /* Si es tienda, ocultar rendimiento por motorizado — no le corresponde
      ver el desempeño interno de los motorizados */
@@ -324,11 +325,12 @@ window.initEvidencias = async function() {
 
   await _cargarDatosEvidencias();
 
-  /* Si es motorizado, filtrar _evMotos a solo él */
-  if (_filtroEvidenciaMoto) {
-    _evMotos = _evMotos.filter(function(m){
-      return m.nombre.trim().toUpperCase() === _filtroEvidenciaMoto.trim().toUpperCase();
-    });
+  /* Motorizado: él, por su id_motorizado (no por el nombre del usuario,
+     que puede ser distinto). Sus órdenes ya vienen solo suyas del
+     servidor; el nombre de su registro queda para el filtro de abajo. */
+  if (esMotoEv) {
+    _evMotos = _evMotos.filter(function(m) { return m.id == sesionEv.id_motorizado; });
+    _filtroEvidenciaMoto = _evMotos[0] ? _evMotos[0].nombre : '';
   }
 
   _renderEvidenciasCompleto();

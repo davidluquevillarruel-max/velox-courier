@@ -12,6 +12,32 @@ Velox Courier — internal management system for a courier/delivery company in L
 
 Última actualización: 24 de noviembre de 2026.
 
+- **Cambio 9 — tarifas por rol y búsqueda por id (25 de noviembre de 2026, dos commits en local, sin
+  push; sin migración). Toca el servidor: hay que reiniciarlo.**
+  - **Tarifas (`server/routes/tarifas.js`):** ni la tienda ni el moto tienen que poder calcular el
+    margen de Velox (`precio_delivery − pago_motorizado`). `GET /tarifas`: gestores y visor, todo
+    (`v_tarifario`); motorizado, solo `id, distrito, activo` (el combo de distrito de su "Actualizar
+    orden"; sus montos están bloqueados y los fija el servidor); tienda, 403 (ninguna pantalla suya
+    la lee: no tiene "Nueva orden"). `GET /tarifas/zonas`: gestores y visor; tienda y moto, 403.
+    `onDistritoChangeUpdate` (`js/motorizados.js`) no toca los montos si el distrito viene sin
+    precio (si no, quedaban en "NaN").
+  - **Por id, no por nombre del usuario:** Asignación (`js/asignacion.js`) preselecciona al moto
+    buscando `id_motorizado` en su lista; Evidencias (`js/charts.js`) toma su registro por id y usa
+    ese nombre para filtrar; Clientes (`js/clientes.js`) muestra la tienda con `id == id_tienda`.
+    Antes comparaban con `sesion.nombre`: si el usuario se llamaba distinto que su moto o su tienda,
+    veían vacío. El servidor ya les mandaba solo lo suyo.
+  - **Probado el 25/11** (servidor en el 3001; usuarios de prueba llamados "TST NOMBRE", distinto de
+    su moto y su tienda, borrados): 8 de 8 en tarifas mirando la respuesta real (claves exactas del
+    moto, sin precio / pago / margen, 403 de la tienda y de `/zonas`, el operador completo) + 32 y 36
+    de los cambios 8b y 8 otra vez. A 375 px sin errores: moto con Asignación en su moto, Evidencias
+    con sus 17 órdenes (antes 0) y Actualizar orden con los 62 distritos sin "NaN"; tienda con su fila
+    en Clientes (antes "Sin tiendas registradas"), su detalle y Evidencias.
+  - **PENDIENTE (para decidir):** el margen todavía se puede sacar de los datos de las **órdenes**.
+    La tienda recibe `pago_moto_base / _adicional / _total` en `/ordenes` y `/tiendas/:id/ordenes`, y
+    Evidencias le muestra "Pago a motorizados" (`#ev-pagomotos`, probado: S/ 78.00) junto a
+    "Ingreso generado". El moto recibe `delivery_base / _total` en sus órdenes y ve la columna
+    "Delivery" en Gestión / Motorizado y el campo en "Actualizar orden" (bloqueado).
+
 - **Cambio 8b — qué datos le llegan al moto y a la tienda (25 de noviembre de 2026, commit aparte,
   en local, sin push; sin migración). Toca el servidor: hay que reiniciarlo.**
   `server/routes/motorizados.js`, `server/routes/tiendas.js`, `js/reasignaciones.js`,
@@ -34,12 +60,7 @@ Velox Courier — internal management system for a courier/delivery company in L
     (ya con `filtroPorRol`; a la tienda no le llegan campos personales del moto, solo su nombre),
     `/auth/usuarios` (cada uno el suyo), `/reasignaciones` (tienda 403), `/notificaciones` y la Caja
     (tienda 403).
-  - **Queda para decidir:** `GET /tarifas` (`SELECT * FROM v_tarifario`) lo lee cualquier rol: la
-    tienda ve el pago al moto de cada distrito y el moto, el delivery. No son datos de otra tienda ni
-    personales; no se tocó.
-  - **Frágil, de antes:** Asignación, Evidencias y la lista de Clientes buscan al moto / la tienda por
-    el **nombre del usuario** (`sesion.nombre`), no por `id_motorizado` / `id_tienda`. Si el usuario
-    se llama distinto que su moto o su tienda, ven vacío (pasó con los usuarios de prueba).
+  - **Tarifas y búsqueda por nombre:** resueltos en el Cambio 9 (abajo de este punto, arriba).
   - **Probado el 25/11** (servidor en el 3001; moto, tienda y operador de prueba, borrados): 32 de 32
     mirando la respuesta real (claves exactas de `/companeros` y `/tiendas` del moto, 403 en cada
     ruta cerrada, el operador igual que antes) y los 36 de la parte A otra vez. A 375 px sin errores:

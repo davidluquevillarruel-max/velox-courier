@@ -128,12 +128,12 @@ window.renderClientes = async function() {
   /* Detectar rol */
   var _sesionCli  = (function(){ var r=localStorage.getItem('velox_usuario'); if(!r) return null; try{return JSON.parse(r);}catch(e){return null;} })();
   var _esTienda   = _sesionCli && _sesionCli.rol === 'tienda';
-  var _nomTienda  = _esTienda ? (_sesionCli.nombre||'') : '';
 
-
-  /* Lista de tiendas a mostrar */
+  /* Lista de tiendas a mostrar. La tienda, la suya por id_tienda (no por
+     el nombre del usuario, que puede ser distinto); el servidor ya le
+     manda solo esa (GET /tiendas) */
   var _listaT = _esTienda
-    ? TIENDAS_REGISTRO.filter(function(t){ return t.nombre.trim().toUpperCase() === _nomTienda.trim().toUpperCase(); })
+    ? TIENDAS_REGISTRO.filter(function(t){ return t.id == _sesionCli.id_tienda; })
     : TIENDAS_REGISTRO;
 
   /* Cargar resumen de todas las tiendas en UNA sola query */

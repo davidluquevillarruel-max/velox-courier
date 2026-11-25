@@ -1467,7 +1467,9 @@ window.onDistritoChangeUpdate = function(distritoSeleccionado) {
   var fPagoMoto = document.getElementById('f-orden-pagomoto-update');
 
   var d = _distritosCatalogoUpdate.find(function(x) { return x.distrito === distritoSeleccionado; });
-  if (!d) return;
+  /* El motorizado recibe los distritos sin precios (GET /tarifas): sus
+     montos están bloqueados y los recalcula el servidor */
+  if (!d || d.precio_delivery == null) return;
 
   if (fDeliv)    fDeliv.value    = parseFloat(d.precio_delivery).toFixed(2);
   if (fPagoMoto) fPagoMoto.value = parseFloat(d.pago_motorizado || 0).toFixed(2);

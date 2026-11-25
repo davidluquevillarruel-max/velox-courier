@@ -1,6 +1,12 @@
 /* ============================================================
    routes/tarifas.js
-   Protegido: lectura para autenticados, escritura solo gestores.
+   Protegido: escritura solo gestores. Lectura según lo que cada rol
+   necesita de verdad (ni la tienda ni el motorizado tienen que poder
+   calcular el margen de Velox = precio_delivery − pago_motorizado):
+   · gestores y visor: todo;
+   · motorizado: solo id, distrito y activo (el combo de distrito de
+     "Actualizar orden"; sus montos los fija el servidor);
+   · tienda: ninguna pantalla suya lo usa → 403.
    ============================================================ */
 const express = require('express');
 const router  = express.Router();
@@ -11,10 +17,11 @@ router.use(requireAuth);
 const GESTORES = ['admin', 'operador'];
 
 /* GET /api/tarifas */
-router.get('/', async (req, res) => {
+router.get('/', requireRol(...GESTORES, 'visor', 'motorizado'), async (req, res) => {
   try {
     const pool   = await getPool();
-    const result = await pool.request().query(`SELECT * FROM v_tarifario ORDER BY zona, distrito`);
+    const columnas = req.usuario.rol === 'motorizado' ? 'id, distrito, activo' : '*';
+    const result = await pool.request().query(`SELECT ${columnas} FROM v_tarifario ORDER BY zona, distrito`);
     res.json(result.recordset);
   } catch (err) {
     console.error('GET /tarifas:', err.message);
@@ -23,7 +30,8 @@ router.get('/', async (req, res) => {
 });
 
 /* GET /api/tarifas/zonas */
-router.get('/zonas', async (req, res) => {
+/* Ninguna pantalla de la tienda ni del motorizado la usa */
+router.get('/zonas', requireRol(...GESTORES, 'visor'), async (req, res) => {
   try {
     const pool   = await getPool();
     const result = await pool.request().query(`SELECT id, nombre FROM zonas WHERE activa=1 ORDER BY nombre`);

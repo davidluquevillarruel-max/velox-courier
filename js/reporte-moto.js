@@ -184,3 +184,9 @@ if (typeof _REP_TIPOS !== 'undefined') {
 window.botonesReporteMotoHTML = function(idMoto, fecha, nombre) {
   return typeof _repBotonesHTML === 'function' ? _repBotonesHTML('moto', idMoto, fecha, true, nombre) : '';
 };
+
+/* El motorizado en "Gestión / Motorizado": solo "Ver imagen" de su
+   reporte si ya se generó (no genera ni copia). Pregunta sola. */
+window.verReporteMotoHTML = function(idMoto, fecha, nombre) {
+  return typeof _repBotonesHTML === 'function' ? _repBotonesHTML('moto', idMoto, fecha, false, nombre, true) : '';
+};

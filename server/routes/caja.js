@@ -1,7 +1,8 @@
 /* ============================================================
    routes/caja.js
-   Protegido: TODO el módulo de caja es solo para gestores
-   (admin / operador). Tiendas y motorizados no acceden aquí.
+   Protegido: el módulo de caja es para gestores (admin / operador).
+   Única excepción: el motorizado lee SU día y SU historial en
+   "Gestión / Motorizado" (ver soloGestoresOMotoPropio). Tiendas no.
 
    El "día" de la caja es la FECHA DE REPARTO (ordenes.fecha_reparto,
    ver velox_agregar_fecha_reparto.sql), no la de creación: entrega
@@ -24,9 +25,41 @@ const {
   calcularOrdenCaja, ESTADO_ANULADO,
 } = require('../caja-motor');
 
-/* Caja maneja dinero: solo admin y operador, sin excepción */
+/* Caja maneja dinero: admin y operador. El motorizado entra SOLO a
+   estas rutas de lectura y SOLO con su propio id (el del token); todo
+   lo demás, 403. Es una lista blanca: una ruta nueva queda cerrada para
+   él salvo que se sume acá a propósito. */
+const RUTAS_LECTURA_MOTO = /^\/motorizados\/(\d+)\/(dias|reporte)$/;
+
+function soloGestoresOMotoPropio(req, res, next) {
+  const { rol, id_motorizado } = req.usuario;
+  if (rol === 'admin' || rol === 'operador') return next();
+  if (rol === 'motorizado' && req.method === 'GET' && id_motorizado) {
+    const m = RUTAS_LECTURA_MOTO.exec(req.path);
+    if (m) {
+      if (parseInt(m[1], 10) === id_motorizado) return next();
+      return res.status(403).json({ error: 'No puedes ver la gestión de otro motorizado' });
+    }
+  }
+  return res.status(403).json({ error: 'Acceso denegado para este rol' });
+}
+
+/* El id del moto de la ruta: para el motorizado, SIEMPRE el del token
+   (la regla de arriba ya frena otro id: esto es el doble seguro) */
+function idMotoDeRuta(req) {
+  if (req.usuario.rol === 'motorizado') return req.usuario.id_motorizado;
+  return parseInt(req.params.id, 10);
+}
+
+/* El motorizado ve solo la fecha en que se liquidó su día: el monto
+   guardado y el "difiere" son controles internos de Velox */
+function liquidadoParaRol(req, liquidado) {
+  if (!liquidado || req.usuario.rol !== 'motorizado') return liquidado;
+  return { fecha_pago: liquidado.fecha_pago };
+}
+
 router.use(requireAuth);
-router.use(requireRol('admin', 'operador'));
+router.use(soloGestoresOMotoPropio);
 
 /* ════════════════════════════════════════════════════════════
    CAJA TIENDA
@@ -361,7 +394,7 @@ router.post('/tiendas/:id/reporte/subida', requireRol('admin'), async (req, res)
    ════════════════════════════════════════════════════════════ */
 
 async function leerMotoYFecha(req, res, pool, fechaCruda) {
-  const idMoto = parseInt(req.params.id, 10);
+  const idMoto = idMotoDeRuta(req);
   const fecha = FECHA_RE.test(fechaCruda || '') ? fechaCruda : '';
   if (!idMoto) { res.status(400).json({ error: 'Motorizado no válido' }); return null; }
   if (!fecha)  { res.status(400).json({ error: 'Fecha no válida (YYYY-MM-DD)' }); return null; }
@@ -529,7 +562,7 @@ router.get('/motorizados/gestion', async (req, res) => {
    Cada día = armarDiaMoto; "periodo" = su suma. */
 router.get('/motorizados/:id/dias', async (req, res) => {
   try {
-    const idMoto = parseInt(req.params.id, 10);
+    const idMoto = idMotoDeRuta(req);
     if (!idMoto) return res.status(400).json({ error: 'Motorizado no válido' });
     const hasta = FECHA_RE.test(req.query.hasta || '') ? req.query.hasta : hoyEnLima();
     let desde = FECHA_RE.test(req.query.desde || '') ? req.query.desde : '';
@@ -549,7 +582,12 @@ router.get('/motorizados/:id/dias', async (req, res) => {
       diasPagadosMoto(pool, { desde, hasta, idMotorizado: idMoto }),
     ]);
     const dias = diasPorMoto(ordenes, pagados).get(idMoto) || [];
-    res.json({ desde, hasta, dias, periodo: sumarDiasMoto(dias) });
+    const periodo = sumarDiasMoto(dias);
+    if (req.usuario.rol === 'motorizado') {
+      dias.forEach(d => { d.liquidado = liquidadoParaRol(req, d.liquidado); });
+      delete periodo.difiere;
+    }
+    res.json({ desde, hasta, dias, periodo });
   } catch (err) {
     console.error('GET /caja/motorizados/:id/dias:', err.message);
     res.status(500).json({ error: 'Error al armar el historial del motorizado' });
@@ -557,7 +595,7 @@ router.get('/motorizados/:id/dias', async (req, res) => {
 });
 
 /* GET /api/caja/motorizados/:id/reporte?fecha=YYYY-MM-DD
-   Admin y operador (el detalle de "Gestión / Motorizado" lo muestra);
+   Admin, operador y el propio motorizado ("Ver imagen" de su día);
    generar la imagen (/reporte/subida) sigue siendo solo admin. */
 router.get('/motorizados/:id/reporte', async (req, res) => {
   try {
@@ -578,7 +616,7 @@ router.get('/motorizados/:id/reporte', async (req, res) => {
       resumen: dia.resumen,
       pedidos: dia.pedidos,
       totales: dia.totales,
-      liquidado: dia.liquidado,
+      liquidado: liquidadoParaRol(req, dia.liquidado),
       r2: r2Habilitado(),
       reporte: r2Habilitado() ? await infoReporte('moto', idMoto, fecha) : null,
     });

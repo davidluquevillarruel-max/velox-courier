@@ -7,8 +7,6 @@ var MOTORIZADOS = []; /* caché local */
 
 var _motoEditId      = null;
 var _motoElimId      = null;
-var _filtroFechaMoto = '';
-var _motoDetalleAbiertoId = null;
 
 /* Si la sesión es de un motorizado, solo debe ver su propio registro */
 function _motorizadosVisibles() {
@@ -182,35 +180,6 @@ function _cobradoMotoHTML(o) {
 }
 
 /* ════════════════════════════════════════════
-   CALCULAR STATS DESDE LA API
-════════════════════════════════════════════ */
-async function _calcularStatsMoto(idMotorizado, fecha) {
-  try {
-    var url = API + '/motorizados/' + idMotorizado + '/ordenes';
-    if (fecha) url += '?fecha=' + fecha;
-    var r = await fetch(url);
-    var ordenes = await r.json();
-    if (!ordenes.length) return null;
-
-    var entregados    = ordenes.filter(function(o){ return o.estado==='entregado'; }).length;
-    var noEntregados  = ordenes.filter(function(o){ return o.estado==='no-entregado'; }).length;
-    var ausentes      = ordenes.filter(function(o){ return o.estado==='ausente'; }).length;
-    var reprogramados = ordenes.filter(function(o){ return o.estado==='reprogramado'; }).length;
-    var cobrable      = entregados + noEntregados;
-    var tasa          = cobrable > 0 ? Math.round((entregados/cobrable)*100) : 0;
-    /* Plata: del motor de la Caja (o.caja), no del "por cobrar" de la orden */
-    var t = _totalesCajaMoto(ordenes);
-
-    return {
-      total: ordenes.length, entregados, noEntregados, ausentes, reprogramados,
-      tasa: tasa + '%', tasaNum: tasa,
-      pagoTotal: t.pago, cobrado: t.enMano, efectivo: t.efectivo, yape: t.yape, deuda: t.deuda,
-      ordenes,
-    };
-  } catch(err) { return null; }
-}
-
-/* ════════════════════════════════════════════
    RENDER — GRID DE TARJETAS
 ════════════════════════════════════════════ */
 window.renderMotorizados = async function() {
@@ -225,18 +194,11 @@ window.renderMotorizados = async function() {
   var btnAgregar = document.querySelector('[onclick="abrirModalMoto()"]');
   if (btnAgregar && esMoto) btnAgregar.style.display = 'none';
 
-  /* "Una página por pregunta": para los gestores esta página es
-     "quiénes son" (alta, edición, accesos); el período, la tabla y el
-     panel con la plata del día están en "Gestión / Motorizado"
-     (js/gestion-motos.js). El motorizado sigue viendo su historial acá. */
-  if (!esMoto) {
-    ['motos-periodo', 'card-motos-resumen', 'panel-detalle-moto'].forEach(function(id) {
-      var el = document.getElementById(id);
-      if (el) el.style.display = 'none';
-    });
-  }
-  /* Ver detalle: el moto abre su panel acá; un gestor va a la página nueva */
-  var accionDetalle = esMoto ? 'abrirDetalleMotoHistorial' : 'abrirGestionMoto';
+  /* "Una página por pregunta": esta página es "quiénes son" (alta,
+     edición, accesos; el moto, "Mis entregas de hoy" y su tarjeta). La
+     plata por día está en "Gestión / Motorizado" (js/gestion-motos.js),
+     también para el moto (solo lo suyo): "Ver detalle" lleva allá. */
+  var accionDetalle = 'abrirGestionMoto';
 
   grid.innerHTML = visibles.map(function(m) {
     var estadoBadge = m.activo
@@ -267,69 +229,9 @@ window.renderMotorizados = async function() {
       '</div>' +
     '</div>';
   }).join('');
-
-  _renderTablaResumen();
 };
 
-async function _renderTablaResumen() {
-  var tbody = document.getElementById('tbody-motos-resumen');
-  if (!tbody) return;
-  /* Los gestores no la ven (está escondida): no pedir una consulta por moto */
-  if (!_esSesionMotorizado()) return;
-
-  var fecha = _filtroFechaMoto;
-  var lbl = document.getElementById('lbl-fecha-motos');
-  if (lbl) lbl.textContent = fecha ? 'Mostrando: ' + _fechaDisplayM(fecha) : 'Mostrando: todos los días';
-
-  /* Renderizar filas async. Las celdas tienen que coincidir con los 13
-     encabezados de pages/motorizados.html (Motorizado, Teléfono, Yape,
-     9 columnas de números y la de acción) */
-  var filas = await Promise.all(_motorizadosVisibles().map(async function(m) {
-    var s = await _calcularStatsMoto(m.id, fecha);
-    /* Avatar + nombre: en el celular la celda es fija y angosta, y el
-       nombre largo se corta con "…" (el title lo muestra entero) */
-    var celdaNombre =
-      '<td><div class="moto-resumen-nombre" title="' + _escFoto(m.nombre) + '">' +
-        '<div class="avatar ' + m.color_avatar + '" style="width:30px;height:30px;font-size:11px;flex-shrink:0">' + m.iniciales + '</div>' +
-        '<strong>' + _escFoto(m.nombre) + '</strong></div></td>';
-    var celdasContacto =
-      '<td style="font-size:12px">' + (m.telefono || '—') + '</td>' +
-      '<td style="font-size:12px">' + (m.yape || '—') + '</td>';
-    /* El mismo botón en todas las filas, tenga o no órdenes */
-    var celdaAccion =
-      '<td class="col-accion-moto-fijo"><button class="btn btn-primary btn-sm" onclick="abrirDetalleMotoHistorial(' + m.id + ')">' +
-        '<i class="ti ti-eye"></i> Ver detalle</button></td>';
-    if (!s) {
-      return '<tr>' +
-        celdaNombre +
-        celdasContacto +
-        '<td colspan="9" style="color:var(--color-text-tertiary)">Sin órdenes</td>' +
-        celdaAccion +
-      '</tr>';
-    }
-    var tc = s.tasaNum >= 75 ? 'var(--color-green)' : s.tasaNum >= 50 ? 'var(--color-amber)' : 'var(--color-red-text)';
-    return '<tr>' +
-      celdaNombre +
-      celdasContacto +
-      '<td><strong>' + s.total + '</strong></td>' +
-      '<td style="color:var(--color-green);font-weight:600">' + s.entregados + '</td>' +
-      '<td style="color:var(--color-red-text);font-weight:600">' + s.noEntregados + '</td>' +
-      '<td style="color:var(--color-amber-text);font-weight:600">' + s.ausentes + '</td>' +
-      '<td style="color:var(--color-purple-text);font-weight:600">' + s.reprogramados + '</td>' +
-      '<td><span style="color:' + tc + ';font-weight:700">' + s.tasa + '</span></td>' +
-      '<td style="font-weight:600">S/ ' + s.pagoTotal.toFixed(2) + '</td>' +
-      '<td class="col-cobrado-fijo" style="font-weight:600;color:var(--color-blue-text)">S/ ' + s.cobrado.toFixed(2) + '</td>' +
-      '<td class="col-totalmoto-fijo">' + _deudaMotoHTML(s.deuda) + '</td>' +
-      celdaAccion +
-    '</tr>';
-  }));
-
-  tbody.innerHTML = filas.join('');
-}
-
-/* ════════════════════════════════════════════
-   FILTRO DE FECHA
-════════════════════════════════════════════ */
+/* Fecha de hace n días (la usa "Mis entregas de hoy") */
 function _fechaHaceDiasMoto(n) {
   var d = new Date();
   d.setDate(d.getDate() - n);
@@ -337,132 +239,6 @@ function _fechaHaceDiasMoto(n) {
   var dd = ('0'+d.getDate()).slice(-2);
   return d.getFullYear() + '-' + mm + '-' + dd;
 }
-
-function _marcarBotonActivoMotos(tipo) {
-  var btnHoy  = document.getElementById('btn-hoy-motos');
-  var btnAyer = document.getElementById('btn-ayer-motos');
-  if (btnHoy)  btnHoy.classList.toggle('active', tipo === 'hoy');
-  if (btnAyer) btnAyer.classList.toggle('active', tipo === 'ayer');
-}
-
-window.aplicarFiltroMotos = function() {
-  var inp = document.getElementById('filtro-fecha-motos');
-  _filtroFechaMoto = inp ? inp.value : '';
-  _marcarBotonActivoMotos(null);
-  _renderTablaResumen();
-  _refrescarPanelDetalleSiAbierto();
-};
-
-window.filtroRapidoMotos = function(tipo) {
-  var fecha = tipo === 'hoy' ? _fechaHaceDiasMoto(0) : _fechaHaceDiasMoto(1);
-  _filtroFechaMoto = fecha;
-  var inp = document.getElementById('filtro-fecha-motos');
-  if (inp) inp.value = fecha;
-  _marcarBotonActivoMotos(tipo);
-  _renderTablaResumen();
-  _refrescarPanelDetalleSiAbierto();
-};
-
-window.limpiarFiltroMotos = function() {
-  _filtroFechaMoto = '';
-  var inp = document.getElementById('filtro-fecha-motos');
-  if (inp) inp.value = '';
-  _marcarBotonActivoMotos(null);
-  _renderTablaResumen();
-  _refrescarPanelDetalleSiAbierto();
-};
-
-/* Si el panel de detalle de un motorizado está abierto, lo vuelve a
-   cargar con el filtro de fecha actual (para que no quede desactualizado) */
-function _refrescarPanelDetalleSiAbierto() {
-  var panel = document.getElementById('panel-detalle-moto');
-  if (panel && panel.style.display !== 'none' && _motoDetalleAbiertoId) {
-    abrirDetalleMotoHistorial(_motoDetalleAbiertoId);
-  }
-}
-
-/* ════════════════════════════════════════════
-   DETALLE HISTORIAL INLINE
-════════════════════════════════════════════ */
-window.abrirDetalleMotoHistorial = async function(motoId, sinScroll) {
-  var m = MOTORIZADOS.find(function(x){ return x.id == motoId; });
-  if (!m) return;
-
-  var panel = document.getElementById('panel-detalle-moto');
-  if (!panel) return;
-
-  _motoDetalleAbiertoId = motoId;
-  panel.innerHTML = '<div style="padding:20px;text-align:center;color:var(--color-text-secondary)"><i class="ti ti-loader" style="font-size:24px"></i> Cargando...</div>';
-  panel.style.display = 'block';
-
-  var resultados = await Promise.all([
-    _calcularStatsMoto(motoId, _filtroFechaMoto),
-    /* Qué órdenes de este moto esperan que otro las acepte
-       (js/reasignaciones.js): la tabla muestra "Esperando a …" */
-    typeof cargarReasignacionesPanel === 'function' ? cargarReasignacionesPanel(motoId) : null,
-  ]);
-  var s = resultados[0];
-  if (_motoDetalleAbiertoId != motoId) return; /* se abrió otro mientras cargaba */
-
-  if (!s) {
-    panel.innerHTML = '<div style="padding:20px;text-align:center;color:var(--color-text-tertiary)">' +
-      'Sin órdenes para ' + m.nombre + (_filtroFechaMoto ? ' el ' + _fechaDisplayM(_filtroFechaMoto) : '') +
-      '</div>';
-    return;
-  }
-
-  /* Misma cuenta que Caja → Motorizados: en mano − su pago */
-  var saldoColor = _colorDeudaMoto(s.deuda);
-  var saldoMsg   = s.deuda ? 'En resumen: ' + _textoDeudaMoto(s.deuda) : 'Saldo en cero';
-
-  var tc = s.tasaNum >= 75 ? 'green' : s.tasaNum >= 50 ? 'amber' : 'red';
-
-  var html =
-    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px">' +
-      '<div style="display:flex;align-items:center;gap:12px">' +
-        '<div class="avatar ' + m.color_avatar + '" style="width:44px;height:44px;font-size:16px">' + m.iniciales + '</div>' +
-        '<div><div style="font-size:16px;font-weight:600">' + m.nombre + '</div>' +
-          '<div style="font-size:12px;color:var(--color-text-secondary)">' +
-            (_filtroFechaMoto ? 'Detalle del ' + _fechaDisplayM(_filtroFechaMoto) : 'Historial completo') +
-          '</div></div>' +
-      '</div>' +
-      '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">' +
-        '<button class="btn btn-sm" onclick="cerrarDetalleMotoHistorial()"><i class="ti ti-x"></i> Cerrar</button>' +
-      '</div>' +
-    '</div>' +
-    '<div class="moto-kpis">' +
-      _kpiCard('Total órdenes', s.total, 'blue', 'ti-package') +
-      _kpiCard('Entregados', s.entregados, 'green', 'ti-circle-check') +
-      _kpiCard('No entregados / Ausentes', s.noEntregados + s.ausentes, 'red', 'ti-circle-x') +
-      _kpiCard('Tasa entrega', s.tasa, tc, 'ti-chart-line') +
-    '</div>' +
-    '<div class="moto-kpis">' +
-      _kpiCard('Pago a motorizado', 'S/ ' + s.pagoTotal.toFixed(2), 'amber', 'ti-wallet') +
-      /* Solo lo que tuvo en la mano: efectivo + Yape */
-      _kpiCard('Total cobrado', 'S/ ' + s.cobrado.toFixed(2), 'blue', 'ti-cash') +
-      _kpiCard('Deuda moto', (s.deuda < 0 ? '− ' : '') + 'S/ ' + Math.abs(s.deuda).toFixed(2),
-        s.deuda > 0 ? 'green' : s.deuda < 0 ? 'amber' : 'blue', 'ti-calculator') +
-      _kpiCard('Reprogramados', s.reprogramados, 'amber', 'ti-refresh') +
-    '</div>' +
-    '<div style="background:var(--color-bg-secondary);border-radius:var(--radius-lg);padding:18px 22px;' +
-    'margin-bottom:16px;border-left:5px solid ' + saldoColor + ';display:flex;align-items:center;gap:14px">' +
-      '<div style="background:' + saldoColor + ';border-radius:50%;width:40px;height:40px;display:flex;align-items:center;justify-content:center;flex-shrink:0">' +
-        '<i class="ti ti-calculator" style="color:#fff;font-size:18px"></i>' +
-      '</div>' +
-      '<div>' +
-        '<div style="font-size:11px;color:var(--color-text-secondary);font-weight:500;margin-bottom:2px">RESUMEN DEL PERÍODO</div>' +
-        '<div style="font-size:16px;font-weight:700;color:' + saldoColor + '">' + saldoMsg + '</div>' +
-        '<div style="font-size:12px;color:var(--color-text-secondary);margin-top:2px">' +
-          'En mano: <strong>S/ ' + s.cobrado.toFixed(2) + '</strong> (efectivo S/ ' + s.efectivo.toFixed(2) +
-          ' · Yape S/ ' + s.yape.toFixed(2) + ') &nbsp;·&nbsp; Su pago: <strong>S/ ' + s.pagoTotal.toFixed(2) + '</strong></div>' +
-      '</div>' +
-    '</div>' +
-    _renderTablaOrdenesDetalle(s.ordenes) +
-    '</div>';
-
-  panel.innerHTML = html;
-  if (!sinScroll) setTimeout(function(){ panel.scrollIntoView({ behavior:'smooth', block:'start' }); }, 50);
-};
 
 function _kpiCard(label, valor, color, icon) {
   return '<div class="metric ' + color + '" style="padding:14px 16px">' +
@@ -507,7 +283,11 @@ function _botonWhatsApp(telefono, nombreDest, telefono2) {
   return html;
 }
 
-function _renderTablaOrdenesDetalle(ordenes) {
+/* opciones.sinAcciones: sin la columna Actualizar / Reasignar (el
+   motorizado en "Gestión / Motorizado": sus órdenes las trabaja en
+   "Mis entregas de hoy") */
+function _renderTablaOrdenesDetalle(ordenes, opciones) {
+  var sinAcciones = !!(opciones && opciones.sinAcciones);
   var badgeMap = {
     'entregado':    '<span class="badge entregado">Entregado</span>',
     'no-entregado': '<span class="badge no-entregado">No entregado</span>',
@@ -528,10 +308,11 @@ function _renderTablaOrdenesDetalle(ordenes) {
   /* La plata de cada fila sale de o.caja (motor de la Caja, en el
      servidor): Cobrado = en mano, Deuda moto = en mano − su pago */
   var cols = ['Código','Tienda','Destinatario','','Distrito','Estado','Método','Medio de pago',
-              'Delivery','Cobrado','Pago moto','Deuda moto','Especial','Fecha',''];
+              'Delivery','Cobrado','Pago moto','Deuda moto','Especial','Fecha'];
+  if (!sinAcciones) cols.push('');
 
   return '<div class="tabla-moto-aviso"><i class="ti ti-arrows-horizontal"></i> Desliza la tabla a los lados para ver todas las columnas</div>' +
-    '<div class="table-wrap tabla-moto-wrap"><table id="tabla-ordenes-moto-detalle" style="width:100%;border-collapse:collapse;font-size:12px">' +
+    '<div class="table-wrap tabla-moto-wrap"><table id="tabla-ordenes-moto-detalle"' + (sinAcciones ? ' class="sin-acciones"' : '') + ' style="width:100%;border-collapse:collapse;font-size:12px">' +
     '<thead><tr>' +
     cols.map(function(h){
       return '<th style="background:var(--color-bg-secondary);padding:9px 12px;text-align:left;' +
@@ -565,12 +346,13 @@ function _renderTablaOrdenesDetalle(ordenes) {
         '<td style="padding:8px 12px">' + deudaStr + '</td>' +
         '<td style="padding:8px 12px">' + especial + '</td>' +
         '<td style="padding:8px 12px;font-size:11px;color:var(--color-text-secondary);white-space:nowrap">' + _celdaFechaTrabajoM(o) + '</td>' +
+        (sinAcciones ? '' :
         '<td style="padding:8px 12px"><div style="display:flex;gap:4px;flex-wrap:wrap">' +
           '<button class="btn btn-sm" onclick="abrirActualizarEstadoOrden(' + o.id + ')"><i class="ti ti-refresh"></i> Actualizar</button>' +
           /* Pedir a otro moto que la tome, con aceptación (js/reasignaciones.js):
              solo en reparto; el moto, las suyas; un gestor, en nombre del moto */
           (typeof celdaReasignarPanelHTML === 'function' ? celdaReasignarPanelHTML(o) : '') +
-        '</div></td>' +
+        '</div></td>') +
       '</tr>';
     }).join('') +
     '</tbody></table></div>';
@@ -581,21 +363,6 @@ function _renderTablaOrdenesDetalle(ordenes) {
    página y por eso el botón no hacía nada) se reemplazó por el pedido
    con aceptación de js/reasignaciones.js. La oficina sigue pudiendo
    pasar una orden directo desde Asignación. */
-
-/* Se envió, aceptó, rechazó o canceló un pedido de reasignación: el
-   panel abierto se vuelve a pintar con lo nuevo */
-window.addEventListener('velox:reasignaciones', function() {
-  var panel = document.getElementById('panel-detalle-moto');
-  if (_motoDetalleAbiertoId && panel && panel.style.display !== 'none') {
-    abrirDetalleMotoHistorial(_motoDetalleAbiertoId, true);
-  }
-});
-
-window.cerrarDetalleMotoHistorial = function() {
-  var panel = document.getElementById('panel-detalle-moto');
-  if (panel) { panel.style.display = 'none'; panel.innerHTML = ''; }
-  _motoDetalleAbiertoId = null;
-};
 
 /* ════════════════════════════════════════════
    DETALLE COMPLETO (página detalle-motorizado)
@@ -837,13 +604,7 @@ window.initMotorizados = function() {
      js/entregas-moto.js) */
   if (typeof initEntregasMoto === 'function') initEntregasMoto();
 
-  /* Todos arrancan con "Hoy" por defecto */
-  _filtroFechaMoto = _fechaHaceDiasMoto(0);
-  renderMotorizados().then(function() {
-    var inp = document.getElementById('filtro-fecha-motos');
-    if (inp) inp.value = _filtroFechaMoto;
-    _marcarBotonActivoMotos('hoy');
-  });
+  renderMotorizados();
 };
 
 /* ════════════════════════════════════════════
@@ -1681,8 +1442,6 @@ window.confirmarDevolucionOrden = async function(ordenId, btnEl) {
         : 'Producto devuelto — la orden volvió a "En proceso"');
     }
 
-    if (typeof _renderTablaResumen === 'function') _renderTablaResumen();
-    if (typeof _motoDetalleAbiertoId !== 'undefined' && _motoDetalleAbiertoId) abrirDetalleMotoHistorial(_motoDetalleAbiertoId);
     if (typeof renderPedidos === 'function') renderPedidos();
     if (typeof _recargarTablaPendienteDevolucion === 'function') _recargarTablaPendienteDevolucion();
     if (typeof _recargarTablaDevolucionTienda === 'function') _recargarTablaDevolucionTienda();
@@ -1901,8 +1660,6 @@ window.guardarActualizarEstadoOrden = async function() {
 /* Refrescar la vista actual, sea cual sea la página donde se abrió el modal.
    Cada función ya se cuida sola si su página no está en pantalla. */
 function _refrescarTrasGuardarOrden() {
-  if (typeof _renderTablaResumen === 'function') _renderTablaResumen();
-  if (typeof _motoDetalleAbiertoId !== 'undefined' && _motoDetalleAbiertoId) abrirDetalleMotoHistorial(_motoDetalleAbiertoId);
   if (typeof renderPedidos === 'function') renderPedidos();
   if (typeof _recargarTablaPendienteDevolucion === 'function') _recargarTablaPendienteDevolucion();
   if (typeof _recargarTablaDevolucionTienda === 'function') _recargarTablaDevolucionTienda();

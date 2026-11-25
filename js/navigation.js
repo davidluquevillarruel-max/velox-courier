@@ -9,7 +9,7 @@ function showPage(id) {
   /* ── Restricciones por rol ── */
   if (sesion) {
     var rol = sesion.rol;
-    var _moto   = ['motorizados','evidencias','asignacion','usuarios'];
+    var _moto   = ['motorizados','gestion-motos','evidencias','asignacion','usuarios'];
     var _tienda = ['clientes','evidencias','usuarios'];
 
     if (rol === 'motorizado' && !_moto.includes(id))   id = 'motorizados';
@@ -19,8 +19,9 @@ function showPage(id) {
     if (id === 'usuarios' && rol !== 'admin' && rol !== 'motorizado' && rol !== 'tienda') {
       id = 'pedidos';
     }
-    /* Gestión / Motorizado: plata de la Caja, solo gestores */
-    if (id === 'gestion-motos' && rol !== 'admin' && rol !== 'operador') id = 'pedidos';
+    /* Gestión / Motorizado: plata de la Caja; gestores y el motorizado
+       (este, solo su propio detalle: lo frena el servidor) */
+    if (id === 'gestion-motos' && rol !== 'admin' && rol !== 'operador' && rol !== 'motorizado') id = 'pedidos';
   }
 
   document.querySelectorAll('.nav-item').forEach(function(n) {
@@ -160,8 +161,8 @@ function _aplicarPermisosPorRol() {
   var sesion = _obtenerSesion();
   if (!sesion) return;
 
-  /* Gestión / Motorizado: solo admin y operador */
-  if (sesion.rol !== 'admin' && sesion.rol !== 'operador') {
+  /* Gestión / Motorizado: admin, operador y el motorizado (lo suyo) */
+  if (sesion.rol !== 'admin' && sesion.rol !== 'operador' && sesion.rol !== 'motorizado') {
     var navGm = document.getElementById('nav-gestion-motos');
     if (navGm) navGm.style.display = 'none';
   }

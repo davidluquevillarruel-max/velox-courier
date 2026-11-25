@@ -206,7 +206,9 @@ router.get('/:id/ordenes', async (req, res) => {
        asignada arriba (asignada_en, hora de Lima). Las que no tienen
        hora (anteriores a la columna) van al final del día, por id. */
     query += ` ORDER BY o.fecha_reparto DESC, o.asignada_en DESC, o.id DESC`;
-    const request = pool.request().input('id', sql.Int, req.params.id);
+    /* El motorizado: siempre el id del token (arriba ya se frenó otro id) */
+    const idMoto = req.usuario.rol === 'motorizado' ? req.usuario.id_motorizado : parseInt(req.params.id, 10);
+    const request = pool.request().input('id', sql.Int, idMoto);
     if (porRango) request.input('desde', sql.Date, desde).input('hasta', sql.Date, hasta);
     else if (fecha) request.input('fecha', sql.Date, fecha);
     const result = await request.query(query);

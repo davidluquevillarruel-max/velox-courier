@@ -12,6 +12,46 @@ Velox Courier — internal management system for a courier/delivery company in L
 
 Última actualización: 24 de noviembre de 2026.
 
+- **Cambio 8 — el motorizado ve "Gestión / Motorizado", solo lo suyo (25 de noviembre de 2026,
+  commit en local, sin push; sin migración). Toca el servidor: hay que reiniciarlo.**
+  `server/routes/caja.js`, `server/routes/motorizados.js`, `js/gestion-motos.js`,
+  `js/motorizados.js`, `js/entregas-moto.js`, `js/navigation.js`, `js/reporte-tienda.js`,
+  `js/reporte-moto.js`, `pages/gestion-motos.html`, `pages/motorizados.html`, `css/responsive.css`.
+  - **Qué ve el moto:** el menú "Gestión / Motorizado" y, al entrar, directo a SU detalle (sin lista,
+    chips, TOTALES, Exportar ni "← Volver"): pestañas de los últimos 7 días, filtros de período,
+    cuadros (de `armarDiaMoto` / `sumarDiasMoto`, iguales a los del gestor) y sus órdenes **sin**
+    Actualizar ni Reasignar (`_renderTablaOrdenesDetalle(ordenes, { sinAcciones: true })`, tabla con
+    clase `sin-acciones` para que Fecha no quede fija). Reporte: solo "Ver imagen" (en el visor) si ya
+    existe (`verReporteMotoHTML` → `_repBotonesHTML(…, soloVer)`); sin Generar, Copiar, WhatsApp ni la
+    ✓ de enviado. Liquidado: solo "Día liquidado el dd/mm" (en un período, "x de n días
+    liquidados"). El id sale de la sesión (`_gmIdMotoSesion`), pero eso es solo pantalla.
+  - **Servidor (lo que manda):** `caja.js` ya no hace `requireRol('admin','operador')` para todo:
+    `soloGestoresOMotoPropio` deja pasar a admin / operador y al motorizado **solo** en `GET
+    /caja/motorizados/:id/dias` y `GET /caja/motorizados/:id/reporte` con `:id` = el suyo del token
+    (`RUTAS_LECTURA_MOTO`, lista blanca: toda ruta nueva de la Caja queda cerrada para él). Otro id →
+    403; cualquier otra ruta → 403 (`/gestion`, `/detalle`, `/reporte/subida`, pagar, liquidez…).
+    Doble seguro: esas rutas toman el id de `idMotoDeRuta(req)` (el del token si es moto).
+    `liquidadoParaRol` le manda al moto solo `{ fecha_pago }` (sin `saldo_pagado` ni `difiere`, y el
+    período sin `difiere`). `GET /motorizados/:id/ordenes` ya daba 403 con otro id y ahora además usa
+    el del token.
+  - **Motorizados para el moto = "Mis entregas de hoy" + su tarjeta.** Se fueron el período, la tabla
+    "Detalle de gestión por motorizado" y el panel con el historial (estaban repetidos), con su código:
+    `_calcularStatsMoto`, `_renderTablaResumen`, `abrirDetalleMotoHistorial`, los filtros
+    `…FiltroMotos`, `_filtroFechaMoto`, `_motoDetalleAbiertoId`. "Ver detalle" de la tarjeta →
+    `abrirGestionMoto` para todos. Quedaron sin uso los estilos de `#tabla-motos-resumen` /
+    `.moto-resumen-nombre` en `css/responsive.css` y, de antes, `renderDetalleMoto` /
+    `pages/detalle-motorizado.html` (nadie llama `abrirDetalle`).
+  - **Bug de antes arreglado:** en el detalle de Gestión / Motorizado los botones del reporte iban
+    "diferidos" y nadie llamaba `hidratarReportes`: el admin no veía "Ver imagen" de un reporte ya
+    generado. `_gmPintarDia` ahora lo llama.
+  - **Probado el 25/11** (servidor en el 3001; moto, tienda y operador de prueba, borrados): 36 de 36
+    en la API (lo suyo 200; mismos números que el gestor y cada día = su reporte; liquidado solo con
+    fecha; 18 pedidos prohibidos con 403, incluido otro id, `01`, barra final, mayúsculas,
+    `/gestion`, `/detalle`, subir reporte, pagar, Caja tiendas / liquidez / real y `/ordenes` de
+    otro). A 375 px: menú, Motorizados sin historial, Ver detalle → su detalle, pestañas, "Día
+    liquidado el 05 Oct 2026", "Ver imagen" en el visor, "Mes pasado" agrupado, la red sin
+    `/gestion`. El operador, igual que antes.
+
 - **Cambio 7 — nombre del panel según el rol (24 de noviembre de 2026, commit en local, sin push;
   solo frontend, sin servidor ni migración).** Arriba del menú: admin / operador / visor =
   "VeloxCourierAdmin", motorizado = "VeloxCourierMotorizado", tienda = "VeloxCourierTienda"; la

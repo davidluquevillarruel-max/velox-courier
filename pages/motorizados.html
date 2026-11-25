@@ -8,23 +8,6 @@
 <!-- "Mis entregas de hoy": solo para el rol motorizado (js/entregas-moto.js) -->
 <div id="mis-entregas-hoy" class="entregas-hoy" style="display:none"></div>
 
-<!-- Período, tabla y panel "Ver detalle": solo el rol motorizado (su
-     historial). Los gestores ven la gestión del día en "Gestión /
-     Motorizado" (js/gestion-motos.js): renderMotorizados los esconde. -->
-<div id="motos-periodo" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:16px">
-  <span style="font-size:13px;color:var(--color-text-secondary)">Período:</span>
-  <button class="btn btn-sm" id="btn-hoy-motos" onclick="filtroRapidoMotos('hoy', this)">Hoy</button>
-  <button class="btn btn-sm" id="btn-ayer-motos" onclick="filtroRapidoMotos('ayer', this)">Ayer</button>
-  <div class="date-filter-wrap">
-    <i class="ti ti-calendar"></i>
-    <input type="date" id="filtro-fecha-motos" onchange="aplicarFiltroMotos()" />
-  </div>
-  <button class="btn btn-sm" onclick="limpiarFiltroMotos()">
-    <i class="ti ti-adjustments-horizontal"></i> Ver todos
-  </button>
-  <span style="font-size:12px;color:var(--color-text-tertiary)" id="lbl-fecha-motos"></span>
-</div>
-
 <div style="display:flex;justify-content:flex-end;margin-bottom:16px">
   <button class="btn btn-primary btn-sm" onclick="abrirModalMoto()">
     <i class="ti ti-plus"></i> Agregar motorizado
@@ -32,29 +15,6 @@
 </div>
 
 <div class="moto-grid" id="moto-grid-content"></div>
-<div id="panel-detalle-moto" class="card" style="display:none;margin-bottom:16px;padding:20px"></div>
-
-<div class="card" id="card-motos-resumen">
-  <div class="card-head">
-    <span class="card-title">Detalle de gestión por motorizado</span>
-  </div>
-  <!-- En el celular: aviso y barra como en el historial, Motorizado fijo
-       a la izquierda y lo demás se desliza (css/responsive.css) -->
-  <div class="tabla-moto-aviso"><i class="ti ti-arrows-horizontal"></i> Desliza la tabla a los lados para ver todas las columnas</div>
-  <div class="table-wrap tabla-moto-wrap">
-    <table id="tabla-motos-resumen">
-      <thead>
-        <tr>
-          <th>Motorizado</th><th>Teléfono</th><th>Yape</th><th>Total</th>
-          <th>Entregados</th><th>No entregados</th><th>Ausentes</th><th>Reprogramados</th>
-          <th>Tasa entrega</th><th>Pago motorizado</th><th class="col-cobrado-fijo">Total cobrado</th>
-          <th class="col-totalmoto-fijo">Deuda moto</th><th class="col-accion-moto-fijo"></th>
-        </tr>
-      </thead>
-      <tbody id="tbody-motos-resumen"></tbody>
-    </table>
-  </div>
-</div>
 
 <!-- MODAL — Agregar / Editar motorizado -->
 <div id="moto-modal-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.35);z-index:1000;align-items:center;justify-content:center">

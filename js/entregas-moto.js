@@ -813,10 +813,6 @@ window.confirmarEntrega = async function(modo) {
       : pedido.aviso + ' · las fotos se suben solas', sinGuardar ? 6000 : 2500);
   }
 
-  /* La tabla de abajo y el resumen se alimentan de lo que se cerró */
-  if (typeof _renderTablaResumen === 'function') _renderTablaResumen();
-  if (typeof _refrescarPanelDetalleSiAbierto === 'function') _refrescarPanelDetalleSiAbierto();
-
   _volverTrasCerrarEnt(o.id);
 };
 

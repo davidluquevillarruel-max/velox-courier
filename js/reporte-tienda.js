@@ -289,10 +289,20 @@ function _repEsc(s) {
    cuando el HTML ya está en la página. Es para las listas que arman su
    HTML cada pocos segundos y solo lo pintan si cambió (la Caja): así no
    se consulta a R2 en cada refresco. */
-function _repBotonesHTML(tipo, idQuien, fecha, diferido, nombre) {
-  if (!_REP_TIPOS[tipo] || !_repEsAdmin() || !idQuien || !fecha) return '';
+function _repBotonesHTML(tipo, idQuien, fecha, diferido, nombre, soloVer) {
+  if (!_REP_TIPOS[tipo] || !idQuien || !fecha) return '';
+  /* soloVer: solo "Ver imagen" si ya existe (el motorizado, su propio
+     reporte; quién puede leerlo lo decide el servidor). Si no, admin. */
+  if (!soloVer && !_repEsAdmin()) return '';
   var id = 'rep-' + tipo + '-' + idQuien + '-' + fecha;
   if (!diferido) setTimeout(function() { _repConsultarExistente(id); }, 0);
+  if (soloVer) {
+    return '<span id="' + id + '" class="reporte-tienda" data-tipo="' + _repEsc(tipo) + '" data-id="' + _repEsc(idQuien) + '" data-fecha="' + _repEsc(fecha) + '" ' +
+        'data-nombre="' + _repEsc(nombre || '') + '" ' + (diferido ? 'data-rep-pendiente="1" ' : '') +
+        'style="display:inline-flex;align-items:center;gap:6px">' +
+        '<a data-rep="link" class="btn btn-sm" style="display:none"></a>' +
+      '</span>';
+  }
   return '<span id="' + id + '" class="reporte-tienda" data-tipo="' + _repEsc(tipo) + '" data-id="' + _repEsc(idQuien) + '" data-fecha="' + _repEsc(fecha) + '" ' +
       'data-nombre="' + _repEsc(nombre || '') + '" ' +
       (diferido ? 'data-rep-pendiente="1" ' : '') +

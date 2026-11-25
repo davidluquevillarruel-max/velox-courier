@@ -31,6 +31,16 @@ var _gmDet   = null;        /* detalle abierto: { id, modo, base, desde, hasta, 
 var _gmAbrirAlIniciar = null; /* lo deja abrirGestionMoto() antes de showPage */
 
 /* ── Fechas ── */
+/* El motorizado ve solo su propio detalle (como la tienda en Clientes /
+   Tiendas): su id sale de la sesión. Es solo la pantalla: el servidor
+   usa el id del token y responde 403 a cualquier otro. */
+function _gmIdMotoSesion() {
+  try {
+    var u = JSON.parse(localStorage.getItem('velox_usuario')) || {};
+    return u.rol === 'motorizado' ? (u.id_motorizado || null) : null;
+  } catch (e) { return null; }
+}
+
 function _gmHoyLima(diasAtras) {
   var d = new Date(Date.now() - (diasAtras || 0) * 86400000);
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Lima' }).format(d);
@@ -442,7 +452,8 @@ async function _gmPintarDetalle(silencioso) {
     datos = await r[0].json();
   } catch (err) {
     console.error('Detalle Gestión / Motorizado:', err);
-    det.innerHTML = '<div style="padding:24px"><button class="btn-back" onclick="volverListaGestionMotos()"><i class="ti ti-arrow-left"></i> Volver</button>' +
+    det.innerHTML = '<div style="padding:24px">' +
+      (_gmIdMotoSesion() ? '' : '<button class="btn-back" onclick="volverListaGestionMotos()"><i class="ti ti-arrow-left"></i> Volver</button>') +
       '<div style="margin-top:16px;color:var(--color-red-text)">No se pudo cargar el detalle.</div></div>';
     return;
   }
@@ -452,11 +463,13 @@ async function _gmPintarDetalle(silencioso) {
   if (estado.activo == null || estado.activo >= estado.dias.length) estado.activo = 0;
 
   var m = _gmMotoDet();
+  var esMoto = !!_gmIdMotoSesion();
   var activoBtn = function(t) { return estado.modo === 'periodo' && estado.tipo === t ? ' active' : ''; };
   var html =
     '<div class="detalle-header">' +
       '<div class="detalle-header-left">' +
-        '<button class="btn-back" onclick="volverListaGestionMotos()"><i class="ti ti-arrow-left"></i> Volver</button>' +
+        /* El moto no tiene lista a la que volver */
+        (esMoto ? '' : '<button class="btn-back" onclick="volverListaGestionMotos()"><i class="ti ti-arrow-left"></i> Volver</button>') +
         '<div style="display:flex;align-items:center;gap:12px;min-width:0">' +
           '<div class="avatar ' + _gmEsc(m.color_avatar || 'av-blue') + '" style="width:44px;height:44px;font-size:16px;flex-shrink:0">' + _gmEsc(m.iniciales) + '</div>' +
           '<div style="min-width:0"><div class="detalle-nombre">' + _gmEsc(m.nombre) + '</div>' +
@@ -490,7 +503,7 @@ async function _gmPintarDetalle(silencioso) {
     html += '<div class="dias-tabs">';
     estado.dias.forEach(function(d, i) {
       html += '<div class="dia-tab' + (i === estado.activo ? ' active' : '') + '" onclick="cambiarDiaGestionMoto(' + i + ')">' +
-        _fechaDisplayM(d.fecha) + (_gmEnviado(estado.id, d.fecha) ? ' <i class="ti ti-circle-check" style="color:var(--color-green)"></i>' : '') + '</div>';
+        _fechaDisplayM(d.fecha) + (!esMoto && _gmEnviado(estado.id, d.fecha) ?' <i class="ti ti-circle-check" style="color:var(--color-green)"></i>' : '') + '</div>';
     });
     html += '</div><div id="gm-dia"></div>';
   }
@@ -538,9 +551,14 @@ function _gmPintarDia() {
   if (!cont || !estado || !estado.dias.length) return;
   var d = estado.dias[estado.activo];
   var m = _gmMotoDet();
+  var esMoto = !!_gmIdMotoSesion();
 
   var liq = '';
-  if (d.liquidado) {
+  if (d.liquidado && esMoto) {
+    /* El moto ve solo la fecha (el servidor no le manda monto ni "difiere") */
+    liq = '<div style="background:var(--color-green-bg);color:var(--color-green-text);border-radius:var(--radius-md);padding:10px 14px;margin-bottom:14px;font-size:13px">' +
+      '<i class="ti ti-circle-check"></i> Día liquidado el ' + _fechaDisplayM(d.liquidado.fecha_pago) + '</div>';
+  } else if (d.liquidado) {
     liq = '<div style="background:var(--color-green-bg);color:var(--color-green-text);border-radius:var(--radius-md);padding:10px 14px;margin-bottom:14px;font-size:13px">' +
       '<i class="ti ti-circle-check"></i> Día liquidado el ' + _fechaDisplayM(d.liquidado.fecha_pago) +
       ' por ' + _gmSoles(d.liquidado.saldo_pagado) +
@@ -551,13 +569,19 @@ function _gmPintarDia() {
   cont.innerHTML =
     /* El mismo reporte que Caja → Motorizados (generarlo acá o allá pisa
        el mismo archivo; solo admin) y el WhatsApp con su marca */
+    /* El moto: solo "Ver imagen" si ya existe (sin generar ni WhatsApp) */
     '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px">' +
-      (typeof botonesReporteMotoHTML === 'function' ? botonesReporteMotoHTML(estado.id, d.fecha, m && m.nombre) : '') +
-      _gmBotonWA(m, d.fecha, true) +
+      (esMoto
+        ? (typeof verReporteMotoHTML === 'function' ? verReporteMotoHTML(estado.id, d.fecha, m && m.nombre) : '')
+        : (typeof botonesReporteMotoHTML === 'function' ? botonesReporteMotoHTML(estado.id, d.fecha, m && m.nombre) : '') +
+          _gmBotonWA(m, d.fecha, true)) +
     '</div>' +
     liq +
     _gmCuadrosHTML(d.resumen || {}, d.totales || {}, 'RESUMEN DEL ' + _fechaDisplayM(d.fecha).toUpperCase()) +
     '<div id="gm-dia-ordenes"><div style="padding:16px;color:var(--color-text-tertiary);font-size:12px">Cargando órdenes…</div></div>';
+  /* botonesReporteMotoHTML va diferido (por la Caja): preguntar si el
+     reporte ya existe, para que aparezca "Ver imagen" */
+  if (typeof hidratarReportes === 'function') hidratarReportes(cont);
   _gmPintarOrdenes(d.fecha, null, 'gm-dia-ordenes');
 }
 
@@ -574,7 +598,7 @@ function _gmBloquePeriodoHTML(estado) {
     : '';
   return '<div style="font-size:12px;color:var(--color-text-secondary);margin-bottom:10px">' +
       '<i class="ti ti-info-circle"></i> ' + desc + ' · ' + p.dias + (p.dias === 1 ? ' día' : ' días') + ' con órdenes. ' +
-      'El reporte y el WhatsApp son de un día: tocá "Últimos 7 días".</div>' +
+      (_gmIdMotoSesion() ? 'El reporte es de un día' : 'El reporte y el WhatsApp son de un día') + ': tocá "Últimos 7 días".</div>' +
     liq +
     _gmCuadrosHTML(p.resumen || {}, p.totales || {}, 'RESUMEN DEL PERÍODO') +
     '<div id="gm-periodo-ordenes"><div style="padding:16px;color:var(--color-text-tertiary);font-size:12px">Cargando órdenes…</div></div>';
@@ -585,11 +609,13 @@ async function _gmPintarOrdenes(desde, hasta, idCont) {
   var estado = _gmDet;
   var url = API + '/motorizados/' + estado.id + '/ordenes?' + (hasta ? 'desde=' + desde + '&hasta=' + hasta : 'fecha=' + desde);
   var ordenes = [];
+  var esMoto = !!_gmIdMotoSesion();
   try {
     var r = await Promise.all([
       fetch(url),
-      /* Qué órdenes esperan que otro moto las acepte (js/reasignaciones.js) */
-      typeof cargarReasignacionesPanel === 'function' ? cargarReasignacionesPanel(estado.id) : null,
+      /* Qué órdenes esperan que otro moto las acepte (js/reasignaciones.js);
+         el moto no reasigna desde acá */
+      !esMoto && typeof cargarReasignacionesPanel === 'function' ? cargarReasignacionesPanel(estado.id) : null,
     ]);
     ordenes = r[0].ok ? await r[0].json() : [];
   } catch (err) { ordenes = []; }
@@ -598,7 +624,9 @@ async function _gmPintarOrdenes(desde, hasta, idCont) {
   cont.innerHTML = ordenes.length
     ? '<div class="card"><div class="card-head"><span class="card-title">Órdenes</span>' +
         '<span style="font-size:12px;color:var(--color-text-secondary)">' + ordenes.length + ' registros</span></div>' +
-        '<div style="padding:0 16px 16px">' + _renderTablaOrdenesDetalle(ordenes) + '</div></div>'
+        /* El moto, sin Actualizar ni Reasignar: sus órdenes las trabaja
+           en "Mis entregas de hoy" */
+        '<div style="padding:0 16px 16px">' + _renderTablaOrdenesDetalle(ordenes, { sinAcciones: esMoto }) + '</div></div>'
     : '<div style="padding:24px;text-align:center;color:var(--color-text-tertiary)">Sin órdenes.</div>';
 }
 
@@ -636,6 +664,7 @@ window.periodoGestionMoto = function(tipo) {
 };
 
 window.volverListaGestionMotos = function() {
+  if (_gmIdMotoSesion()) return; /* el moto no tiene lista */
   _gmDet = null;
   var det = document.getElementById('gm-vista-detalle');
   if (det) det.innerHTML = '';
@@ -667,6 +696,22 @@ window.addEventListener('velox:reasignaciones', refrescarGestionMotos);
 window.initGestionMotos = function() {
   _gmDet = null;
   _gmChip = '';
+
+  /* El motorizado: directo a SU detalle, en hoy. Sin lista, chips,
+     TOTALES ni Exportar, y sin refresco de la lista (no la pide: el
+     servidor le niega /caja/motorizados/gestion) */
+  var idMoto = _gmIdMotoSesion();
+  if (idMoto) {
+    _gmAbrirAlIniciar = null;
+    var sub = document.getElementById('gm-sub');
+    if (sub) sub.textContent = 'Tus días: órdenes, lo que cobraste, tu pago y tu deuda';
+    var lista = document.getElementById('gm-vista-lista');
+    if (lista) lista.innerHTML = '';
+    _gmDet = { id: idMoto, modo: 'dias', base: _gmHoyLima(0) };
+    _gmVista('detalle');
+    _gmPintarDetalle(false);
+    return;
+  }
   /* Arranca en hoy (como Clientes la primera vez); al volver a la
      página se conserva el período que se había elegido */
   if (!_gmDesde && _gmTipo === 'hoy') _gmPonerPeriodo(_gmHoyLima(0), _gmHoyLima(0), 'hoy');
